@@ -63,6 +63,18 @@ test('端到端：批流动 + 证据核查 + Self-Loop + 汇总 HITL', async () 
     assert.ok(summary.selfLoop.revisions >= 2);
     assert.equal(summary.selfLoop.escalations, 2);
 
+    // 分档设计：扇出初筛全量 flash；短名单 pro 深评；监军始终 pro
+    const evalTasks = boot.deps.ledger.listTasks('eval', { jobId: boot.job.id });
+    const screenEvals = evalTasks.filter((task) => task.phase === 'screen');
+    const deepEvals = evalTasks.filter((task) => task.phase === 'deep');
+    assert.ok(screenEvals.length >= 18);
+    assert.ok(screenEvals.every((task) => task.tier === 'flash'), '扇出初筛应全部使用 flash');
+    assert.ok(deepEvals.length > 0, '应有短名单进入 pro 深评');
+    assert.ok(deepEvals.every((task) => task.tier === 'pro'), '深评应全部使用 pro');
+    assert.ok(events.some((event) => event.type === 'deep_eval.shortlist'));
+    const reviewTiers = boot.deps.ledger.listTasks('review', { jobId: boot.job.id });
+    assert.ok(reviewTiers.length >= 18);
+
     // 无全量屏障：第 2 批在第 1 批完成前就已经开始解析
     const batch2Start = events.find(
       (event) => event.type === 'batch.started' && payload(event).batchId === 2,

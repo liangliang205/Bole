@@ -40,6 +40,8 @@ export interface CandidateView extends RankedCandidate {
   uncertainties: string[];
   redFlags: string[];
   anomalies: string[];
+  evalTier: string;
+  evalPhase: string;
   interview?: InterviewPlan;
   review: {
     verdict: Verdict;
@@ -193,6 +195,8 @@ function viewForCandidate(
           recommendation: maskPII(plans.get(ranked.resumeId)!.recommendation),
         }
       : undefined,
+    evalTier: String(latest?.task.tier ?? 'unknown'),
+    evalPhase: String(latest?.task.phase ?? 'screen'),
     review: review
       ? {
           verdict: review.review.verdict,
@@ -346,7 +350,7 @@ export async function buildReport(
 
   const stageMap = new Map<string, { calls: number; promptTokens: number; completionTokens: number; costUsd: number }>();
   for (const call of calls) {
-    const stage = call.schemaName;
+    const stage = `${call.schemaName}@${call.tier}`;
     const entry = stageMap.get(stage) ?? { calls: 0, promptTokens: 0, completionTokens: 0, costUsd: 0 };
     entry.calls += 1;
     entry.promptTokens += call.promptTokens;

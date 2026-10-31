@@ -5,8 +5,10 @@ import { resolveRawSpans } from '../util/text.ts';
 import { applyScorecard, type RatingThresholds } from '../tools/scorecard.ts';
 import type {
   DimensionScore,
+  EvalPhase,
   EvalResult,
   Jd,
+  ModelTier,
   ParseResult,
   ResumeRow,
   ReviewResult,
@@ -28,6 +30,9 @@ export interface AssessInput {
   loopIndex: number;
   feedback?: ReviewResult | null;
   revisionOf?: string | null;
+  /** 覆盖 preset 档位：flash 初筛 / pro 深评；自环返工沿用被核查那次的档位。 */
+  tier?: ModelTier;
+  phase?: EvalPhase;
 }
 
 export interface AssessResult {
@@ -43,15 +48,17 @@ export class AssessorWorker {
   private deps: AgentDeps;
   private ctx: AssessorContext;
 
-  constructor(deps: AgentDeps, index: number, ctx: AssessorContext) {
+  constructor(deps: AgentDeps, index: number, ctx: AssessorContext, role = 'assessor') {
     this.deps = deps;
     this.ctx = ctx;
-    this.workerId = `assessor#${index}`;
+    this.workerId = `${role}#${index}`;
   }
 
   async evaluate(input: AssessInput): Promise<AssessResult> {
     const deps = this.deps;
     const { resume, parsed, batchId, loopIndex, feedback, revisionOf } = input;
+    const tier = input.tier ?? deps.registry.get('assessor').tier;
+    const phase: EvalPhase = input.phase ?? (loopIndex > 0 ? 'revise' : 'screen');
     const task = deps.ledger.createTask('eval', {
       jobId: deps.jobId,
       resumeId: resume.id,
@@ -59,6 +66,8 @@ export class AssessorWorker {
       workerId: this.workerId,
       revisionOf: revisionOf ?? undefined,
       feedback: feedback ?? undefined,
+      tier,
+      phase,
     });
     const text = await readFile(resume.norm_path ?? '', 'utf8');
     const current = deps.ledger.getResume(resume.id);
@@ -86,13 +95,20 @@ export class AssessorWorker {
     }));
 
     const user = `${taskBook({
-      task: loopIndex > 0 ? '按监军驳回意见逐条修正评估结论（保留未被驳回部分）' : '按评分卡与岗位知识评估候选人匹配度',
+      task:
+        phase === 'deep'
+          ? '对初筛短名单做深度评估（pro 档）：逐维度复核证据强度与评分锚点'
+          : loopIndex > 0
+            ? '按监军驳回意见逐条修正评估结论（保留未被驳回部分）'
+            : '按评分卡与岗位知识做初筛评估（flash 档）',
       inputs: {
         resume_id: resume.id,
         label: resume.label,
         batch_id: String(batchId),
         loop_index: String(loopIndex),
         eval_task: task.id,
+        phase,
+        tier,
       },
       references,
       schemaName: 'evaluate_resume',
@@ -110,6 +126,8 @@ export class AssessorWorker {
       batchId,
       loopIndex,
       workerId: this.workerId,
+      tier,
+      phase,
       revisionOf: revisionOf ?? null,
     });
 
@@ -124,7 +142,7 @@ export class AssessorWorker {
       batchId,
       workerId: this.workerId,
       agent: 'assessor',
-      tier: deps.registry.get('assessor').tier,
+      tier,
       schemaName: 'evaluate_resume',
       schema: evaluateResumeSchema,
       system: systemPrompt(deps, 'assessor'),
@@ -222,6 +240,8 @@ export class AssessorWorker {
       totalScore: finalEval()?.totalScore,
       conclusion: finalEval()?.conclusion,
       loopIndex,
+      tier,
+      phase,
       attempts: outcome.attempts,
     });
     return { ok: true, taskId: task.id, evaluation: finalEval() ?? undefined, errors: [] };

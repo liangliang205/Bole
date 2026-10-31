@@ -13,6 +13,9 @@ export type AgentId =
 
 export type TaskKind = 'parse' | 'eval' | 'review';
 
+/** 评估阶段：flash 初筛 → pro 深评 → Self-Loop 返工。 */
+export type EvalPhase = 'screen' | 'deep' | 'revise';
+
 /** 任务级状态机：pending → running → staged → committed；失败/取消/拒绝为终态（除非显式重试）。 */
 export type TaskStatus =
   | 'pending'

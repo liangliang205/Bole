@@ -28,6 +28,7 @@ export interface PipelineConfig {
   pools: { parse: number; assess: number; review: number };
   admission: { maxRefusalRetries: number; baseBackoffMs: number; maxBackoffMs: number };
   selfLoop: { maxLoops: number };
+  deepEval: { enabled: boolean; percent: number; tier: ModelTier };
   structuredOutput: { maxAttempts: number };
   topN: number;
   conclusionScale: Record<string, number>;
@@ -75,6 +76,7 @@ export function loadPipelineConfig(root = projectRoot()): PipelineConfig {
   const cfg = readJsonFile<PipelineConfig>(file);
   if (process.env.BOLE_BATCH_SIZE) cfg.batchSize = Number(process.env.BOLE_BATCH_SIZE);
   if (process.env.BOLE_MAX_BATCHES_IN_FLIGHT) cfg.maxBatchesInFlight = Number(process.env.BOLE_MAX_BATCHES_IN_FLIGHT);
+  if (process.env.BOLE_DEEP_EVAL_PERCENT) cfg.deepEval.percent = Number(process.env.BOLE_DEEP_EVAL_PERCENT);
   return cfg;
 }
 

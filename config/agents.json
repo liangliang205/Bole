@@ -52,14 +52,14 @@
     "assessor": {
       "id": "assessor",
       "nameZh": "相马官",
-      "role": "按评分卡与 RAG 岗位知识评估人岗匹配，输出分维度评分与证据引用",
-      "tier": "pro",
+      "role": "按评分卡与 RAG 岗位知识评估人岗匹配：flash 初筛全量，pro 深评短名单",
+      "tier": "flash",
       "tools": ["rag_search", "scorecard_compute", "span_locate"],
       "maxDepth": 0,
       "canDelegate": false,
       "outputSchema": "evaluate_resume",
       "prompt": "prompts/assessor.md",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     "auditor": {
       "id": "auditor",

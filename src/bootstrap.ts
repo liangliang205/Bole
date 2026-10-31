@@ -16,6 +16,7 @@ export interface BootstrapOptions {
   requirements: string;
   seed?: string;
   llm?: 'mock' | 'deepseek';
+  deepseekApiKey?: string;
   cacheAlignment?: boolean;
   faults?: FaultInjection;
   jobId?: string;
@@ -61,7 +62,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const providerKind = opts.llm ?? (process.env.BOLE_LLM as 'mock' | 'deepseek' | undefined) ?? 'mock';
   const provider =
     providerKind === 'deepseek'
-      ? new DeepSeekProvider({})
+      ? new DeepSeekProvider({ apiKey: opts.deepseekApiKey })
       : new MockProvider({
           latencyMs: opts.mockLatencyMs ?? Number(process.env.BOLE_MOCK_LATENCY_MS ?? 0),
           invalidSchemaOnce: opts.faults?.invalidSchemaFor,

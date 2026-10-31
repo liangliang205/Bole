@@ -11,7 +11,7 @@
 | `profiler` | 需求画像师 | pro | 0 | `jd_analysis` | rag_search / fairness_scan / scorecard_validate | `profiler.md` |
 | `fetcher` | 探马 | flash | 0 | `fetch_manifest` | mcp:hirebox / dedup / normalize | `fetcher.md` |
 | `parser` | 录事 | flash | 0 | `parse_resume` | read_resume / span_locate | `parser.md` |
-| `assessor` | 相马官 | pro | 0 | `evaluate_resume` | rag_search / scorecard_compute / span_locate | `assessor.md` |
+| `assessor` | 相马官 | flash（初筛）/ pro（深评） | 0 | `evaluate_resume` | rag_search / scorecard_compute / span_locate | `assessor.md` |
 | `auditor` | 监军 | pro | 0 | `review_eval` | span_verify / fairness_scan / ledger_query | `auditor.md` |
 | `advisor` | 谋士 | pro | 0 | `interview_plan` | rag_search / scorecard_compute | `advisor.md` |
 
@@ -21,6 +21,18 @@
 2. 子 Agent 之间不直接通信；一切经台账与主 Agent 裁决。
 3. 监军对相马官有否决/打回权；二者 preset 严格分离，禁止同一 preset 既评又核。
 4. 子 Agent 结果必须落盘为结构化 JSON；主 Agent 只消费摘要 + 引用。
+
+### 档位覆盖：assessor 的双阶段
+
+`assessor` 的 preset 档位是 `flash`（全量初筛）。短名单深评由编排层显式覆盖为 `pro`：
+
+| 阶段 | 触发 | 档位 | 台账标记 |
+|---|---|---|---|
+| 初筛 | 全部解析成功的候选人 | flash | `eval_tasks.phase='screen'` |
+| 深评 | 批内 Top40% + 解析异常/不确定项 | pro（`pipeline.json#deepEval.tier`） | `phase='deep'` |
+| 返工 | 监军 `re_eval` 后 | 沿用被核查那次的档位 | `phase='revise'` |
+
+这属于"平台按任务难度分配档位"，不是新增 Agent：同一 preset、同一 prompt、同一 schema，只有 `tier` 参数不同；`eval_tasks.tier` 记录实际使用的档位，报告与 `bole audit` 可见。
 
 ## 2. 输出 schema
 
@@ -54,8 +66,16 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 
 | 档位 | 默认模型 | 用途 | 覆盖方式 |
 |---|---|---|---|
-| flash | `deepseek-chat` | 解析、接入等轻任务 | `BOLE_FLASH_MODEL` 或 `config/pipeline.json#models.flash` |
-| pro | `deepseek-reasoner` | 画像、评估、核查、汇总/面试 | `BOLE_PRO_MODEL` 或配置 |
+| flash | `deepseek-chat` | 接入、解析、评估初筛 | `BOLE_FLASH_MODEL` 或 `config/pipeline.json#models.flash` |
+| pro | `deepseek-reasoner` | 画像、评估深评、核查、汇总/面试 | `BOLE_PRO_MODEL` 或配置 |
+
+深评比例与档位在 `config/pipeline.json`：
+
+```json
+"deepEval": { "enabled": true, "percent": 40, "tier": "pro" }
+```
+
+把它设为 `enabled:false` 即为"全量 flash 评估"（成本最低、质量风险最高）；把 assessor preset 改回 `pro` 且关闭深评即为"全量 pro 评估"（质量优先、成本最高）。两种极端都在配置层可切换，无需改代码。
 
 `LlmRouter` 负责：tier→model 映射、温度 0、JSON mode、错误重试、usage 记账、缓存前缀核算。提供方在 `src/llm/provider.ts` 定义，mock 与 DeepSeek 走同一路由，替换只需改 `bootstrap.ts` 的构造参数。
 

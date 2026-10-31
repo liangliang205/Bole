@@ -15,7 +15,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ 人机层   CLI 交互（HITL-1 需求反问 / HITL-2 终稿确认）          │
+│ 人机层   CLI / Web UI（HITL-1 需求反问 / HITL-2 终稿确认）      │
 │          decisions 表全量留痕（node/问题/回答/actor/时间）      │
 ├──────────────────────────────────────────────────────────────┤
 │ 编排层   coordinator（唯一编排者）                              │
@@ -23,7 +23,8 @@
 │          容量池准入 · Self-Loop 决策 · 汇总与 HITL 门控          │
 ├──────────────────────────────────────────────────────────────┤
 │ Agent 层 profiler(pro) → fetcher(flash) → parser×N(flash)     │
-│          → assessor×M(pro) ⇄ auditor(pro) → advisor(pro)      │
+│          → assessor×M(flash 初筛 → pro 深评)                   │
+│          ⇄ auditor(pro) → advisor(pro)                        │
 │          每个 Agent = preset 配置 + prompt 文件 + zod schema    │
 ├──────────────────────────────────────────────────────────────┤
 │ 工具层   hirebox MCP（mock 邮箱）· RAG（TF-IDF/余弦）           │
@@ -38,6 +39,29 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## 2.1 档位设计：扇出用 flash，判断与否决用 pro
+
+档位按**任务难度 × 错误代价 × 调用量**决定，不按"主 Agent / 子 Agent"的职级决定：
+
+| 环节 | 档位 | 依据 |
+|---|---|---|
+| parser ×N | flash | 高并发、低难度、schema 固定；错误由 span 门禁、重试与失败隔离兜底 |
+| assessor 初筛 ×M | flash | 全量打分，成本与简历数线性相关；先做低成本筛选 |
+| assessor 深评（短名单） | pro | 批内 Top40% + 解析异常/不确定项；"证据是否支持结论"是强判断 |
+| auditor | pro | 独立否决权；核查是整个平台可信度的最后一道闸门，不能跟着扇出降档 |
+| profiler / advisor | pro | 调用量小、影响大（JD/评分卡/面试建议） |
+| coordinator | pro | 当前为确定性编排；只有需要 LLM 仲裁或叙述时才真正消耗 pro |
+
+实现要点：
+
+- `config/pipeline.json#deepEval` 控制深评开关、比例（默认 40%）与档位（pro）；
+- 初筛与深评都写 `eval_tasks`，用 `tier/phase(screen|deep|revise)` 区分，报告与 `bole audit` 可见；
+- Self-Loop 返工**沿用被核查那次的档位**（`worker.reused`），避免初筛 flash、返工突然 pro 造成口径漂移；
+- 深评失败不淘汰候选人，回退到初筛结果并记 `deep_eval.failed`；
+- 缓存按"模型 + 前缀"隔离：同一阶段保持同一档位，前缀对齐（系统提示词 + 评分卡 + JD）仍然成立。
+
+> 这套设计在 mock 黄金集上验证了路由、成本与状态机；flash 与 pro 的**质量差异**必须配置真实 API Key 后用同一黄金集 A/B，mock 不能替代真实模型评测。
+
 ## 3. 端到端数据流
 
 1. `bootstrap` 创建 job、运行目录、模型路由与 RAG 索引，写 `run.created` 事件。
@@ -46,9 +70,10 @@
 4. **批流水线**：按 label 顺序切批（默认 8 份/批），`flowBatches` 允许多批同时流动；每批内：
    - parser 逐份解析（容量池 4），字段 quote 由平台 `locateQuote` 计算字符偏移；
    - 批内解析完成后立即可评估，**不等其他批**；
-   - assessor 取评分卡全部维度打分（容量池 2），平台按权重重算总分与结论，模型自报总分不采信；
+   - assessor 初筛：全部候选人用 flash 打分（容量池 2），平台按权重重算总分与结论，模型自报总分不采信；
+   - 深评：批内 Top40% + 解析异常/不确定项用 pro 再评一次；深评失败回退初筛结果；
    - auditor 逐条核对引用（容量池 1），LLM 语义复核 + 确定性 span/公平性规则双管齐下；
-   - 裁决 `re_eval` 时续用同一个 assessor 实例（`worker.reused`），最多 2 轮；超限或合规高风险 → `escalate_human`。
+   - 裁决 `re_eval` 时续用同一个 assessor 实例（`worker.reused`），沿用被核查档位，最多 2 轮；超限或合规高风险 → `escalate_human`。
 5. **汇总**：只读取 `status in (verified, reported)` 的评估 → 排序（总分 → 技术栈 → 年限 → 项目复杂度）→ Top5 → advisor 生成面试建议 → 报告（md/html/json/cost/svg）→ HITL-2 确认 → job `completed`，简历 `reported`。
 
 ## 4. 任务状态机与结算语义
@@ -128,7 +153,8 @@ task: pending → running
 
 ## 10. 可观测性与审计
 
-- `events` 表 append-only（数据库触发器禁止 UPDATE/DELETE），字段：`seq/ts/job_id/actor/type/payload_json`。CLI `status` 与 `audit` 都只读事件与台账重建视图。
+- Web UI（`pnpm web`，默认 `127.0.0.1:8787`）只做一件事：把台账/事件/HITL 包装成可交互页面；它不维护第二份状态，也不绕过编排层。单用户、无认证，禁止直接暴露公网。
+- `events` 表 append-only（数据库触发器禁止 UPDATE/DELETE），字段：`seq/ts/job_id/actor/type/payload_json`。CLI `status`、Web UI 与 `audit` 都只读事件与台账重建视图。
 - 任务台账记录 `worker_id/attempt/result_path/stop_reason/committed_ts`，可回答"谁做的、试了几次、产物在哪、为什么停"。
 - `decisions` 表记录每次 HITL：问题、选项、回答、操作者（区分 `HR(console)` 与 `HR(auto-demo)`）、时间。
 - `usage` 表按 agent/model/tier 记账；`cost-report.md` 输出按阶段、按模型、缓存对齐三张表。
@@ -163,5 +189,6 @@ task: pending → running
 | 评分卡/公平性/RAG | `src/tools/*` |
 | 各 Agent | `src/agents/*.ts` + `config/prompts/*.md` |
 | 编排 | `src/agents/coordinator.ts` |
+| Web UI | `src/web/server.ts`（单文件 HTTP + 内嵌前端） |
 | 报告 | `src/report/builder.ts`、`src/report/render.ts` |
 | 演示与 CLI | `src/cli/index.ts`、`src/cli/demo-data.ts` |

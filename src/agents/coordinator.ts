@@ -1,13 +1,23 @@
 import { chunk, flowBatches, mapSettled } from '../core/pipeline.ts';
 import { CapacityPool, withSlot, admissionOptions } from '../core/pool.ts';
 import { combineStopReasons } from '../core/state.ts';
-import type { PoolStats, Jd, Scorecard, InterviewPlan, EvalResult, StopReason } from '../types.ts';
+import type {
+  PoolStats,
+  Jd,
+  Scorecard,
+  InterviewPlan,
+  EvalResult,
+  StopReason,
+  ModelTier,
+  EvalPhase,
+  ParseResult,
+} from '../types.ts';
 import type { RatingThresholds } from '../tools/scorecard.ts';
 import type { AgentDeps } from './deps.ts';
 import { runProfiler } from './profiler.ts';
 import { runFetcher } from './fetcher.ts';
 import { ParserWorker } from './parser.ts';
-import { AssessorWorker } from './assessor.ts';
+import { AssessorWorker, type AssessorContext } from './assessor.ts';
 import { AuditorWorker } from './auditor.ts';
 import { runAdvisor } from './advisor.ts';
 import { loadJobAnalysis, loadLatestEval, loadParseResult } from './data.ts';
@@ -152,44 +162,129 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     batchSize: deps.config.batchSize,
     maxBatchesInFlight: deps.config.maxBatchesInFlight,
     pools: { parse: parsePool.capacity, assess: assessPool.capacity, review: reviewPool.capacity },
+    deepEval: deps.config.deepEval,
     resumeOnly: !!opts.resumeOnly,
   });
 
-  const reporter = async (item: WorkItem, batchId: number): Promise<{ status: string; score?: number }> => {
+  const assessorCtx: AssessorContext = {
+    jd,
+    scorecard,
+    thresholds: deps.config.conclusionScale as unknown as RatingThresholds,
+  };
+
+  interface ScreenedCandidate {
+    resumeId: string;
+    label: string;
+    parsed: ParseResult;
+    evaluation: EvalResult;
+    evalTaskId: string;
+    evalTier: ModelTier;
+    evalPhase: EvalPhase;
+    worker: AssessorWorker;
+  }
+
+  /** 扇出初筛：全量走 flash（高并发、低成本），证据门禁与 schema 校验仍在。 */
+  const screenCandidate = async (item: WorkItem, batchId: number): Promise<ScreenedCandidate> => {
     const resume = deps.ledger.getResume(item.resumeId);
-    if (!resume) return { status: 'missing' };
-    if (resume.status === 'failed' || resume.status === 'duplicate' || resume.status === 'quarantine') {
-      return { status: resume.status };
-    }
-
+    if (!resume) throw new Error(`简历不存在: ${item.resumeId}`);
     const parsed = item.parsed ?? loadParseResult(deps.ledger, resume.id);
-    if (!parsed) return { status: 'no_parse' };
-
-    const worker = new AssessorWorker(deps, assessPool.stats().acquired + 1, {
-      jd,
-      scorecard,
-      thresholds: deps.config.conclusionScale as unknown as RatingThresholds,
-    });
-    let loop = 0;
-    let evalResult: EvalResult | undefined;
-    let evalTaskId: string | null = null;
-    let lastReview = null as Awaited<ReturnType<AuditorWorker['review']>> | null;
-
-    const first = await withSlot(assessPool, `eval:${resume.id}`, admission, () =>
-      worker.evaluate({ resume, parsed, batchId, loopIndex: 0 }),
+    if (!parsed) throw new Error('解析结果缺失');
+    const worker = new AssessorWorker(deps, assessPool.stats().acquired + 1, assessorCtx);
+    const tier = deps.registry.get('assessor').tier;
+    const result = await withSlot(assessPool, `screen:${resume.id}`, admission, () =>
+      worker.evaluate({ resume, parsed, batchId, loopIndex: 0, tier, phase: 'screen' }),
     );
-    if (!first.ok || !first.evaluation) return { status: 'eval_failed' };
-    evalResult = first.evaluation;
-    evalTaskId = first.taskId;
+    if (!result.ok || !result.evaluation) {
+      throw new Error(`初筛评估失败: ${result.errors.join('；')}`);
+    }
+    return {
+      resumeId: resume.id,
+      label: resume.label,
+      parsed,
+      evaluation: result.evaluation,
+      evalTaskId: result.taskId,
+      evalTier: tier,
+      evalPhase: 'screen',
+      worker,
+    };
+  };
+
+  /**
+   * 短名单选择：批内按初筛分取 Top percent；解析异常/不确定项一并升级，
+   * 对应方案 §7.3「按复杂度分配 effort」。
+   */
+  const selectDeepShortlist = (screened: ScreenedCandidate[]): ScreenedCandidate[] => {
+    const config = deps.config.deepEval;
+    if (!config.enabled || screened.length === 0) return [];
+    const sorted = [...screened].sort((a, b) => b.evaluation.totalScore - a.evaluation.totalScore);
+    const count = Math.max(1, Math.ceil((sorted.length * config.percent) / 100));
+    const picked = new Map<string, ScreenedCandidate>(
+      sorted.slice(0, count).map((candidate) => [candidate.resumeId, candidate]),
+    );
+    for (const candidate of screened) {
+      const complexity =
+        candidate.parsed.anomalies.length > 0 || candidate.evaluation.uncertainties.length > 0;
+      if (complexity) picked.set(candidate.resumeId, candidate);
+    }
+    return [...picked.values()];
+  };
+
+  /** 判断：短名单用 pro 深评；失败则保留 flash 结果，不阻塞候选人。 */
+  const deepEvaluate = async (candidate: ScreenedCandidate, batchId: number): Promise<void> => {
+    const resume = deps.ledger.getResume(candidate.resumeId);
+    if (!resume) return;
+    const worker = new AssessorWorker(deps, assessPool.stats().acquired + 1, assessorCtx, 'assessor-deep');
+    const tier = deps.config.deepEval.tier;
+    const result = await withSlot(assessPool, `deep:${candidate.resumeId}`, admission, () =>
+      worker.evaluate({
+        resume,
+        parsed: candidate.parsed,
+        batchId,
+        loopIndex: 0,
+        tier,
+        phase: 'deep',
+      }),
+    );
+    if (!result.ok || !result.evaluation) {
+      deps.events.emit(deps.jobId, 'assessor', 'deep_eval.failed', {
+        resumeId: candidate.resumeId,
+        label: candidate.label,
+        batchId,
+        errors: result.errors,
+        fallback: 'flash',
+      });
+      return;
+    }
+    candidate.evaluation = result.evaluation;
+    candidate.evalTaskId = result.taskId;
+    candidate.evalTier = tier;
+    candidate.evalPhase = 'deep';
+    candidate.worker = worker;
+    deps.events.emit(deps.jobId, 'assessor', 'deep_eval.completed', {
+      resumeId: candidate.resumeId,
+      label: candidate.label,
+      batchId,
+      totalScore: result.evaluation.totalScore,
+      tier,
+      evalTaskId: result.taskId,
+    });
+  };
+
+  /** 否决：所有候选人（含仅初筛者）都由 pro 监军核查；返工沿用被核查那次的档位。 */
+  const reviewCandidate = async (candidate: ScreenedCandidate, batchId: number): Promise<{ status: string; score?: number }> => {
+    let loop = 0;
+    let lastReview: Awaited<ReturnType<AuditorWorker['review']>> | null = null;
 
     for (;;) {
+      const resume = deps.ledger.getResume(candidate.resumeId);
+      if (!resume) return { status: 'missing' };
       const auditor = new AuditorWorker(deps, reviewPool.stats().acquired + 1);
-      const review = await withSlot(reviewPool, `review:${resume.id}`, admission, () =>
+      const review = await withSlot(reviewPool, `review:${candidate.resumeId}`, admission, () =>
         auditor.review({
           resume,
-          parsed,
-          evaluation: evalResult!,
-          evalTaskId: evalTaskId!,
+          parsed: candidate.parsed,
+          evaluation: candidate.evaluation,
+          evalTaskId: candidate.evalTaskId,
           batchId,
           loopCount: loop,
           maxLoops: deps.config.selfLoop.maxLoops,
@@ -197,34 +292,37 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       );
       lastReview = review;
       if (!review.ok || !review.review) return { status: 'review_failed' };
-      if (review.review.verdict === 'pass') break;
-      if (review.review.verdict === 'escalate_human') break;
+      if (review.review.verdict !== 're_eval') break;
       if (loop >= deps.config.selfLoop.maxLoops) break;
       loop += 1;
       deps.events.emit(deps.jobId, 'coordinator', 'selfloop.revise', {
-        resumeId: resume.id,
-        label: resume.label,
+        resumeId: candidate.resumeId,
+        label: candidate.label,
         loop,
-        workerId: worker.workerId,
+        workerId: candidate.worker.workerId,
         fixes: review.review.requiredFixes.length,
+        tier: candidate.evalTier,
       });
-      const revised = await withSlot(assessPool, `regexp:${resume.id}`, admission, () =>
-        worker.revise({
+      const revised = await withSlot(assessPool, `revise:${candidate.resumeId}`, admission, () =>
+        candidate.worker.revise({
           resume,
-          parsed,
+          parsed: candidate.parsed,
           batchId,
           loopIndex: loop,
           feedback: review.review,
-          revisionOf: evalTaskId,
+          revisionOf: candidate.evalTaskId,
+          tier: candidate.evalTier,
+          phase: 'revise',
         }),
       );
       if (!revised.ok || !revised.evaluation) return { status: 'revise_failed' };
-      evalResult = revised.evaluation;
-      evalTaskId = revised.taskId;
+      candidate.evaluation = revised.evaluation;
+      candidate.evalTaskId = revised.taskId;
+      candidate.evalPhase = 'revise';
     }
 
     const status = lastReview?.review?.verdict === 'pass' ? 'verified' : 'escalated';
-    return { status, score: evalResult?.totalScore };
+    return { status, score: candidate.evaluation.totalScore };
   };
 
   const batches = chunk(workItems, deps.config.batchSize);
@@ -288,28 +386,68 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         failed: batch.length - parsedItems.length,
       });
 
-      const results = await mapSettled(parsedItems, assessPool.capacity, async (item) => {
-        const resume = deps.ledger.getResume(item.resumeId);
-        if (!resume) throw new Error(`简历不存在: ${item.resumeId}`);
-        const result = await reporter(item, batchId);
-        if (result.status.includes('failed') || result.status === 'no_parse') {
+      const screenOutcomes = await mapSettled(parsedItems, assessPool.capacity, (item) =>
+        screenCandidate(item, batchId),
+      );
+      const screened: ScreenedCandidate[] = [];
+      for (const outcome of screenOutcomes) {
+        if (outcome.ok) {
+          screened.push(outcome.value);
+        } else {
           evalFailures += 1;
+          deps.events.emit(deps.jobId, 'assessor', 'screen.failed', {
+            batchId,
+            error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+          });
         }
-        deps.events.emit(deps.jobId, 'coordinator', 'candidate.processed', {
-          resumeId: item.resumeId,
-          label: item.label,
-          batchId,
-          status: result.status,
-          score: result.score ?? null,
-        });
-        return result;
+      }
+      deps.events.emit(deps.jobId, 'coordinator', 'batch.screened', {
+        batchId,
+        screened: screened.length,
+        failed: parsedItems.length - screened.length,
       });
 
-      const evaluated = results.filter((r) => r.ok).length;
+      const shortlist = selectDeepShortlist(screened);
+      if (shortlist.length > 0) {
+        deps.events.emit(deps.jobId, 'coordinator', 'deep_eval.shortlist', {
+          batchId,
+          count: shortlist.length,
+          percent: deps.config.deepEval.percent,
+          tier: deps.config.deepEval.tier,
+          labels: shortlist.map((candidate) => candidate.label),
+        });
+        await mapSettled(shortlist, assessPool.capacity, (candidate) => deepEvaluate(candidate, batchId));
+      }
+
+      const results = await mapSettled(
+        screened,
+        Math.max(1, reviewPool.capacity + assessPool.capacity),
+        async (candidate) => {
+          const result = await reviewCandidate(candidate, batchId);
+          if (result.status.includes('failed')) evalFailures += 1;
+          deps.events.emit(deps.jobId, 'coordinator', 'candidate.processed', {
+            resumeId: candidate.resumeId,
+            label: candidate.label,
+            batchId,
+            status: result.status,
+            score: result.score ?? null,
+            tier: candidate.evalTier,
+            phase: candidate.evalPhase,
+            deep: candidate.evalPhase !== 'screen',
+          });
+          return result;
+        },
+      );
+
+      const evaluated = results.filter(
+        (result) =>
+          result.ok && (result.value.status === 'verified' || result.value.status === 'escalated'),
+      ).length;
       deps.events.emit(deps.jobId, 'coordinator', 'batch.completed', {
         batchId,
         evaluated,
-        failed: results.length - evaluated,
+        failed: screened.length - evaluated,
+        deep: shortlist.length,
       });
       return { batchId, parsed: parsedItems.length, evaluated };
     },

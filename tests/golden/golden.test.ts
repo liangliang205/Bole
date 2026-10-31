@@ -60,9 +60,12 @@ test('黄金集回归：Top5、陷阱样本与自环统计与冻结基线一致'
     }
 
     const report = JSON.parse(readFileSync(summary.reports.json, 'utf8')) as {
+      top: { label: string; evalTier: string; evalPhase: string }[];
       escalations: { label: string }[];
       compliance: { duplicates: { label: string }[]; failed: { label: string }[] };
     };
+    assert.deepEqual(summary.top.map((item) => item.label), expectations.top5);
+    assert.ok(report.top.every((item) => item.evalTier === 'pro' && item.evalPhase === 'deep'), 'Top5 应全部经过 pro 深评');
     assert.deepEqual(report.escalations.map((item) => item.label).sort(), [...expectations.escalated].sort());
     assert.deepEqual(report.compliance.duplicates.map((item) => item.label), [expectations.duplicate]);
     assert.deepEqual(report.compliance.failed.map((item) => item.label), expectations.parseFailed);

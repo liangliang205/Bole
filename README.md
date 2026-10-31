@@ -30,7 +30,7 @@ pnpm demo
 | 文件 | 用途 |
 |---|---|
 | `report.md` | 人看的终稿：Top5 + 证据链 + 面试建议 + 合规报告 |
-| `report.html` | 可演示的摘要页（证据高亮、卡片式） |
+| `report.html` | 运行结束后的可视化报告页（多视图：总览/候选人/合规/成本/HITL） |
 | `report.json` | 机器可读的完整报告（含字符偏移、成本、池统计） |
 | `cost-report.md` | token / 成本 / 缓存前缀对齐对比 / 调度统计 |
 | `convergence.svg` | 验真环逐轮通过率收敛曲线 |
@@ -47,10 +47,11 @@ HR 需求（含歧义与歧视性条件）
    │
    ├─ 批流水线（batch=8，最多 2 批同时流动，无全量屏障）
    │    ├─ parser×N（录事, flash, 池=4）→ 字段 + 原文 span（字符偏移由平台计算）
-   │    ├─ assessor×M（相马官, pro, 池=2）→ 分维度评分 + 证据引用（确定性重算总分）
+   │    ├─ assessor×M 初筛（相马官, flash, 池=2）→ 全量分维度评分 + 证据引用
+   │    ├─ assessor 深评（相马官, pro）→ 批内 Top40% + 异常样本再评一次
    │    └─ auditor（监军, pro, 池=1）→ 逐条举证 + 公平性哨兵
    │          ├─ pass → 进入汇总
-   │          ├─ re_eval → Self-Loop（≤2，续用同一个 assessor Worker）
+   │          ├─ re_eval → Self-Loop（≤2，续用同一个 assessor Worker，沿用被核查档位）
    │          └─ escalate_human → HR 人工队列
    │
    └─ 汇总：Top5 + 证据链 + 面试建议 + 合规报告 ──▶ HITL-2（终稿确认）
@@ -64,7 +65,8 @@ HR 需求（含歧义与歧视性条件）
 | Top5 | R01 89.0 · R05 87.0 · R11 80.0 · R03 79.5 · R15 79.5 |
 | 验真环 | 21 次裁决：16 pass / 3 re_eval / 2 escalate；重评 3 次，全部续用原 Worker |
 | 证据链 | 每条维度结论均挂原文引用 + 字符区间，核查后 `verified=1` |
-| 模型成本 | 66 次调用，输入 132,353 tokens（缓存命中 31,858），输出 28,753，$0.1070；无缓存基线 $0.1189 |
+| 模型成本 | 78 次调用，输入 165,287 tokens（缓存命中 40,354），输出 34,068，$0.1136；无缓存基线 $0.1263 |
+| 分档 | 扇出初筛全量 flash；12 人进入 pro 深评；监军 21 次全 pro；Top5 全部来自 pro 深评 |
 | 调度 | parse 池峰值 4/4、assess 2/2、review 1/1；满载拒绝后由编排层有界重试，不排队 |
 
 陷阱样本是**预置故障注入**（演示用，可用 `--no-faults` 关闭）：
@@ -74,6 +76,19 @@ HR 需求（含歧义与歧视性条件）
 - `R19` 旧版 `.doc` 无法解析 → 单份失败、批次继续；
 - `R20` 评估理由出现"年龄偏大" → 公平性哨兵拦截并转人工；
 - JD 中的"限男性、30 岁以下"被剥离并生成 HITL 确认，不进入评分维度。
+
+### 档位分工：扇出用 flash，判断与否决用 pro
+
+| 环节 | 档位 | 理由 |
+|---|---|---|
+| parser（×N 扇出） | flash | 高并发、低难度、schema 固定，错误由 span 门禁与下游兜底 |
+| assessor 初筛（×M 扇出） | flash | 全量打分，成本随简历数线性增长；先筛出短名单 |
+| assessor 深评（短名单） | pro | 批内 Top40% + 解析异常/不确定项；判断"证据是否支持结论"需要更强模型 |
+| auditor（否决） | pro | 独立验证者，永远不跟着扇出降档；否则验真环会形式化 |
+| profiler / advisor | pro | 低调用量、高影响：JD 歧义、评分卡设计、面试建议 |
+| coordinator | pro（当前为确定性编排） | 只有需要 LLM 做仲裁/叙述时才真正消耗 pro |
+
+配置在 `config/pipeline.json#deepEval`（`enabled/percent/tier`）与 `config/agents.json`；自环返工沿用被核查那次的档位，避免"初筛 flash、返工突然 pro"造成的口径漂移。
 
 ## 3. 为什么是"平台"而不是"单 Agent 调用"
 
@@ -89,6 +104,7 @@ HR 需求（含歧义与歧视性条件）
 ## 4. 常用命令
 
 ```bash
+pnpm web                       # 启动可交互前端（发起 run / 回答 HITL / 实时事件）
 pnpm bole demo                 # 演示（交互 HITL）
 pnpm bole demo --yes --fresh   # 演示（自动 HITL + 清空旧台账）
 pnpm bole run --jd "招 Java 后端，3-5 年，base 上海" --yes
@@ -103,6 +119,18 @@ pnpm bole doctor               # 环境自检
 pnpm bole seed                 # 重新生成黄金简历集
 pnpm bole reset --yes          # 清空台账与运行产物
 ```
+
+### Web 交互前端（推荐）
+
+```bash
+pnpm web
+# 打开 http://127.0.0.1:8787
+```
+
+- 页面可直接发起 run、实时查看事件流、在页面里回答 HITL 问题、并在完成后打开报告页。
+- DeepSeek 可二选一接入：①环境变量 `DEEPSEEK_API_KEY`；②在页面输入临时 API Key（保存在浏览器 localStorage，仅随 run 请求发送，不写入服务端台账/日志）。
+- 若未配置 Key，仍可选择 `mock` 并完整跑通（可复现演示链路）。
+- 安全边界：默认只监听 `127.0.0.1`，无登录/多租户；不要直接暴露到公网。详见 [已知限制](docs/LIMITATIONS.md)。
 
 ## 5. 接入真实模型
 

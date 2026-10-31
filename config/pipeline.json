@@ -15,6 +15,11 @@
   "selfLoop": {
     "maxLoops": 2
   },
+  "deepEval": {
+    "enabled": true,
+    "percent": 40,
+    "tier": "pro"
+  },
   "structuredOutput": {
     "maxAttempts": 2
   },

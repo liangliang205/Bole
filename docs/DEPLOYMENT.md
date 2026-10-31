@@ -39,6 +39,18 @@ pnpm bole demo --yes
 
 演示会实时打印事件流，最后输出 Top5、容量池统计、成本与报告路径。
 
+## 3.1 Web 交互前端
+
+```bash
+pnpm web
+# 打开 http://127.0.0.1:8787
+pnpm bole web --host 127.0.0.1 --port 8787   # 等价
+```
+
+- 页面可发起 run、实时查看事件流、回答 HITL、查看多视图报告（总览/候选人/合规/成本/HITL）。
+- 模型可选 mock 或 deepseek；DeepSeek Key 可用 `DEEPSEEK_API_KEY`，也可在页面输入（保存在浏览器 localStorage，仅随请求发送）。
+- **安全边界**：单用户、无登录/权限、默认只监听 loopback；不要直接暴露公网。多租户/鉴权在 P1。
+
 ## 4. 自定义岗位
 
 ```bash
@@ -54,6 +66,7 @@ pnpm bole run --jd "招聘高级 Java 后端，5 年以上，熟悉 Spring Cloud
 | `pools.parse / assess / review` | 4 / 2 / 1 | 各阶段容量池上限；满载拒绝不排队 |
 | `admission.maxRefusalRetries` | 200 | 有界准入重试次数 |
 | `selfLoop.maxLoops` | 2 | 验真环上限，超限转人工 |
+| `deepEval.enabled / percent / tier` | true / 40 / pro | 短名单深评开关、比例与档位；关闭即"全量 flash 评估" |
 | `structuredOutput.maxAttempts` | 2 | 同轮 schema 校验重试次数 |
 | `topN` | 5 | 推荐人数 |
 | `models.flash / pro` | deepseek-chat / deepseek-reasoner | 模型档位；只改配置不改代码 |
@@ -81,6 +94,7 @@ BOLE_LLM=deepseek pnpm bole run --jd "..." --yes
 | `BOLE_PRO_MODEL` | `deepseek-reasoner` | 覆盖 pro 档模型 |
 | `BOLE_LLM` | `mock` | 默认提供方 |
 | `BOLE_MOCK_LATENCY_MS` | 0（demo 默认 8） | mock 模拟时延，用于观察批流动 |
+| `BOLE_DEEP_EVAL_PERCENT` | 40 | 覆盖短名单深评比例 |
 | `BOLE_DB` / `BOLE_RUNS` / `BOLE_INBOX` / `BOLE_DATA_DIR` | 见 `.env.example` | 数据与运行目录 |
 
 真实模式的成本/缓存数据来自 API 返回的 `usage.prompt_tokens / completion_tokens / prompt_cache_hit_tokens`；mock 模式为确定性估算（CJK 0.7 token/字 + 拉丁按词），两者在报告中都会标注 provider。
@@ -130,6 +144,7 @@ runs/<runId>/           # 每轮产物：report.*、cost-report.md、convergence
 | 终端中文乱码 | Windows 控制台编码问题，报告文件本身是 UTF-8；用编辑器或浏览器打开 `report.md/html` |
 | 报告 Top5 为空 | 检查 `bole status`：可能所有简历都 `failed/quarantine`；报告会如实列出原因 |
 | `--llm deepseek` 立即失败 | 未配置 `DEEPSEEK_API_KEY`；或网络不可达（错误信息含 HTTP 状态与响应片段） |
+| `pnpm web` 端口被占用 | `EADDRINUSE`：换端口 `pnpm bole web --port 8788`，或关闭占用进程 |
 
 ## 9. 验收复现清单
 
@@ -143,6 +158,7 @@ pnpm bole status --events 40
 pnpm bole audit --resume R17
 pnpm bole report
 pnpm bole cost
+pnpm web          # 可选：浏览器验证 HITL 与多视图报告
 ```
 
-预期：42 个测试通过；demo 终稿 Top5 为 R01/R05/R11/R03/R15；状态计数 reported=16、quarantine=2、duplicate=1、failed=1；`audit R17` 能看到"首轮 unsupported → 续用同一 Worker → 第二轮 pass"的完整记录。
+预期：42 个测试通过；demo 终稿 Top5 为 R01/R05/R11/R03/R15；状态计数 reported=16、quarantine=2、duplicate=1、failed=1；`audit R17` 能看到"首轮 unsupported → 续用同一 Worker → 第二轮 pass"的完整记录；报告/`status` 中可见评估阶段 `screen/deep/revise` 与实际档位 `flash/pro`。

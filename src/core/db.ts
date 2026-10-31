@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS eval_tasks (
   rationale_json TEXT,
   revision_of TEXT,
   feedback_json TEXT,
+  tier TEXT,
+  phase TEXT,
   created_ts TEXT NOT NULL,
   updated_ts TEXT NOT NULL,
   committed_ts TEXT
@@ -182,5 +184,14 @@ export function openDatabase(dbPath: string): DatabaseSync {
   if (dbPath !== ':memory:') mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/** 轻量向前迁移：老台账缺列时自动补齐，避免升级后必须清库。 */
+function migrate(db: DatabaseSync): void {
+  const columns = db.prepare('PRAGMA table_info(eval_tasks)').all() as { name: string }[];
+  const existing = new Set(columns.map((column) => column.name));
+  if (!existing.has('tier')) db.exec('ALTER TABLE eval_tasks ADD COLUMN tier TEXT');
+  if (!existing.has('phase')) db.exec('ALTER TABLE eval_tasks ADD COLUMN phase TEXT');
 }

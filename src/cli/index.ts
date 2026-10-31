@@ -84,6 +84,7 @@ function printHelp(): void {
   status              查看任务台账 / 事件流
   audit               审计某位候选人的完整证据链（≤2 步回溯）
   report              查看已生成的报告文件
+  web                 启动交互式前端（浏览器 UI + HITL 回答 + 实时事件）
   cost                查看 token 成本与缓存命中
   bench               调度并发扫描实验（模拟模型时延）
   agents              查看 Agent preset 注册表
@@ -102,6 +103,8 @@ function printHelp(): void {
   --fresh             demo 前清空台账与 runs
   --job <id>          指定任务
   --events <n>        status 显示的事件条数
+  --host <ip>         web 模式监听地址（默认 127.0.0.1）
+  --port <n>          web 模式监听端口（默认 8787）
 
 示例:
   pnpm bole demo --yes
@@ -109,6 +112,7 @@ function printHelp(): void {
   pnpm bole run --jd "招 Java 后端，3 年经验，base 上海"
   pnpm bole audit --resume R03
   pnpm bole status --events 40
+  pnpm bole web --port 8787
 `;
   process.stdout.write(help);
 }
@@ -175,11 +179,21 @@ function summarizeEvent(event: EventRow): string {
     case 'parse.failed':
       return red(`${label} 解析失败：${String((payload.errors as string[] | undefined)?.[0] ?? '').slice(0, 60)}`);
     case 'eval.started':
-      return `${label} 评估开始（第 ${payload.loopIndex} 轮, ${payload.workerId}）`;
+      return `${label} ${payload.phase === 'deep' ? 'pro 深评' : payload.phase === 'revise' ? '返工评估' : 'flash 初筛'}开始（第 ${payload.loopIndex} 轮, ${payload.workerId}）`;
     case 'eval.committed':
-      return `${label} 评估完成：${Number(payload.totalScore).toFixed(1)} 分（${payload.conclusion}）`;
+      return `${label} 评估完成：${Number(payload.totalScore).toFixed(1)} 分（${payload.conclusion}，${payload.tier}/${payload.phase}）`;
     case 'eval.failed':
       return red(`${label} 评估失败`);
+    case 'batch.screened':
+      return `第 ${payload.batchId} 批初筛完成（${payload.screened} 人，失败 ${payload.failed}）`;
+    case 'deep_eval.shortlist':
+      return yellow(`第 ${payload.batchId} 批深评短名单：${payload.count} 人（Top ${payload.percent}% + 异常，${payload.tier}）`);
+    case 'deep_eval.completed':
+      return green(`${label} pro 深评完成：${Number(payload.totalScore).toFixed(1)} 分`);
+    case 'deep_eval.failed':
+      return yellow(`${label} 深评失败，回退 flash 结果`);
+    case 'screen.failed':
+      return red(`第 ${payload.batchId} 批初筛失败：${String(payload.error ?? '').slice(0, 70)}`);
     case 'review.started':
       return `${label} 证据核查开始（第 ${payload.loopCount} 轮）`;
     case 'review.verdict':
@@ -193,7 +207,7 @@ function summarizeEvent(event: EventRow): string {
     case 'escalate.human':
       return red(`${label} 转人工：${String(payload.reason ?? '').slice(0, 70)}`);
     case 'candidate.processed':
-      return `${label} 批次处理结果：${payload.status}${payload.score ? `（${Number(payload.score).toFixed(1)} 分）` : ''}`;
+      return `${label} 批次处理结果：${payload.status}${payload.score ? `（${Number(payload.score).toFixed(1)} 分）` : ''}${payload.tier ? ` [${payload.tier}/${payload.phase}]` : ''}`;
     case 'batch.parsed':
       return `第 ${payload.batchId} 批解析完成（${payload.parsed} 成功 / ${payload.failed} 失败）`;
     case 'batch.completed':
@@ -478,7 +492,7 @@ function cmdAudit(args: Args): void {
         rationale: string;
         spans: { quote: string; charStart: number; charEnd: number }[];
       }[];
-      process.stdout.write(`\n${bold('② 评估结论')} 总分=${Number(latest.total_score).toFixed(1)} 结论=${latest.conclusion} 版本=${latest.id}\n`);
+      process.stdout.write(`\n${bold('② 评估结论')} 总分=${Number(latest.total_score).toFixed(1)} 结论=${latest.conclusion} 版本=${latest.id} 档位=${latest.tier ?? '-'} 阶段=${latest.phase ?? '-'}\n`);
       for (const dim of dims) {
         process.stdout.write(`  ${dim.name}（权重 ${dim.weight}%，${dim.score} 分）：${maskPII(dim.rationale)}\n`);
         for (const span of dim.spans) {
@@ -688,6 +702,17 @@ function cmdDoctor(): void {
   }
 }
 
+async function cmdWeb(args: Args): Promise<void> {
+  const host = str(args, 'host') ?? '127.0.0.1';
+  const portRaw = str(args, 'port') ?? '8787';
+  const port = Number(portRaw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`非法端口: ${portRaw}`);
+  }
+  const { startWebServer } = await import('../web/server.ts');
+  await startWebServer({ host, port });
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -712,6 +737,9 @@ async function main(): Promise<void> {
       break;
     case 'cost':
       cmdCost(args);
+      break;
+    case 'web':
+      await cmdWeb(args);
       break;
     case 'bench':
       await cmdBench(args);

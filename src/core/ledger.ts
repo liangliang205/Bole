@@ -52,6 +52,8 @@ const TASK_COLUMNS: Record<TaskKind, string[]> = {
     'rationale_json',
     'revision_of',
     'feedback_json',
+    'tier',
+    'phase',
   ],
   review: [
     ...COMMON_TASK_COLUMNS,
@@ -252,6 +254,8 @@ export class Ledger {
     workerId?: string;
     revisionOf?: string;
     feedback?: unknown;
+    tier?: string;
+    phase?: string;
     extra?: Record<string, unknown>;
   }): TaskRow {
     const id = newId(kind);
@@ -265,8 +269,8 @@ export class Ledger {
       );
     } else if (kind === 'eval') {
       this.run(
-        `INSERT INTO eval_tasks (id,job_id,resume_id,batch_id,status,attempt,worker_id,revision_of,feedback_json,created_ts,updated_ts)
-         VALUES (?,?,?,?,?,0,?,?,?,?,?)`,
+        `INSERT INTO eval_tasks (id,job_id,resume_id,batch_id,status,attempt,worker_id,revision_of,feedback_json,tier,phase,created_ts,updated_ts)
+         VALUES (?,?,?,?,?,0,?,?,?,?,?,?,?)`,
         id,
         input.jobId,
         input.resumeId,
@@ -275,6 +279,8 @@ export class Ledger {
         input.workerId ?? null,
         input.revisionOf ?? null,
         input.feedback ? JSON.stringify(input.feedback) : null,
+        input.tier ?? null,
+        input.phase ?? null,
         ts,
         ts,
       );
