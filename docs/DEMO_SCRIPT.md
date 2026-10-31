@@ -1,7 +1,7 @@
 # 演示脚本（真实数据 · 对话式控制台）
 
 > 目标：在 8–10 分钟内展示"上传真实简历 → 多 Agent 编排 → 流式生成 → HITL → 证据链 → 报告"的完整闭环。
-> 前提：启动 Web 后已按弹窗绑定 DeepSeek Key（服务端持久化），已执行 `pnpm ocr:download`（若演示图片简历）。
+> 前提：启动 Web 后已在「设置 → 模型」配置并选择模型提供商，已执行 `pnpm ocr:download`（若演示图片简历）。
 
 ## 0. 准备
 
@@ -10,7 +10,7 @@ pnpm install
 pnpm ocr:download
 pnpm bole reset --yes    # 从空台账开始，避免旧会话干扰
 pnpm web
-# 首次进入按弹窗绑定 DeepSeek Key；绑定一次后持久化
+# 首次进入在「设置 → 模型」配置提供商；Key 加密持久化
 ```
 
 准备 5–8 份真实/脱敏简历，至少包含：

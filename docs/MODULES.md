@@ -82,18 +82,19 @@
 - `stream-preview.ts`：用 `partial-json` 解析未完成 JSON，按 agent/phase 转成字段、维度分数、核查裁决；token 事件带 `preview`，前端不展示原始 JSON。
 - `data.ts`：jobs/snapshot/candidates/events/cost 查询。
 - `ops.ts`：agents/doctor/reset。
-- `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具、首次绑定弹窗。
+- `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具、DSH 风格模型提供商管理。
 
-## 13. Key 持久化（`src/settings/key-store.ts`）
+## 13. 模型提供商与 Key（`src/settings/provider-store.ts`）
 
-- `POST /api/key` 绑定：校验 Key（`/models`，仅 401/403 判无效），AES-256-GCM 加密后写 `data/keyring.json`；主密钥 `data/keyring.key`。
-- `GET /api/config` 返回 `{bound, masked, updatedAt}`，前端进入时若未绑定则强制弹窗。
-- `DELETE /api/key` 清除绑定；Key 不从环境变量读取，也不回传浏览器。
-- CLI 可用 `--key` 临时传入；否则读取服务端已绑定 Key。
+- `ProviderStore` 管理多个提供商：名称、Base URL、`deepseek`/`openai` API 风格、Flash/Pro 模型名、加密 Key、当前使用项。
+- Key 使用 AES-256-GCM 加密写入 `data/providers.json`，主密钥 `data/keyring.key`；首次启动会把旧版 `keyring.json` 的单一 DeepSeek Key 迁移为默认提供商。
+- `/api/providers` 提供列表、添加、编辑、删除、切换、测试；Key 只返回 masked。
+- `bootstrap` 读取当前提供商创建 `DeepSeekProvider`（`apiStyle` 区分 DeepSeek/OpenAI 兼容请求），并用提供商的 Flash/Pro 模型名。
+- Key 不从环境变量读取，也不回传浏览器；CLI `--key` 仅临时覆盖当前提供商 Key。
 
 ## 14. 测试（`tests/*`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag。
-- `integration/`：真实上传端到端、失败隔离、检查点续跑、无 Key 失败。
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、cost、stream-preview、key-store、provider-store。
+- `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商标失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
 - `fixtures/documents.ts`：生成 DOCX/PDF 测试文件。

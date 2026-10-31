@@ -11,6 +11,8 @@ data/ocr
 data/keyring.json
 data/keyring.key
 data/keyring.json.tmp
+data/providers.json
+data/providers.json.tmp
 *.log
 tests
 docs

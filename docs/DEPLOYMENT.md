@@ -19,7 +19,7 @@ pnpm web
 # http://127.0.0.1:8787
 ```
 
-首次进入页面会自动检查 Key 绑定；未绑定时弹出绑定窗口。绑定后写入服务端 `data/keyring.json`（AES-256-GCM，主密钥 `data/keyring.key`），刷新/重启无需重复输入。可在「设置与模型」中清除绑定。CLI 不会读取环境变量；需要时用 `--key` 临时传入，或先通过 Web 绑定。
+首次进入页面会自动检查模型提供商；没有可用 Key 时打开设置。默认带 DeepSeek 提供商，也可以添加任意 OpenAI 兼容网关（名称、Base URL、Key、Flash/Pro 模型名），在列表中选择当前使用项。Key 使用 AES-256-GCM 加密写入 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重复输入。CLI 不会读取环境变量；需要时用 `--key` 临时覆盖当前提供商的 Key。
 
 ### OCR 说明
 
@@ -31,11 +31,12 @@ pnpm web
 
 ## 3. 页面操作
 
-1. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF，单文件 ≤25MB）。
-2. 填写招聘需求 → 开始筛选。
-3. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
-4. 完成后在对话中查看 Top 推荐与合规摘要；点「查看证据链」或右侧「任务面板」查看候选人证据链、合规与成本。不提供 Markdown/JSON 下载。
-5. 中断后可点「续跑」从批次检查点恢复；不会重复上传。
+1. 打开「设置与模型 → 模型」，添加/编辑提供商并选择当前使用项（DeepSeek 或 OpenAI 兼容网关）。
+2. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / GIF / BMP / TIFF，单文件 ≤25MB）。
+3. 填写招聘需求 → 开始筛选。
+4. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
+5. 完成后在对话中查看 Top 推荐与合规摘要；点「查看证据链」或右侧「任务面板」查看候选人证据链、合规与成本。不提供 Markdown/JSON 下载。
+6. 中断后可点「续跑」从批次检查点恢复；不会重复上传。
 
 ## 4. CLI
 
@@ -61,7 +62,7 @@ docker compose up
 # 打开 http://127.0.0.1:8787，首次进入按提示绑定 Key
 ```
 
-- Key 绑定持久化在 `bole-data` 卷的 `keyring.*`；容器重启后仍然有效。不要通过环境变量注入 Key。
+- Key 绑定持久化在 `bole-data` 卷的 `providers.json`（主密钥 `keyring.key`）；容器重启后仍然有效。不要通过环境变量注入 Key。
 - 镜像构建时执行 `pnpm ocr:download`，OCR 数据位于 `/app/ocr`（`BOLE_OCR_DIR`），不会被 `/app/data` 数据卷覆盖。
 - `bole-data` 卷保存台账与上传缓存；`bole-runs` 保存运行产物。
 - 容器内监听 `0.0.0.0:8787`；生产环境请在前面加反向代理与鉴权，当前应用本身没有登录。
@@ -70,8 +71,7 @@ docker compose up
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
-| `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-flash` / `deepseek-v4-pro` | 档位模型 |
+| `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-flash` / `deepseek-v4-pro` | 临时覆盖当前提供商模型 |
 | `BOLE_DATA_DIR` | `data` | 数据根 |
 | `BOLE_DB` | `data/ledger.db` | SQLite |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
@@ -90,7 +90,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 62 个测试
+pnpm test:all          # 65 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 
@@ -104,9 +104,9 @@ curl -s http://127.0.0.1:8787/api/doctor
 
 | 现象 | 处理 |
 |---|---|
-| 页面提示未绑定 Key | 在弹窗中输入并绑定；绑定会持久化到 `data/keyring.*` |
+| 页面提示没有可用提供商 | 在「设置 → 模型」添加/编辑提供商并绑定 Key；持久化到 `data/providers.json` |
 | 绑定失败 401/403 | Key 无效或已撤销；重新生成后绑定 |
-| 绑定提示网络 warning | Key 已保存，但 `/models` 校验未成功；检查网络/`BOLE_BASE_URL` 后运行 |
+| 绑定提示网络 warning | Key 已保存，但 `/models` 校验未成功；检查该提供商的 Base URL 与网络后运行 |
 | 图片简历失败，提示缺 OCR 语言数据 | 仅本地回退需要：`pnpm ocr:download`；或设置 `BOLE_OCR_MODE=deepseek` 使用 Vision |
 | PDF 失败，提示无文本层 | 扫描件导出为 PNG/JPG 后上传 |
 | SSE 不显示 token | 检查反向代理是否缓冲 SSE（关闭 `proxy_buffering`）；本机直连正常 |

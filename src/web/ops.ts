@@ -3,7 +3,7 @@ import path from 'node:path';
 import { resolvePaths, loadPipelineConfig } from '../config.ts';
 import { AgentRegistry } from '../core/registry.ts';
 import { Ledger } from '../core/ledger.ts';
-import { KeyStore } from '../settings/key-store.ts';
+import { ProviderStore } from '../settings/provider-store.ts';
 
 export interface DoctorCheck {
   name: string;
@@ -73,23 +73,28 @@ export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
   } catch (error) {
     checks.push({ name: '台账', status: 'fail', detail: error instanceof Error ? error.message : String(error) });
   }
-  const keyStatus = await new KeyStore(paths.dataDir).status();
+  const activeProvider = await new ProviderStore(paths.dataDir).getActive();
   checks.push({
-    name: 'DeepSeek Key',
-    status: keyStatus.bound ? 'ok' : 'warn',
-    detail: keyStatus.bound ? `已绑定 ${keyStatus.masked ?? ''}（服务端持久化）` : '未绑定；进入 Web 会提示绑定',
+    name: '模型提供商',
+    status: activeProvider?.apiKey ? 'ok' : 'warn',
+    detail: activeProvider
+      ? `${activeProvider.name}（${activeProvider.api}）· ${activeProvider.flashModel} / ${activeProvider.proModel}${activeProvider.apiKey ? '' : ' · 未绑定 Key'}`
+      : '未配置；进入 Web 会提示添加',
   });
   const config = loadPipelineConfig();
   const ocrMode = (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase();
-  const ocrModel = process.env.BOLE_OCR_MODEL ?? config.models.flash;
+  const ocrModel = process.env.BOLE_OCR_MODEL ?? activeProvider?.flashModel ?? config.models.flash;
   const ocrLocal = Boolean(process.env.BOLE_OCR_URL)
     || ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) => existsSync(path.join(paths.ocrDir, name)));
   const fallback = process.env.BOLE_OCR_FALLBACK !== 'false';
   if (ocrMode === 'deepseek' || ocrMode === 'auto') {
+    const visionReady = activeProvider?.api === 'deepseek' && Boolean(activeProvider.apiKey);
     checks.push({
       name: 'OCR',
-      status: keyStatus.bound ? 'ok' : 'warn',
-      detail: `DeepSeek Vision（${ocrModel}）${fallback ? ocrLocal ? ' + 本地回退就绪' : ' + 本地回退未就绪' : ''}`,
+      status: visionReady ? 'ok' : 'warn',
+      detail: visionReady
+        ? `DeepSeek Vision（${ocrModel}）${fallback ? ocrLocal ? ' + 本地回退就绪' : ' + 本地回退未就绪' : ''}`
+        : '当前模型提供商不是 DeepSeek 或未绑定 Key；图片 OCR 可能不可用，失败会回退本地 Tesseract',
     });
   } else if (ocrMode === 'local') {
     checks.push({

@@ -20,7 +20,8 @@
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
-    candidates: [], candidatesLoaded: false, cost: null, sending: false, settingsForced: false,
+    candidates: [], candidatesLoaded: false, cost: null, sending: false,
+    providers: [], activeProviderId: null, editingProvider: null,
   };
 
   function esc(value) {
@@ -582,9 +583,15 @@
     if (requirements.length < 5) { showHint('请填写至少 5 个字符的招聘需求', true); return; }
     const uploaded = state.attachments.filter((file) => file.status === 'uploaded');
     if (uploaded.length === 0) { showHint('请先上传至少一份简历', true); return; }
-    if (!state.config?.key?.bound) {
-      showHint('请先绑定 DeepSeek API Key（服务端持久化，只需一次）', true);
-      openSettings(true);
+    if (!state.config?.providers?.length || !state.activeProviderId) {
+      showHint('请先在设置中添加模型提供商并绑定 API Key', true);
+      openSettings();
+      return;
+    }
+    const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
+    if (!activeProvider?.hasKey) {
+      showHint('当前模型提供商未绑定 API Key，请先在设置中完成配置', true);
+      openSettings();
       return;
     }
     const button = $('#new-start');
@@ -617,7 +624,8 @@
 
   async function resumeCurrent() {
     if (!state.jobId || state.run?.status === 'running') return;
-    if (!state.config?.key?.bound) { toast('请先绑定 DeepSeek API Key', 'error'); openSettings(true); return; }
+    const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
+    if (!activeProvider?.hasKey) { toast('请先配置可用的模型提供商', 'error'); openSettings(); return; }
     try {
       await api(`/api/run/${encodeURIComponent(state.jobId)}/resume`, { method: 'POST' });
       state.events = [];
@@ -792,86 +800,173 @@
 
   // ---------------------------------------------------------------- settings / tools
 
-  function setSettingsStatus(text, tone = '') {
-    const el = $('#settings-status');
+  function setProviderStatus(text, tone = '') {
+    const el = $('#provider-status');
     el.textContent = text;
     el.className = `settings-status ${tone}`;
+  }
+
+  function syncProviders(data) {
+    state.providers = data.providers || [];
+    state.activeProviderId = data.activeId ?? null;
+    state.config = { ...(state.config || {}), providers: state.providers, activeProviderId: state.activeProviderId };
+    renderProviders();
   }
 
   async function loadConfig() {
     try {
       state.config = await api('/api/config');
-      const pipeline = state.config.pipeline;
-      const ocr = state.config.ocr || {};
-      const ocrLabel = ocr.mode === 'deepseek' || ocr.mode === 'auto'
-        ? `DeepSeek Vision（${ocr.model}）${ocr.fallback ? ' + 本地回退' : ''}`
-        : ocr.mode === 'local'
-          ? '本地 Tesseract'
-          : ocr.external ? '外部 OCR' : '未配置';
-      $('#settings-hint').textContent = pipeline
-        ? `流水线：batch=${pipeline.batchSize} · 池=${pipeline.pools.parse}/${pipeline.pools.assess}/${pipeline.pools.review} · 深评 ${pipeline.deepEval.percent}%→${pipeline.deepEval.tier} · OCR ${ocrLabel}`
-        : '';
-      if (!state.config.key?.bound && !state.settingsForced) openSettings(true);
+      state.providers = state.config.providers || [];
+      state.activeProviderId = state.config.activeProviderId ?? null;
+      if (!state.providers.length || !state.providers.find((provider) => provider.id === state.activeProviderId)?.hasKey) {
+        openSettings();
+      }
     } catch (error) {
       toast(`读取配置失败：${error.message}`, 'error');
     }
   }
 
-  function openSettings(force = false) {
-    const bound = Boolean(state.config?.key?.bound);
-    state.settingsForced = Boolean(force || !bound);
-    $('#settings-title').textContent = bound ? '设置与模型' : '绑定 DeepSeek API Key';
-    $('#set-key').value = '';
-    $('#set-key').placeholder = bound ? '输入新 Key 可覆盖当前绑定' : 'sk-...';
-    $('#settings-close').style.display = state.settingsForced ? 'none' : '';
-    $('#settings-cancel').style.display = state.settingsForced ? 'none' : '';
-    $('#settings-clear').style.display = bound ? '' : 'none';
-    $('#settings-save').textContent = bound ? '保存新 Key' : '绑定并保存';
-    setSettingsStatus(
-      bound ? `当前已绑定 ${state.config.key.masked || ''}；更换时输入新 Key 保存即可。` : '尚未绑定。绑定后加密保存在本机服务端，刷新/重启 Web 都不需要再次输入。',
-      bound ? 'ok' : 'warn',
-    );
+  async function loadProviders() {
+    try {
+      const data = await api('/api/providers');
+      syncProviders(data);
+    } catch (error) {
+      toast(`读取模型提供商失败：${error.message}`, 'error');
+    }
+  }
+
+  function renderProviders() {
+    const list = $('#provider-list');
+    const count = $('#provider-count');
+    if (count) count.textContent = state.providers.length ? `${state.providers.length} 个提供商` : '尚未添加提供商';
+    if (!list) return;
+    if (!state.providers.length) {
+      list.innerHTML = '<div class="provider-empty"><b>还没有模型提供商</b><span class="muted">添加 DeepSeek、OpenAI 兼容或自建网关后，选择当前使用的提供商。</span></div>';
+      return;
+    }
+    list.innerHTML = state.providers.map((provider) => `<article class="provider-card ${provider.active ? 'active' : ''}">
+      <div class="provider-main">
+        <div class="provider-name">
+          <span class="dot ${provider.hasKey ? 'completed' : 'idle'}"></span>
+          <span>${esc(provider.name)}</span>
+          ${provider.active ? '<span class="tag ok">当前使用</span>' : ''}
+          ${!provider.hasKey ? '<span class="tag warn">未绑定 Key</span>' : ''}
+        </div>
+        <div class="provider-meta">${esc(provider.api === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容')} · ${esc(provider.baseUrl)}</div>
+        <div class="provider-models"><span>Flash</span>${esc(provider.flashModel)}<span>Pro</span>${esc(provider.proModel)}</div>
+        <div class="provider-key">${provider.maskedKey ? `Key ${esc(provider.maskedKey)}` : '未绑定 API Key'}</div>
+      </div>
+      <div class="provider-actions">
+        ${!provider.active && provider.hasKey ? `<button class="btn ghost" data-provider-action="activate" data-provider-id="${esc(provider.id)}">设为当前</button>` : ''}
+        <button class="btn ghost" data-provider-action="test" data-provider-id="${esc(provider.id)}">测试</button>
+        <button class="btn ghost" data-provider-action="edit" data-provider-id="${esc(provider.id)}">编辑</button>
+        <button class="btn ghost danger-text" data-provider-action="delete" data-provider-id="${esc(provider.id)}">删除</button>
+      </div>
+    </article>`).join('');
+    list.querySelectorAll('[data-provider-action]').forEach((button) => {
+      button.addEventListener('click', () => handleProviderAction(button.dataset.providerAction, button.dataset.providerId));
+    });
+  }
+
+  function openSettings() {
     $('#settings-modal').classList.remove('hidden');
-    setTimeout(() => $('#set-key')?.focus(), 30);
+    $('#provider-editor').classList.add('hidden');
+    state.editingProvider = null;
+    renderProviders();
+    loadProviders();
   }
 
   function closeSettings() {
-    if (state.settingsForced) return;
     $('#settings-modal').classList.add('hidden');
+    $('#provider-editor').classList.add('hidden');
+    state.editingProvider = null;
   }
 
-  async function saveSettings() {
-    const apiKey = $('#set-key').value.trim();
-    if (!apiKey) { setSettingsStatus('请输入 DeepSeek API Key', 'error'); return; }
-    const button = $('#settings-save');
+  function openProviderEditor(provider = null) {
+    state.editingProvider = provider;
+    $('#provider-editor').classList.remove('hidden');
+    $('#provider-editor-title').textContent = provider ? `编辑 ${provider.name}` : '添加模型提供商';
+    $('#provider-name').value = provider?.name ?? 'DeepSeek';
+    $('#provider-api').value = provider?.api ?? 'deepseek';
+    $('#provider-base').value = provider?.baseUrl ?? 'https://api.deepseek.com';
+    $('#provider-key').value = '';
+    $('#provider-key').placeholder = provider?.hasKey ? '留空则保留当前 Key' : 'sk-...';
+    $('#provider-flash').value = provider?.flashModel ?? 'deepseek-flash';
+    $('#provider-pro').value = provider?.proModel ?? 'deepseek-v4-pro';
+    setProviderStatus(provider?.hasKey ? '已保存 Key；只修改展示信息时可留空。' : '填写 API Key 后保存，会加密存储在本机服务端。', provider?.hasKey ? 'ok' : 'warn');
+    $('#provider-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function handleProviderAction(action, id) {
+    const provider = state.providers.find((item) => item.id === id);
+    if (!provider) return;
+    if (action === 'edit') { openProviderEditor(provider); return; }
+    if (action === 'activate') {
+      try {
+        const data = await api(`/api/providers/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+        syncProviders(data);
+        toast(`已切换到 ${provider.name}`, 'ok');
+      } catch (error) { toast(`切换失败：${error.message}`, 'error'); }
+      return;
+    }
+    if (action === 'test') {
+      try {
+        const data = await api(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' });
+        toast(data.warning ?? `${provider.name} 连接正常`, data.warning ? 'error' : 'ok');
+      } catch (error) { toast(`连接失败：${error.message}`, 'error'); }
+      return;
+    }
+    if (action === 'delete') {
+      if (!window.confirm(`确定删除模型提供商「${provider.name}」？`)) return;
+      try {
+        const data = await api(`/api/providers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        syncProviders(data);
+        toast(`已删除 ${provider.name}`, 'ok');
+      } catch (error) { toast(`删除失败：${error.message}`, 'error'); }
+    }
+  }
+
+  async function saveProvider() {
+    const editing = state.editingProvider;
+    const apiKey = $('#provider-key').value.trim();
+    if (!editing && !apiKey) { setProviderStatus('新提供商必须填写 API Key', 'error'); return; }
+    const body = {
+      name: $('#provider-name').value.trim(),
+      baseUrl: $('#provider-base').value.trim(),
+      api: $('#provider-api').value,
+      flashModel: $('#provider-flash').value.trim(),
+      proModel: $('#provider-pro').value.trim(),
+      ...(apiKey ? { apiKey } : {}),
+    };
+    const button = $('#provider-save');
     button.disabled = true;
-    setSettingsStatus('正在验证并保存…');
+    setProviderStatus('正在验证并保存…');
     try {
-      const data = await api('/api/key', { method: 'POST', body: JSON.stringify({ apiKey }) });
-      state.config = { ...(state.config || {}), key: data.key };
-      state.settingsForced = false;
-      $('#settings-modal').classList.add('hidden');
+      const data = await api(editing ? `/api/providers/${encodeURIComponent(editing.id)}` : '/api/providers', {
+        method: editing ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      });
+      syncProviders(data);
+      $('#provider-editor').classList.add('hidden');
+      state.editingProvider = null;
       if (data.warning) toast(data.warning, 'error');
-      else toast('DeepSeek Key 已绑定并持久化', 'ok');
-      if (!state.config?.key?.bound) openSettings(true);
+      else toast(editing ? '提供商已更新' : '提供商已添加', 'ok');
     } catch (error) {
-      setSettingsStatus(`绑定失败：${error.message}`, 'error');
-      toast(`绑定失败：${error.message}`, 'error');
+      setProviderStatus(`保存失败：${error.message}`, 'error');
+      toast(`保存失败：${error.message}`, 'error');
     } finally {
       button.disabled = false;
     }
   }
 
-  async function clearKey() {
-    if (!window.confirm('确定清除已绑定的 DeepSeek API Key？清除后需要重新绑定才能运行。')) return;
+  async function testEditingProvider() {
+    if (!state.editingProvider) { setProviderStatus('先保存提供商，再测试连接', 'warn'); return; }
+    setProviderStatus('正在测试连接…');
     try {
-      const data = await api('/api/key', { method: 'DELETE' });
-      state.config = { ...(state.config || {}), key: data.key };
-      state.settingsForced = false;
-      openSettings(true);
-      toast('已清除 DeepSeek Key 绑定', 'ok');
+      const data = await api(`/api/providers/${encodeURIComponent(state.editingProvider.id)}/test`, { method: 'POST' });
+      setProviderStatus(data.warning ?? '连接正常', data.warning ? 'warn' : 'ok');
     } catch (error) {
-      toast(`清除失败：${error.message}`, 'error');
+      setProviderStatus(`连接失败：${error.message}`, 'error');
     }
   }
 
@@ -945,12 +1040,31 @@
     $('#reply-input').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply(); }
     });
-    $('#open-settings').addEventListener('click', () => openSettings(false));
+    $('#open-settings').addEventListener('click', openSettings);
     $('#theme-toggle').addEventListener('click', toggleTheme);
     $('#settings-close').addEventListener('click', closeSettings);
-    $('#settings-cancel').addEventListener('click', closeSettings);
-    $('#settings-save').addEventListener('click', saveSettings);
-    $('#settings-clear').addEventListener('click', clearKey);
+    $('#provider-add').addEventListener('click', () => openProviderEditor(null));
+    $('#provider-save').addEventListener('click', saveProvider);
+    $('#provider-cancel').addEventListener('click', () => {
+      $('#provider-editor').classList.add('hidden');
+      state.editingProvider = null;
+    });
+    $('#provider-test').addEventListener('click', testEditingProvider);
+    $('#provider-api').addEventListener('change', () => {
+      const api = $('#provider-api').value;
+      const base = $('#provider-base').value;
+      if (!base || base === 'https://api.deepseek.com' || base === 'https://api.openai.com/v1') {
+        $('#provider-base').value = api === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.openai.com/v1';
+      }
+      if (api === 'openai' && $('#provider-flash').value === 'deepseek-flash') {
+        $('#provider-flash').value = '';
+        $('#provider-pro').value = '';
+      }
+      if (api === 'deepseek' && !$('#provider-flash').value) {
+        $('#provider-flash').value = 'deepseek-flash';
+        $('#provider-pro').value = 'deepseek-v4-pro';
+      }
+    });
     $('#open-tools').addEventListener('click', openTools);
     $('#tools-close').addEventListener('click', closeTools);
     $('#tool-output').parentElement.addEventListener('click', (event) => {

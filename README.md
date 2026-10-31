@@ -2,7 +2,7 @@
 
 **可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 7 个 Agent 完成 JD 结构化、并发解析、匹配评估、证据核查、合规检查与面试建议。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
 
-> 当前版本只接真实 DeepSeek API，不包含 mock 模型、演示 JD、故障注入或预置黄金简历。没有 API Key 时流水线会明确失败，而不是悄悄回退到模拟数据。
+> 当前版本只接真实模型 API，不包含 mock 模型、演示 JD、故障注入或预置黄金简历。没有可用的模型提供商时流水线会明确失败，而不是悄悄回退到模拟数据。
 
 ## 30 秒启动
 
@@ -12,10 +12,11 @@ pnpm ocr:download          # 本地 Tesseract 回退语言数据（模型 OCR �
 pnpm web                   # http://127.0.0.1:8787
 ```
 
-首次进入 Web 会自动检查绑定状态；未绑定会弹出窗口要求输入 DeepSeek API Key。绑定后服务端加密持久化到 `data/keyring.json`（主密钥 `data/keyring.key`），刷新或重启都不需要再次输入；可在「设置与模型」中清除绑定。Key 不通过环境变量读取，也不写入台账/报告。
+首次进入 Web 会自动检查模型提供商；没有可用 Key 时会打开设置。默认带一个 DeepSeek 提供商，也可以添加任意 OpenAI 兼容网关（名称、Base URL、Key、Flash/Pro 模型名），并选择当前使用的提供商。Key 使用 AES-256-GCM 加密持久化在 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重填；不通过环境变量读取，也不写入台账/报告。
 
 ### 页面里能做什么
 
+- 设置：DSH 风格的「模型」页，展示提供商列表、Key 状态、当前使用项；支持添加、编辑、测试、切换、删除，兼容 DeepSeek 与 OpenAI 兼容网关。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
@@ -73,12 +74,16 @@ pnpm bole web --port 8787     # 对话式控制台
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/config` | 模型档位、OCR 状态、Key 绑定状态（masked） |
-| POST | `/api/key` | `{apiKey}` 绑定并持久化；返回绑定状态 |
-| DELETE | `/api/key` | 清除 Key 绑定 |
+| GET | `/api/config` | 模型提供商、当前选择、档位模型、OCR 状态 |
+| GET | `/api/providers` | 提供商列表（Key 仅 masked） |
+| POST | `/api/providers` | 添加提供商；`{name,baseUrl,api,flashModel,proModel,apiKey}` |
+| PATCH | `/api/providers/:id` | 编辑提供商（apiKey 留空保留） |
+| DELETE | `/api/providers/:id` | 删除提供商 |
+| POST | `/api/providers/:id/activate` | 设为当前提供商 |
+| POST | `/api/providers/:id/test` | 测试 `/models` 连接 |
 | GET | `/api/jobs` | 会话列表与计数 |
 | POST | `/api/uploads` | `{filename, contentBase64}` → `uploadId` |
-| POST | `/api/run` | `{requirements, uploadIds[], deepseekApiKey?}` 创建并启动 |
+| POST | `/api/run` | `{requirements, uploadIds[]}` 使用当前提供商创建并启动 |
 | GET | `/api/run/:jobId` | run 状态 + 快照 |
 | GET | `/api/run/:jobId/stream` | SSE：`status` / `snapshot` / `log` / `token` / `done` |
 | GET | `/api/run/:jobId/events` | 增量事件 |
@@ -95,9 +100,8 @@ pnpm bole web --port 8787     # 对话式控制台
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
-| `BOLE_FLASH_MODEL` | `deepseek-flash` | flash 模型名 |
-| `BOLE_PRO_MODEL` | `deepseek-v4-pro` | pro 模型名 |
+| `BOLE_FLASH_MODEL` | `deepseek-flash` | 覆盖当前提供商的 Flash 模型 |
+| `BOLE_PRO_MODEL` | `deepseek-v4-pro` | 覆盖当前提供商的 Pro 模型 |
 | `BOLE_DATA_DIR` | `data` | 台账/上传/索引根目录 |
 | `BOLE_DB` | `data/ledger.db` | SQLite 台账 |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
@@ -123,7 +127,7 @@ bole/
 │  ├─ ingest/            # 上传、PDF.js/DOCX/HTML 归一化、DeepSeek Vision/Tesseract OCR、去重、PII
 │  ├─ llm/               # DeepSeek 提供方（含 streaming）、路由、成本
 │  ├─ report/            # Markdown / JSON / cost / convergence 渲染
-│  ├─ settings/          # DeepSeek Key 加密持久化（服务端）
+│  ├─ settings/          # 模型提供商、Key 加密持久化（服务端）
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
 ├─ config/               # agents.json、pipeline.json、prompts/
@@ -140,7 +144,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **62 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、Vision OCR 与本地回退、峰谷成本、流式 JSON 人类可读预览、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **65 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、Vision OCR 与本地回退、多提供商 Key 加密与迁移、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 
@@ -148,5 +152,5 @@ pnpm test:all
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
 - 仅支持单附件简历，不做 IMAP/Exchange 邮箱接入。
 - 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。
-- 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。DeepSeek Key 由服务端加密持久化在 `data/keyring.*`，请保护数据目录权限。
+- 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。各提供商 Key 由服务端加密持久化在 `data/providers.json`，请保护数据目录权限。
 - 真实模型质量取决于 DeepSeek；温度=0 仍可能有 ±1 分波动。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。

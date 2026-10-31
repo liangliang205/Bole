@@ -7,6 +7,9 @@ export interface DeepSeekOptions {
   baseUrl?: string;
   timeoutMs?: number;
   maxRetries?: number;
+  /** DeepSeek 原生参数（thinking/reasoning_effort）或标准 OpenAI 兼容请求。 */
+  apiStyle?: 'deepseek' | 'openai';
+  name?: string;
 }
 
 interface DeepSeekUsage {
@@ -42,18 +45,21 @@ function usageOf(usage: DeepSeekUsage | undefined, req: ChatRequest, text: strin
 
 /** DeepSeek（OpenAI 兼容）提供方：flash=deepseek-flash，pro=deepseek-v4-pro；支持 token 级 SSE 流。 */
 export class DeepSeekProvider implements LlmProvider {
-  readonly name = 'deepseek';
+  readonly name: string;
   readonly kind = 'deepseek' as const;
   private apiKey: string;
   private baseUrl: string;
   private timeoutMs: number;
   private maxRetries: number;
+  private apiStyle: 'deepseek' | 'openai';
 
   constructor(opts: DeepSeekOptions = {}) {
+    this.name = opts.name ?? 'deepseek';
     this.apiKey = opts.apiKey ?? '';
     this.baseUrl = (opts.baseUrl ?? process.env.BOLE_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
     this.timeoutMs = opts.timeoutMs ?? 300_000;
     this.maxRetries = opts.maxRetries ?? 3;
+    this.apiStyle = opts.apiStyle ?? 'deepseek';
   }
 
   async chat(req: ChatRequest): Promise<ProviderResult> {
@@ -61,7 +67,8 @@ export class DeepSeekProvider implements LlmProvider {
       throw new Error('未绑定 DeepSeek API Key：请先在 Web 页面完成绑定。');
     }
     const model = req.model ?? (req.tier === 'pro' ? 'deepseek-v4-pro' : 'deepseek-flash');
-    const thinking = req.tier === 'pro';
+    const deepseekStyle = this.apiStyle === 'deepseek';
+    const thinking = deepseekStyle && req.tier === 'pro';
     const userContent: unknown = req.images?.length
       ? [
           { type: 'text', text: req.user },
@@ -93,13 +100,17 @@ export class DeepSeekProvider implements LlmProvider {
               { role: 'system', content: req.system },
               { role: 'user', content: userContent },
             ],
-            // V4 默认开启 thinking；flash 显式关闭以保持扇出速度，pro 开启 high。
-            thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
-            ...(thinking ? { reasoning_effort: 'high' } : { temperature: req.temperature ?? 0 }),
+            // DeepSeek V4 默认开启 thinking；flash 显式关闭以保持扇出速度，pro 开启 high。
+            ...(deepseekStyle
+              ? {
+                  thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
+                  ...(thinking ? { reasoning_effort: 'high' } : { temperature: req.temperature ?? 0 }),
+                }
+              : { temperature: req.temperature ?? 0 }),
             max_tokens: req.maxTokens ?? 4096,
-            response_format: req.schemaName ? { type: 'json_object' } : undefined,
+            response_format: req.schemaName && deepseekStyle ? { type: 'json_object' } : undefined,
             stream: streaming,
-            stream_options: streaming ? { include_usage: true } : undefined,
+            stream_options: streaming && deepseekStyle ? { include_usage: true } : undefined,
           }),
           signal: AbortSignal.timeout(this.timeoutMs),
         });

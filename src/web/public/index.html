@@ -103,20 +103,43 @@
 </div>
 
 <div id="settings-modal" class="modal hidden">
-  <div class="modal-card">
-    <div class="modal-head"><h2 id="settings-title">DeepSeek 绑定</h2><button class="btn ghost" id="settings-close">✕</button></div>
-    <div class="form-grid">
-      <label class="span-2">DeepSeek API Key（加密保存在本机服务端，只需绑定一次）
-        <input id="set-key" class="input" type="password" placeholder="sk-...">
-      </label>
-      <div class="span-2 settings-status" id="settings-status"></div>
-      <div class="span-2 muted" id="settings-hint"></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn ghost" id="settings-clear">清除绑定</button>
-      <span class="spacer"></span>
-      <button class="btn ghost" id="settings-cancel">取消</button>
-      <button class="btn primary" id="settings-save">绑定并保存</button>
+  <div class="modal-card settings-card">
+    <div class="settings-shell">
+      <aside class="settings-nav">
+        <div class="settings-nav-title">设置</div>
+        <button class="settings-nav-item active" data-settings-tab="models">模型</button>
+      </aside>
+      <section class="settings-content">
+        <div class="modal-head"><h2>模型</h2><button class="btn ghost" id="settings-close">✕</button></div>
+        <div class="settings-toolbar">
+          <span class="muted" id="provider-count"></span>
+          <button class="btn primary" id="provider-add">＋ 添加模型提供商</button>
+        </div>
+        <div id="provider-list" class="provider-list"></div>
+        <div id="provider-editor" class="provider-editor hidden">
+          <h3 id="provider-editor-title">添加模型提供商</h3>
+          <div class="form-grid">
+            <label>名称<input id="provider-name" class="input" placeholder="例如 DeepSeek、xiaomi"></label>
+            <label>API 类型
+              <select id="provider-api" class="input">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI 兼容</option>
+              </select>
+            </label>
+            <label class="span-2">Base URL<input id="provider-base" class="input" placeholder="https://api.deepseek.com"></label>
+            <label class="span-2">API Key<input id="provider-key" class="input" type="password" placeholder="留空则保留原 Key"></label>
+            <label>Flash 模型<input id="provider-flash" class="input" placeholder="deepseek-flash"></label>
+            <label>Pro 模型<input id="provider-pro" class="input" placeholder="deepseek-v4-pro"></label>
+          </div>
+          <div class="settings-status" id="provider-status"></div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="provider-test">测试连接</button>
+            <span class="spacer"></span>
+            <button class="btn ghost" id="provider-cancel">取消</button>
+            <button class="btn primary" id="provider-save">保存</button>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </div>

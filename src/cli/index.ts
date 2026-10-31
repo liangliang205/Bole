@@ -14,7 +14,7 @@ import { formatDuration } from '../util/time.ts';
 import { listFilesRecursive } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
 import { detectContentType, isSupportedUpload } from '../ingest/uploads.ts';
-import { KeyStore } from '../settings/key-store.ts';
+import { ProviderStore } from '../settings/provider-store.ts';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string, text: string): string => (useColor ? `\u001b[${code}m${text}\u001b[0m` : text);
@@ -235,9 +235,11 @@ async function cmdRun(args: Args): Promise<void> {
     }));
   if (files.length === 0) throw new Error(`目录中没有可处理的简历：${filesDir}`);
 
-  const store = new KeyStore(resolvePaths().dataDir);
-  const apiKey = str(args, 'key') ?? (await store.get());
-  if (!apiKey) throw new Error('尚未绑定 DeepSeek API Key：请先运行 pnpm web 在页面绑定，或用 --key 传入。');
+  const store = new ProviderStore(resolvePaths().dataDir);
+  const active = await store.getActive();
+  if (!active) throw new Error('尚未配置模型提供商：请先运行 pnpm web 在「设置与模型」中添加。');
+  const apiKey = str(args, 'key') ?? active.apiKey;
+  if (!apiKey) throw new Error(`模型提供商「${active.name}」未绑定 API Key：请先在 Web 设置中填写，或用 --key 传入。`);
   const boot = await bootstrap({ requirements, deepseekApiKey: apiKey });
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, boot.job.id);
@@ -260,9 +262,11 @@ async function cmdResume(args: Args): Promise<void> {
   const job = reader.getJob(jobId);
   reader.close();
   if (!job) throw new Error(`任务不存在: ${jobId}`);
-  const store = new KeyStore(paths.dataDir);
-  const apiKey = str(args, 'key') ?? (await store.get());
-  if (!apiKey) throw new Error('尚未绑定 DeepSeek API Key：请先运行 pnpm web 在页面绑定，或用 --key 传入。');
+  const store = new ProviderStore(paths.dataDir);
+  const active = await store.getActive();
+  if (!active) throw new Error('尚未配置模型提供商：请先运行 pnpm web 在「设置与模型」中添加。');
+  const apiKey = str(args, 'key') ?? active.apiKey;
+  if (!apiKey) throw new Error(`模型提供商「${active.name}」未绑定 API Key：请先在 Web 设置中填写，或用 --key 传入。`);
   const boot = await bootstrap({ requirements: job.requirements, jobId, seed: job.seed ?? 'resume', deepseekApiKey: apiKey });
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, jobId);
@@ -459,14 +463,16 @@ async function cmdDoctor(): Promise<void> {
   process.stdout.write(`${bold('环境自检')}\n`);
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   process.stdout.write(`Node ${process.versions.node}：${nodeMajor >= 22 ? green('OK') : red('需要 >=22.6')}\n`);
-  const keyStatus = await new KeyStore(paths.dataDir).status();
-  process.stdout.write(`DeepSeek Key：${keyStatus.bound ? green(`已绑定 ${keyStatus.masked ?? ''}`) : red('未绑定（进入 Web 会提示绑定）')}\n`);
+  const active = await new ProviderStore(paths.dataDir).getActive();
+  process.stdout.write(`模型提供商：${active ? green(`${active.name}（${active.api}）${active.apiKey ? '' : ' 未绑定 Key'}`) : red('未配置（运行 pnpm web 添加）')}\n`);
+  if (active) process.stdout.write(`模型档位：flash=${active.flashModel} / pro=${active.proModel}；深评 ${config.deepEval.percent}% → ${config.deepEval.tier}\n`);
   process.stdout.write(`简历来源：上传目录 ${relativeToCwd(paths.uploadsDir)}\n`);
   const knowledge = existsSync(paths.knowledgeDir) ? readdirSync(paths.knowledgeDir).filter((name) => name.endsWith('.md')).length : 0;
   process.stdout.write(`RAG 知识库：${knowledge} 个文档\n`);
   const ocrLangs = ['eng', 'chi_sim'].filter((lang) => existsSync(path.join(paths.ocrDir, `${lang}.traineddata.gz`)));
-  process.stdout.write(`OCR 语言数据：${ocrLangs.length ? green(ocrLangs.join(', ')) : yellow('未下载（图片简历需要，运行 pnpm ocr:download）')}\n`);
-  process.stdout.write(`模型档位：flash=${config.models.flash} / pro=${config.models.pro}；深评 ${config.deepEval.percent}% → ${config.deepEval.tier}\n`);
+  const ocrMode = (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase();
+  process.stdout.write(`OCR：${ocrMode === 'deepseek' || ocrMode === 'auto' ? `DeepSeek Vision（${process.env.BOLE_OCR_MODEL ?? active?.flashModel ?? config.models.flash}）` : ocrMode === 'local' ? '本地 Tesseract' : '外部 OCR'}${ocrMode === 'deepseek' || ocrMode === 'auto' ? `；本地回退${ocrLangs.length ? '就绪' : '未就绪（pnpm ocr:download）'}` : ''}\n`);
+  process.stdout.write(`模型档位配置：flash=${config.models.flash} / pro=${config.models.pro}；深评 ${config.deepEval.percent}% → ${config.deepEval.tier}\n`);
   try {
     const ledger = new Ledger(paths.dbPath);
     process.stdout.write(`台账可写：${green('OK')}（${ledger.listJobs().length} 个历史任务）\n`);

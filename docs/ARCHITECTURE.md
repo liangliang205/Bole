@@ -61,7 +61,7 @@
 ## 4. 档位与路由
 
 - 配置：`config/agents.json` 每个 preset 的 `tier`；`config/pipeline.json` 的 `models`、`deepEval`。
-- `LlmRouter` 负责 tier→model、温度 0、token 记账、成本、缓存前缀；`DeepSeekProvider` 负责 HTTP/streaming。
+- `LlmRouter` 负责 tier→model、温度 0、token 记账、成本、缓存前缀；`DeepSeekProvider` 负责 HTTP/streaming。`ProviderStore` 管理多个 DeepSeek/OpenAI 兼容提供商，当前使用项在设置页切换。
 - `eval_tasks` 记录 `tier`（flash/pro）与 `phase`（screen/deep/revise），报告按 `${schema}@${tier}` 聚合成本。
 - 深评短名单：批次内按初筛分排序取前 `deepEval.percent`（默认 40%），异常/边界样本可进入深评。
 
@@ -109,7 +109,7 @@
 ## 9. 安全与边界
 
 - 默认只监听 `127.0.0.1`；无登录/多租户，公网需反向代理 + 鉴权。
-- Key 由服务端 AES-256-GCM 加密持久化在 `data/keyring.*`，不从环境变量读取；Web 首次进入检查绑定状态，缺失时强制弹窗绑定。Key 不写台账、不写报告、不回传浏览器。
+- Key 由服务端 AES-256-GCM 加密持久化在 `data/providers.json`，不从环境变量读取；Web 首次进入检查当前提供商，缺失时打开设置。Key 不写台账、不写报告、不回传浏览器。
 - 报告/事件/日志做 PII 掩码；台账保存哈希与路径；原始简历在 `runs/` 与 `data/uploads/` 中为明文，依赖文件系统权限。
 - 图片 OCR 准确率有限；扫描版 PDF 需转图片；这些边界在 UI 与 `docs/LIMITATIONS.md` 中明示。
 

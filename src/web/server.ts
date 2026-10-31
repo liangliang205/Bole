@@ -6,7 +6,8 @@ import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
-import { KeyStore, verifyDeepSeekKey } from '../settings/key-store.ts';
+import { verifyDeepSeekKey } from '../settings/key-store.ts';
+import { ProviderStore, type ProviderApi, type ProviderInput, type ProviderPublic } from '../settings/provider-store.ts';
 import { StreamPreviewer } from './stream-preview.ts';
 import type { StreamToken, UploadedFile } from '../types.ts';
 import {
@@ -139,7 +140,17 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const port = options.port ?? 8787;
   const runs = new Map<string, ActiveRun>();
   const paths = resolvePaths();
-  const keys = new KeyStore(paths.dataDir);
+  const providers = new ProviderStore(paths.dataDir);
+
+  const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => ({
+    id: existing?.id,
+    name: String(body.name ?? existing?.name ?? ''),
+    baseUrl: String(body.baseUrl ?? existing?.baseUrl ?? ''),
+    api: ((body.api ?? existing?.api) === 'openai' ? 'openai' : 'deepseek') as ProviderApi,
+    flashModel: String(body.flashModel ?? existing?.flashModel ?? ''),
+    proModel: String(body.proModel ?? existing?.proModel ?? ''),
+    apiKey: typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined,
+  });
 
   const buildRunInfo = (jobId: string) => {
     const snapshot = getSnapshot(jobId);
@@ -256,13 +267,14 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
 
       if (method === 'GET' && pathname === '/api/config') {
         const config = loadPipelineConfig();
-        const key = await keys.status();
+        const providerList = await providers.list();
         const ocrLocal = ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) =>
           existsSync(path.join(paths.ocrDir, name)),
         );
         json(res, 200, {
           ok: true,
-          key,
+          providers: providerList.providers,
+          activeProviderId: providerList.activeId,
           ocr: {
             mode: (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase(),
             model: process.env.BOLE_OCR_MODEL ?? config.models.flash,
@@ -282,28 +294,95 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
-      if (method === 'POST' && pathname === '/api/key') {
-        const body = await readJsonBody(req);
-        const apiKey = String(body.apiKey ?? '').trim();
-        if (!apiKey) {
-          json(res, 400, { ok: false, error: 'API Key 不能为空' });
-          return;
-        }
-        let verification: { verified: boolean; warning?: string };
-        try {
-          verification = await verifyDeepSeekKey(apiKey, process.env.BOLE_BASE_URL ?? 'https://api.deepseek.com');
-        } catch (error) {
-          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-        const status = await keys.save(apiKey);
-        json(res, 200, { ok: true, key: status, verified: verification.verified, warning: verification.warning });
+      if (method === 'GET' && pathname === '/api/providers') {
+        const list = await providers.list();
+        json(res, 200, { ok: true, ...list });
         return;
       }
 
-      if (method === 'DELETE' && pathname === '/api/key') {
-        await keys.clear();
-        json(res, 200, { ok: true, key: await keys.status() });
+      if (method === 'POST' && pathname === '/api/providers') {
+        const body = await readJsonBody(req);
+        const input = toProviderInput(body);
+        let warning: string | undefined;
+        try {
+          if (input.apiKey) {
+            const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl);
+            warning = verification.warning;
+          }
+          const saved = await providers.save(input);
+          if (body.activate === true) await providers.activate(saved.id);
+          const list = await providers.list();
+          json(res, 200, { ok: true, saved, ...list, warning });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+        return;
+      }
+
+      const providerMatch = /^\/api\/providers\/([^/]+)$/.exec(pathname);
+      if (providerMatch && (method === 'PATCH' || method === 'DELETE')) {
+        const providerId = decodeURIComponent(providerMatch[1]);
+        const list = await providers.list();
+        const existing = list.providers.find((provider) => provider.id === providerId);
+        if (!existing) {
+          json(res, 404, { ok: false, error: `提供商不存在：${providerId}` });
+          return;
+        }
+        if (method === 'DELETE') {
+          await providers.remove(providerId);
+          const next = await providers.list();
+          json(res, 200, { ok: true, ...next });
+          return;
+        }
+        const body = await readJsonBody(req);
+        const input = toProviderInput(body, existing);
+        let warning: string | undefined;
+        try {
+          if (input.apiKey) {
+            const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl);
+            warning = verification.warning;
+          }
+          const saved = await providers.save(input);
+          const next = await providers.list();
+          json(res, 200, { ok: true, saved, ...next, warning });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+        return;
+      }
+
+      const activateMatch = /^\/api\/providers\/([^/]+)\/activate$/.exec(pathname);
+      if (method === 'POST' && activateMatch) {
+        const providerId = decodeURIComponent(activateMatch[1]);
+        try {
+          const active = await providers.activate(providerId);
+          json(res, 200, { ok: true, active, ...(await providers.list()) });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+        return;
+      }
+
+      const testProviderMatch = /^\/api\/providers\/([^/]+)\/test$/.exec(pathname);
+      if (method === 'POST' && testProviderMatch) {
+        const providerId = decodeURIComponent(testProviderMatch[1]);
+        const list = await providers.list();
+        const provider = list.providers.find((item) => item.id === providerId);
+        if (!provider) {
+          json(res, 404, { ok: false, error: `提供商不存在：${providerId}` });
+          return;
+        }
+        const apiKey = await providers.getKey(providerId);
+        if (!apiKey) {
+          json(res, 400, { ok: false, error: '该提供商还没有绑定 API Key' });
+          return;
+        }
+        try {
+          const verification = await verifyDeepSeekKey(apiKey, provider.baseUrl);
+          json(res, 200, { ok: true, verified: verification.verified, warning: verification.warning });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
         return;
       }
 
@@ -358,15 +437,18 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 400, { ok: false, error: '上传文件不存在或已过期，请重新上传' });
           return;
         }
-        const deepseekApiKey = await keys.get();
-        if (!deepseekApiKey) {
-          json(res, 400, { ok: false, error: '尚未绑定 DeepSeek API Key：请先在设置中完成绑定。' });
+        const activeProvider = await providers.getActive();
+        if (!activeProvider) {
+          json(res, 400, { ok: false, error: '尚未配置模型提供商：请先在「设置与模型」中添加。' });
+          return;
+        }
+        if (!activeProvider.apiKey) {
+          json(res, 400, { ok: false, error: `模型提供商「${activeProvider.name}」未绑定 API Key。` });
           return;
         }
         const listeners = new Set<(chunk: StreamToken) => void>();
         const boot = await bootstrap({
           requirements,
-          deepseekApiKey,
           stream: makeStreamSink(listeners),
         });
         const hitl = new WebHitlResponder();
@@ -529,9 +611,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 409, { ok: false, error: '该任务正在运行，不能重复启动' });
           return;
         }
-        const deepseekApiKey = await keys.get();
-        if (!deepseekApiKey) {
-          json(res, 400, { ok: false, error: '尚未绑定 DeepSeek API Key：请先在设置中完成绑定。' });
+        const activeProvider = await providers.getActive();
+        if (!activeProvider) {
+          json(res, 400, { ok: false, error: '尚未配置模型提供商：请先在「设置与模型」中添加。' });
+          return;
+        }
+        if (!activeProvider.apiKey) {
+          json(res, 400, { ok: false, error: `模型提供商「${activeProvider.name}」未绑定 API Key。` });
           return;
         }
         const listeners = new Set<(chunk: StreamToken) => void>();
@@ -539,7 +625,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           requirements: job.requirements,
           jobId,
           seed: job.seed ?? 'resume',
-          deepseekApiKey,
           stream: makeStreamSink(listeners),
         });
         const hitl = new WebHitlResponder();

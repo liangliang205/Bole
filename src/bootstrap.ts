@@ -7,6 +7,7 @@ import { EventLog } from './core/events.ts';
 import { RagIndex } from './tools/rag.ts';
 import { LlmRouter } from './llm/router.ts';
 import { DeepSeekProvider } from './llm/deepseek.ts';
+import { ProviderStore } from './settings/provider-store.ts';
 import { ensureDir, writeJson } from './util/fsx.ts';
 import type { AgentDeps } from './agents/deps.ts';
 import type { LlmProvider } from './llm/provider.ts';
@@ -39,9 +40,36 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const events = new EventLog(ledger);
   const rag = RagIndex.loadOrBuild(paths.knowledgeDir, paths.indexDir);
 
-  if (!opts.provider && !opts.deepseekApiKey) {
-    ledger.close();
-    throw new Error('未绑定 DeepSeek API Key：请先在 Web 页面完成绑定（服务端持久化，只需一次）。');
+  let provider: LlmProvider;
+  let models: { flash: string; pro: string };
+  if (opts.provider) {
+    provider = opts.provider;
+    models = {
+      flash: process.env.BOLE_FLASH_MODEL ?? config.models.flash,
+      pro: process.env.BOLE_PRO_MODEL ?? config.models.pro,
+    };
+  } else {
+    const store = new ProviderStore(paths.dataDir);
+    const active = await store.getActive();
+    if (!active) {
+      ledger.close();
+      throw new Error('尚未配置模型提供商：请先在 Web「设置与模型」中添加并选择提供商。');
+    }
+    const apiKey = opts.deepseekApiKey?.trim() || active.apiKey;
+    if (!apiKey) {
+      ledger.close();
+      throw new Error(`模型提供商「${active.name}」未绑定 API Key：请在设置中填写。`);
+    }
+    provider = new DeepSeekProvider({
+      apiKey,
+      baseUrl: active.baseUrl,
+      apiStyle: active.api === 'openai' ? 'openai' : 'deepseek',
+      name: active.name,
+    });
+    models = {
+      flash: process.env.BOLE_FLASH_MODEL ?? active.flashModel,
+      pro: process.env.BOLE_PRO_MODEL ?? active.proModel,
+    };
   }
 
   let job: JobRow;
@@ -65,14 +93,10 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const runDir = path.join(paths.runsDir, runId);
   await ensureDir(runDir);
 
-  const provider = opts.provider ?? new DeepSeekProvider({ apiKey: opts.deepseekApiKey });
   const llm = new LlmRouter({
     provider,
     pricing: config.pricing,
-    models: {
-      flash: process.env.BOLE_FLASH_MODEL ?? config.models.flash,
-      pro: process.env.BOLE_PRO_MODEL ?? config.models.pro,
-    },
+    models,
     ledger,
     jobId: job.id,
     cacheAlignment: opts.cacheAlignment ?? true,
@@ -101,7 +125,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     cacheAlignment: opts.cacheAlignment ?? true,
     registryFingerprint: registry.fingerprint,
     registryVersion: registry.version,
-    models: { flash: config.models.flash, pro: config.models.pro },
+    models: { flash: models.flash, pro: models.pro },
     startedTs: new Date().toISOString(),
   });
 

@@ -6,6 +6,8 @@ data/ocr/
 data/keyring.json
 data/keyring.key
 data/keyring.json.tmp
+data/providers.json
+data/providers.json.tmp
 data/ledger.db
 data/ledger.db-journal
 data/ledger.db-wal

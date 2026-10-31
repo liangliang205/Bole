@@ -34,7 +34,7 @@ async function upload(dir: string, name: string, content: string): Promise<Uploa
 test('未配置 DeepSeek Key 时 bootstrap 立即失败（不静默回退 mock）', async () => {
   const env = await setupTempEnv();
   try {
-    await assert.rejects(() => bootstrap({ requirements: '招 Java 后端工程师' }), /未绑定 DeepSeek API Key/);
+    await assert.rejects(() => bootstrap({ requirements: '招 Java 后端工程师' }), /模型提供商|API Key/);
   } finally {
     await env.restore();
   }
