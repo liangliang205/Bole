@@ -1,6 +1,7 @@
 import { chunk, flowBatches, mapSettled } from '../core/pipeline.ts';
 import { CapacityPool, withSlot, admissionOptions } from '../core/pool.ts';
-import type { PoolStats, Jd, Scorecard, InterviewPlan, EvalResult } from '../types.ts';
+import { combineStopReasons } from '../core/state.ts';
+import type { PoolStats, Jd, Scorecard, InterviewPlan, EvalResult, StopReason } from '../types.ts';
 import type { RatingThresholds } from '../tools/scorecard.ts';
 import type { AgentDeps } from './deps.ts';
 import { runProfiler } from './profiler.ts';
@@ -87,7 +88,10 @@ async function recoverIncomplete(deps: AgentDeps): Promise<void> {
   for (const kind of ['parse', 'eval', 'review'] as const) {
     for (const task of deps.ledger.listTasks(kind, { jobId: deps.jobId })) {
       if (task.status === 'running' || task.status === 'staged') {
-        deps.ledger.updateTask(kind, task.id, { status: 'aborted', stop_reason: 'aborted' });
+        deps.ledger.updateTask(kind, task.id, {
+          status: 'aborted',
+          stop_reason: combineStopReasons((task.stop_reason as StopReason | null) ?? null, 'aborted'),
+        });
         deps.events.emit(deps.jobId, 'coordinator', 'recovery.task_aborted', {
           kind,
           taskId: task.id,
@@ -350,10 +354,6 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   });
   const finalStatus = /确认输出/.test(confirmation.answer) ? 'final' : 'draft';
   const jobStatus = finalStatus === 'final' ? 'completed' : 'draft';
-  deps.ledger.setJobStatus(deps.jobId, jobStatus);
-  if (finalStatus === 'final') {
-    for (const resume of verifiedResumes) deps.ledger.setResumeStatus(resume.id, 'reported');
-  }
 
   const reportData = await buildReport(deps, analysis, {
     pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats()],
@@ -363,6 +363,11 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     status: finalStatus,
   });
   const reports = await writeReports(reportData, deps.runDir);
+  // 报告成功落盘后才把 job/简历推进到终态，避免"状态完成但报告缺失"
+  deps.ledger.setJobStatus(deps.jobId, jobStatus);
+  if (finalStatus === 'final') {
+    for (const resume of verifiedResumes) deps.ledger.setResumeStatus(resume.id, 'reported');
+  }
   deps.events.emit(deps.jobId, 'coordinator', 'report.generated', {
     status: finalStatus,
     top: reportData.top.map((c) => `${c.label}:${c.totalScore}`),

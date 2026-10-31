@@ -103,6 +103,7 @@ task: pending → running
 ## 8. 证据链与核查
 
 - `evidence` 表以 `(resume_id, field, char_start, char_end)` 唯一，重复插入被忽略。
+- **偏移基准**：字符区间以归一化文本（`resumes.norm_path`）为基准；原始附件另存于 `resumes.raw_path`，归一化只做换行/空白整理，不改变正文语义。报告与 `bole audit` 显示的区间都可直接用归一化文本复核。
 - 解析阶段挂字段级 span；评估阶段挂维度级 span；核查阶段给每条结论一个 `supported / unsupported / missing_evidence` 裁决，并整体标记证据 `verified`。
 - 监军与相马官严格分离：不同 preset、不同 prompt、不同调用；监军拥有否决权，但**不能修改评估**，只能打回。
 - 双重机制防"橡皮图章"：

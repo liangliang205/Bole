@@ -132,6 +132,8 @@ export function renderMarkdown(data: ReportData): string {
 
   lines.push('## 2. 推荐候选人（含证据链与面试建议）');
   lines.push('');
+  lines.push('> 证据的字符区间以归一化简历文本为基准（`runs/<runId>/resumes/norm/`）；原始附件保留在 `runs/<runId>/resumes/raw/`，可直接复核引用。');
+  lines.push('');
   lines.push(topMarkdown(data) || '_无_');
   lines.push('');
 
@@ -358,7 +360,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:24px}
 </style></head><body>
 <header><h1>BoLe 招聘筛选报告 · ${escapeHtml(data.job.title)}</h1>
 <p>${statusLabel(data.run.status)}｜运行 ${escapeHtml(data.run.runId)}｜${escapeHtml(data.run.generatedTs)}</p>
-<p>平台只提供建议，不做最终用人决定；每条结论均附简历原文证据与字符位置。</p></header>
+<p>平台只提供建议，不做最终用人决定；每条结论均附简历原文证据与字符位置（区间基于归一化文本）。</p></header>
 <main>
 <section class="grid">
 <div class="stat"><b>${data.top.length}</b>推荐候选人</div>
