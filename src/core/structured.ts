@@ -84,6 +84,7 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
                 phase: opts.phase ?? opts.kind,
                 resumeId: opts.resumeId,
                 label: opts.label,
+                attempt: attempts,
                 delta,
               })
           : undefined,

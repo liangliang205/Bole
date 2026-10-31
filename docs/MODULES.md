@@ -78,6 +78,7 @@
 ## 12. Web（`src/web/*`）
 
 - `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、agents/doctor/reset、Key 绑定。
+- `stream-preview.ts`：用 `partial-json` 解析未完成 JSON，按 agent/phase 转成字段、维度分数、核查裁决；token 事件带 `preview`，前端不展示原始 JSON。
 - `data.ts`：jobs/snapshot/candidates/events/cost 查询。
 - `ops.ts`：agents/doctor/reset。
 - `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具、首次绑定弹窗。

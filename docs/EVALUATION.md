@@ -14,6 +14,7 @@
 | 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
 | 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
 | 模型接口 | schema 违规同轮重试；流式回调；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/integration/pipeline.test.ts` |
+| 流式预览 | 未完成 JSON → 人类可读字段/分数/裁决；不泄露原始 JSON | `tests/unit/stream-preview.test.ts` |
 | 报告 | 对话内汇总；内部 JSON；不生成 HTML、不提供下载 | `tests/integration/pipeline.test.ts` |
 | 真实上传端到端 | 4 份 TXT（含重复）+ 伪造结论触发验真环 + 报告 | `tests/integration/pipeline.test.ts` |
 | 失败隔离 | `.doc` 旧格式失败但批次继续；全失败给出可读错误 | `tests/integration/errors.test.ts` |
@@ -25,7 +26,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前结果：**52 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**56 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -66,7 +67,7 @@ pnpm web
 ## 6. 验收清单（提交前）
 
 - [ ] `pnpm typecheck` 通过
-- [ ] `pnpm test:all` 52/52 通过
+- [ ] `pnpm test:all` 56/56 通过
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件

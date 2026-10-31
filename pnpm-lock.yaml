@@ -20,6 +20,9 @@ importers:
       node-fetch:
         specifier: ^2.7.0
         version: 2.7.0
+      partial-json:
+        specifier: ^0.1.7
+        version: 0.1.7
       pdfjs-dist:
         specifier: 4.10.38
         version: 4.10.38
@@ -140,6 +143,9 @@ packages:
     resolution: {integrity: sha512-8AV/sCtuzUeTo8gQK5qDZzARrulB3egtLzFgteqB2tcT4Mw7B8Kt7JcDHmltjz6FOAHsvTevk70gZEbhM4ZS9Q==}
     hasBin: true
 
+  partial-json@0.1.7:
+    resolution: {integrity: sha512-Njv/59hHaokb/hRUjce3Hdv12wd60MtM9Z5Olmn+nehe0QDAsRtRbJPvJ0Z91TusF0SuZRIvnM+S4l6EIP8leA==}
+
   pdfjs-dist@4.10.38:
     resolution: {integrity: sha512-/Y3fcFrXEAsMjJXeL9J8+ZG9U01LbuWaYypvDW2ycW1jL269L3js3DVBjDJ0Up9Np1uqDXsDrRihHANhZOlwdQ==}
     engines: {node: '>=20'}
@@ -240,6 +246,8 @@ snapshots:
       whatwg-url: 5.0.0
 
   opencollective-postinstall@2.0.3: {}
+
+  partial-json@0.1.7: {}
 
   pdfjs-dist@4.10.38:
     optionalDependencies:

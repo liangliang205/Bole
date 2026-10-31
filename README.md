@@ -17,7 +17,7 @@ pnpm web                   # http://127.0.0.1:8787
 ### 页面里能做什么
 
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
-- 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（DeepSeek streaming）。
+- 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
 - HITL：JD 有歧义、预算/地点冲突、证据不足、核查打回时，在对话内选择推荐项或输入自定义回答。
 - 证据审计：每位候选人的解析字段、评估维度、逐条核查 verdict、原文 span 与区间。
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
@@ -136,7 +136,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **52 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **56 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析、流式 JSON 人类可读预览、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 

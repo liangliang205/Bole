@@ -164,12 +164,16 @@ b, strong { color: #fff; }
 /* streaming */
 .stream-host { padding: 0 max(24px, calc((100% - 900px) / 2)); }
 .stream-card { border: 1px solid #3b4f86; border-radius: 12px; background: #0b1a30; padding: 10px 12px; margin-bottom: 8px; }
-.stream-head { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 4px; }
+.stream-head { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 6px; }
 .stream-agent { color: #9fc0ff; font-weight: 600; }
 .stream-phase { color: var(--dim); font-size: 11px; }
-.stream-text { font-family: var(--mono); font-size: 11px; color: #a9bddc; white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow: auto; }
-.stream-caret { color: var(--accent-2); animation: blink 1s step-end infinite; }
-@keyframes blink { 50% { opacity: 0; } }
+.stream-preview { display: grid; gap: 4px; max-height: 190px; overflow: auto; }
+.stream-line { display: grid; grid-template-columns: 92px 1fr; gap: 10px; font-size: 12px; line-height: 1.55; }
+.sl-label { color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-value { color: #c9d8f5; word-break: break-word; }
+.sl-value.ok { color: #b5f3dd; }
+.sl-value.warn { color: #ffe1a8; }
+.sl-value.muted { color: var(--muted); }
 
 /* HITL */
 .hitl-host { padding: 0 max(24px, calc((100% - 900px) / 2)); }

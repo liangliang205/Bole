@@ -83,7 +83,8 @@
 ## 7. 流式与前端
 
 - `DeepSeekProvider` 使用 `stream:true` + SSE 解析；`onToken` 回调把 delta 传给 `AgentDeps.stream`。
-- `runStructuredTask`/`callAgentJson` 在调用时注入 `onToken`，携带 agent/taskId/phase/resumeId/label。
+- `runStructuredTask`/`callAgentJson` 在调用时注入 `onToken`，携带 agent/taskId/phase/resumeId/label/attempt。
+- Web 服务用 `StreamPreviewer`（`partial-json`）把未完成 JSON 转成人类可读的字段、维度分数、核查裁决，token 事件同时携带 `preview`；前端只展示 preview，不展示原始 JSON。重试时按 `attempt` 重置缓冲，避免坏 JSON 与重试拼接。
 - Web 服务维护每个 job 的 listener 集合；`GET /api/run/:id/stream` 推送：
   - `status`：运行状态、待回答 HITL、报告可用性；
   - `snapshot`：台账计数；

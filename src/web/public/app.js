@@ -241,8 +241,8 @@
     source.addEventListener('token', (event) => {
       const chunk = JSON.parse(event.data);
       const key = `${chunk.taskId || chunk.agent}:${chunk.phase || ''}:${chunk.resumeId || ''}`;
-      const current = state.streams.get(key) || { agent: chunk.agent, label: chunk.label, phase: chunk.phase, text: '', updated: Date.now() };
-      current.text = `${current.text}${chunk.delta}`.slice(-6000);
+      const current = state.streams.get(key) || { agent: chunk.agent, label: chunk.label, phase: chunk.phase, preview: null, updated: Date.now() };
+      if (chunk.preview) current.preview = chunk.preview;
       current.updated = Date.now();
       state.streams.set(key, current);
       renderStreams();
@@ -447,10 +447,15 @@
       if (now - value.updated > 90_000) state.streams.delete(key);
     }
     const streams = [...state.streams.entries()].slice(-3);
-    host.innerHTML = streams.map(([, value]) => `<div class="stream-card">
-      <div class="stream-head"><span class="stream-agent">${esc(agentName(value.agent))}</span><span class="stream-phase">${esc(value.label || '')} · ${esc(value.phase || '')}</span><span class="spacer"></span><span class="muted">生成中</span></div>
-      <div class="stream-text">${esc(value.text.slice(-2400))}<span class="stream-caret">▊</span></div>
-    </div>`).join('');
+    host.innerHTML = streams.map(([, value]) => {
+      const preview = value.preview;
+      const title = preview?.title || [agentName(value.agent), value.label].filter(Boolean).join(' · ');
+      const lines = Array.isArray(preview?.lines) ? preview.lines : [];
+      return `<div class="stream-card">
+        <div class="stream-head"><span class="stream-agent">${esc(title)}</span><span class="spacer"></span><span class="muted">生成中</span></div>
+        <div class="stream-preview">${lines.length ? lines.map((line) => `<div class="stream-line"><span class="sl-label">${esc(line.label)}</span><span class="sl-value ${esc(line.tone || '')}">${esc(line.value)}</span></div>`).join('') : '<div class="stream-line"><span class="sl-label">状态</span><span class="sl-value muted">正在生成…</span></div>'}</div>
+      </div>`;
+    }).join('');
   }
 
   // ---------------------------------------------------------------- HITL / composer

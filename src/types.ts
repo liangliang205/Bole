@@ -333,6 +333,17 @@ export interface RunMeta {
 }
 
 /** 前端/SSE 的 token 流：一次结构化调用对应一个 taskId。 */
+export interface StreamPreviewLine {
+  label: string;
+  value: string;
+  tone?: 'ok' | 'warn' | 'muted';
+}
+
+export interface StreamPreview {
+  title: string;
+  lines: StreamPreviewLine[];
+}
+
 export interface StreamToken {
   type: 'token';
   agent: string;
@@ -340,7 +351,10 @@ export interface StreamToken {
   phase?: string;
   resumeId?: string;
   label?: string;
+  attempt?: number;
   delta: string;
+  /** 人类可读的增量预览；由服务端 partial-json 解析生成，前端不展示原始 JSON。 */
+  preview?: StreamPreview;
 }
 
 export type StreamSink = (chunk: StreamToken) => void;

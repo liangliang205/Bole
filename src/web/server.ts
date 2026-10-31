@@ -7,6 +7,7 @@ import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts'
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
 import { KeyStore, verifyDeepSeekKey } from '../settings/key-store.ts';
+import { StreamPreviewer } from './stream-preview.ts';
 import type { StreamToken, UploadedFile } from '../types.ts';
 import {
   findReportDir,
@@ -157,6 +158,25 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       reportAvailable: Boolean(reportDir),
       reportDir,
       summary: runtime?.summary ?? null,
+    };
+  };
+
+  const makeStreamSink = (listeners: Set<(chunk: StreamToken) => void>) => {
+    const previewer = new StreamPreviewer();
+    return (chunk: StreamToken): void => {
+      let payload = chunk;
+      try {
+        payload = { ...chunk, preview: previewer.push(chunk) };
+      } catch {
+        // 解析失败时退回原始 chunk，前端会显示"正在生成"
+      }
+      for (const listener of listeners) {
+        try {
+          listener(payload);
+        } catch {
+          // 前端断开不应中断流水线
+        }
+      }
     };
   };
 
@@ -341,15 +361,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         const boot = await bootstrap({
           requirements,
           deepseekApiKey,
-          stream: (chunk) => {
-            for (const listener of listeners) {
-              try {
-                listener(chunk);
-              } catch {
-                // 前端断开不应中断流水线
-              }
-            }
-          },
+          stream: makeStreamSink(listeners),
         });
         const hitl = new WebHitlResponder();
         const run = launch({ boot, hitl, listeners, requirements, uploadFiles: files, resumeOnly: false });
@@ -522,15 +534,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           jobId,
           seed: job.seed ?? 'resume',
           deepseekApiKey,
-          stream: (chunk) => {
-            for (const listener of listeners) {
-              try {
-                listener(chunk);
-              } catch {
-                // 前端断开不应中断流水线
-              }
-            }
-          },
+          stream: makeStreamSink(listeners),
         });
         const hitl = new WebHitlResponder();
         const run = launch({ boot, hitl, listeners, requirements: job.requirements, resumeOnly: true });

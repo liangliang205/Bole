@@ -54,6 +54,7 @@ export async function callAgentJson<T>(
                 phase: opts.phase ?? opts.schemaName,
                 resumeId: opts.resumeId,
                 label: opts.label,
+                attempt,
                 delta,
               })
           : undefined,
