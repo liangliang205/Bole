@@ -254,7 +254,7 @@
     });
     source.addEventListener('token', (event) => {
       const chunk = JSON.parse(event.data);
-      const key = `${chunk.taskId || chunk.agent}:${chunk.phase || ''}`;
+      const key = `${chunk.taskId || chunk.agent}:${chunk.phase || ''}:${chunk.resumeId || ''}`;
       const current = state.streams.get(key) || { agent: chunk.agent, label: chunk.label, phase: chunk.phase, text: '', updated: Date.now() };
       current.text = `${current.text}${chunk.delta}`.slice(-6000);
       current.updated = Date.now();

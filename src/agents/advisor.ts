@@ -71,6 +71,7 @@ export async function runAdvisor(deps: AgentDeps, input: AdvisorInput): Promise<
     stream: deps.stream,
     phase: 'interview_plan',
     label: resume.label,
+    resumeId: resume.id,
     meta: { resumeId: resume.id, label: resume.label, evaluation, jd },
   });
 

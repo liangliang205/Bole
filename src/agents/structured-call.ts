@@ -13,6 +13,7 @@ export interface JsonCallOptions<T> {
   meta?: Record<string, unknown>;
   phase?: string;
   label?: string;
+  resumeId?: string;
   stream?: StreamSink;
   maxAttempts?: number;
   postValidate?: (value: T) => string[];
@@ -51,6 +52,7 @@ export async function callAgentJson<T>(
                 agent: opts.agent,
                 taskId: opts.schemaName,
                 phase: opts.phase ?? opts.schemaName,
+                resumeId: opts.resumeId,
                 label: opts.label,
                 delta,
               })
