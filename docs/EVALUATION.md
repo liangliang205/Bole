@@ -13,7 +13,8 @@
 | 状态 | 任务两阶段提交、committed 单调守卫、简历生命周期回退 | `tests/unit/state.test.ts`、`tests/unit/structured.test.ts` |
 | 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
 | 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
-| 模型接口 | schema 违规同轮重试；流式回调；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/integration/pipeline.test.ts` |
+| 模型接口 | schema 违规同轮重试；流式回调；flash/pro 模型名与 thinking 参数；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
+| 成本 | 官方 peak/off-peak 价格与缓存命中 | `tests/unit/cost.test.ts` |
 | 流式预览 | 未完成 JSON → 人类可读字段/分数/裁决；不泄露原始 JSON | `tests/unit/stream-preview.test.ts` |
 | 报告 | 对话内汇总；内部 JSON；不生成 HTML、不提供下载 | `tests/integration/pipeline.test.ts` |
 | 真实上传端到端 | 4 份 TXT（含重复）+ 伪造结论触发验真环 + 报告 | `tests/integration/pipeline.test.ts` |
@@ -26,7 +27,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前结果：**56 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**60 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析与档位参数；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -47,7 +48,7 @@ pnpm web
 
 ## 4. 成本与缓存
 
-- 成本按 `config/pipeline.json` 中 `deepseek-chat` / `deepseek-reasoner` 单价与 token 用量计算，单位为 USD。
+- 成本按 `config/pipeline.json` 中 `deepseek-flash` / `deepseek-v4-pro` 的官方 price 与 token 用量计算，单位为 USD；按 UTC 工作日峰谷时段自动应用 off-peak 五折。
 - 缓存命中优先读取 DeepSeek `prompt_cache_hit_tokens`；流式响应若未返回 usage，按 `estimateTokens` 估算并在成本页标注。
 - 档位策略：解析/初筛 flash，画像/深评/核查/建议 pro；`eval_tasks.tier/phase` 可在候选人详情与审计中核对。
 - 当前没有"降本 X%"的可靠结论：mock 已移除，必须用真实 Key 在相同简历集上对比全 pro 与分档两种配置。
@@ -67,7 +68,7 @@ pnpm web
 ## 6. 验收清单（提交前）
 
 - [ ] `pnpm typecheck` 通过
-- [ ] `pnpm test:all` 56/56 通过
+- [ ] `pnpm test:all` 60/60 通过
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件

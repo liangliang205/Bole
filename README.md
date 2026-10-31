@@ -47,8 +47,8 @@ HR 上传文件 + 招聘需求
 ```
 
 档位在 `config/agents.json` 与 `config/pipeline.json` 中配置：
-- `flash` → `deepseek-chat`：解析、初筛等扇出型工作；
-- `pro` → `deepseek-reasoner`：画像、深评、核查、建议等判断/否决型工作；
+- `flash` → `deepseek-flash`：解析、初筛等扇出型工作（显式关闭 thinking，优先吞吐）；
+- `pro` → `deepseek-v4-pro`：画像、深评、核查、建议等判断/否决型工作（thinking enabled + reasoning_effort=high）；
 - 自环重评复用原评估 Worker 与档位，`eval_tasks` 记录 `tier/phase=screen|deep|revise`。
 
 ## CLI（自动化/验收）
@@ -95,8 +95,8 @@ pnpm bole web --port 8787     # 对话式控制台
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
-| `BOLE_FLASH_MODEL` | `deepseek-chat` | flash 模型名 |
-| `BOLE_PRO_MODEL` | `deepseek-reasoner` | pro 模型名 |
+| `BOLE_FLASH_MODEL` | `deepseek-flash` | flash 模型名 |
+| `BOLE_PRO_MODEL` | `deepseek-v4-pro` | pro 模型名 |
 | `BOLE_DATA_DIR` | `data` | 台账/上传/索引根目录 |
 | `BOLE_DB` | `data/ledger.db` | SQLite 台账 |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
@@ -136,7 +136,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **56 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析、流式 JSON 人类可读预览、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **60 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、峰谷成本、流式 JSON 人类可读预览、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 

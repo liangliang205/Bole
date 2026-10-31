@@ -31,12 +31,22 @@
     "no": 45
   },
   "pricing": {
-    "deepseek-chat": { "inputPerMTok": 0.27, "outputPerMTok": 1.1, "cacheHitPerMTok": 0.07 },
-    "deepseek-reasoner": { "inputPerMTok": 0.55, "outputPerMTok": 2.19, "cacheHitPerMTok": 0.14 }
+    "deepseek-flash": {
+      "inputPerMTok": 0.3,
+      "outputPerMTok": 1.2,
+      "cacheHitPerMTok": 0.006,
+      "offPeakMultiplier": 0.5
+    },
+    "deepseek-v4-pro": {
+      "inputPerMTok": 1.32,
+      "outputPerMTok": 3.96,
+      "cacheHitPerMTok": 0.044,
+      "offPeakMultiplier": 0.5
+    }
   },
   "models": {
-    "flash": "deepseek-chat",
-    "pro": "deepseek-reasoner"
+    "flash": "deepseek-flash",
+    "pro": "deepseek-v4-pro"
   },
   "fairness": {
     "protectedCategories": ["gender", "age", "marital", "childbearing", "hometown", "ethnicity", "zodiac", "disability", "religion"]

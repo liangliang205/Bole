@@ -44,7 +44,7 @@ pnpm web
 - 底部「实时生成」卡片：DeepSeek 的 token 流（原始 JSON token）。
 
 讲解点：
-- 扇出型工作（解析/初筛）走 `deepseek-chat`，判断/否决（画像/深评/核查）走 `deepseek-reasoner`；
+- 扇出型工作（解析/初筛）走 `deepseek-flash`（关闭 thinking），判断/否决（画像/深评/核查）走 `deepseek-v4-pro`（thinking high）；
 - token 流与最终提交分离：schema 校验通过后才两阶段提交；前端看到的是"生成中"，不是最终结论；
 - 工具轨迹可展开，里面每次调用都有 agent、时间、结果摘要。
 

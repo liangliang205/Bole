@@ -32,7 +32,7 @@ export interface PipelineConfig {
   structuredOutput: { maxAttempts: number };
   topN: number;
   conclusionScale: Record<string, number>;
-  pricing: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitPerMTok: number }>;
+  pricing: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitPerMTok: number; offPeakMultiplier?: number }>;
   models: Record<ModelTier, string>;
   fairness: { protectedCategories: string[] };
 }

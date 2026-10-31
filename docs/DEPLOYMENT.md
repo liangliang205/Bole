@@ -69,7 +69,7 @@ docker compose up
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
-| `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-chat` / `deepseek-reasoner` | 档位模型 |
+| `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-flash` / `deepseek-v4-pro` | 档位模型 |
 | `BOLE_DATA_DIR` | `data` | 数据根 |
 | `BOLE_DB` | `data/ledger.db` | SQLite |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
@@ -85,7 +85,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 56 个测试
+pnpm test:all          # 60 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 

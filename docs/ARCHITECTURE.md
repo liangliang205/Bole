@@ -4,7 +4,7 @@
 
 1. **证据优先**：任何字段、评分、核查结论都必须带原文引用；字符区间由平台计算，模型只负责"引用哪句话"。
 2. **模型做判断，代码做纪律**：模型给语义判断；权重、总分、状态迁移、去重、PII、报告由代码确定性执行。
-3. **扇出用 flash，判断/否决用 pro**：解析/初筛是高并发扇出，走 `deepseek-chat`；JD 画像、深评、核查、建议走 `deepseek-reasoner`。
+3. **扇出用 flash，判断/否决用 pro**：解析/初筛是高并发扇出，走 `deepseek-flash`（关闭 thinking）；JD 画像、深评、核查、建议走 `deepseek-v4-pro`（thinking enabled + reasoning_effort=high）。
 4. **无全局 barrier**：按批流动，批内解析→初筛→深评→核查；批间最多 2 批在途，单批慢不阻塞其他批。
 5. **两阶段提交 + 单调守卫**：`running → staged → committed`；committed 后拒绝再写，避免重试覆盖已确认结论。
 6. **真实数据**：只接收用户上传的真实简历；没有 mock 模型、演示 JD、故障注入或预置黄金集。

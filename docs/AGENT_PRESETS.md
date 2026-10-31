@@ -66,8 +66,8 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 
 | 档位 | 默认模型 | 用途 | 覆盖方式 |
 |---|---|---|---|
-| flash | `deepseek-chat` | 接入、解析、评估初筛 | `BOLE_FLASH_MODEL` 或 `config/pipeline.json#models.flash` |
-| pro | `deepseek-reasoner` | 画像、评估深评、核查、汇总/面试 | `BOLE_PRO_MODEL` 或配置 |
+| flash | `deepseek-flash` | 接入、解析、评估初筛（thinking disabled） | `BOLE_FLASH_MODEL` 或 `config/pipeline.json#models.flash` |
+| pro | `deepseek-v4-pro` | 画像、评估深评、核查、汇总/面试（thinking high） | `BOLE_PRO_MODEL` 或配置 |
 
 深评比例与档位在 `config/pipeline.json`：
 

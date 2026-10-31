@@ -40,7 +40,7 @@ function usageOf(usage: DeepSeekUsage | undefined, req: ChatRequest, text: strin
   return { promptTokens, completionTokens, cachedPromptTokens };
 }
 
-/** DeepSeek（OpenAI 兼容）提供方：flash=deepseek-chat，pro=deepseek-reasoner；支持 token 级 SSE 流。 */
+/** DeepSeek（OpenAI 兼容）提供方：flash=deepseek-flash，pro=deepseek-v4-pro；支持 token 级 SSE 流。 */
 export class DeepSeekProvider implements LlmProvider {
   readonly name = 'deepseek';
   readonly kind = 'deepseek' as const;
@@ -52,7 +52,7 @@ export class DeepSeekProvider implements LlmProvider {
   constructor(opts: DeepSeekOptions = {}) {
     this.apiKey = opts.apiKey ?? '';
     this.baseUrl = (opts.baseUrl ?? process.env.BOLE_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
-    this.timeoutMs = opts.timeoutMs ?? 180_000;
+    this.timeoutMs = opts.timeoutMs ?? 300_000;
     this.maxRetries = opts.maxRetries ?? 3;
   }
 
@@ -60,7 +60,8 @@ export class DeepSeekProvider implements LlmProvider {
     if (!this.apiKey) {
       throw new Error('未绑定 DeepSeek API Key：请先在 Web 页面完成绑定。');
     }
-    const model = req.model ?? (req.tier === 'pro' ? 'deepseek-reasoner' : 'deepseek-chat');
+    const model = req.model ?? (req.tier === 'pro' ? 'deepseek-v4-pro' : 'deepseek-flash');
+    const thinking = req.tier === 'pro';
     const started = performance.now();
     let lastError: Error | null = null;
     let emitted = false;
@@ -80,11 +81,11 @@ export class DeepSeekProvider implements LlmProvider {
               { role: 'system', content: req.system },
               { role: 'user', content: req.user },
             ],
-            temperature: req.temperature ?? 0,
+            // V4 默认开启 thinking；flash 显式关闭以保持扇出速度，pro 开启 high。
+            thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
+            ...(thinking ? { reasoning_effort: 'high' } : { temperature: req.temperature ?? 0 }),
             max_tokens: req.maxTokens ?? 4096,
-            // deepseek-reasoner 不一定支持 response_format，交给提示词 + 路由层 JSON 提取
-            response_format:
-              req.schemaName && !/reasoner/i.test(model) ? { type: 'json_object' } : undefined,
+            response_format: req.schemaName ? { type: 'json_object' } : undefined,
             stream: streaming,
             stream_options: streaming ? { include_usage: true } : undefined,
           }),
