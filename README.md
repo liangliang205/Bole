@@ -9,11 +9,10 @@
 ```bash
 pnpm install
 pnpm ocr:download          # 下载 Tesseract 中英文语言数据（图片简历需要）
-export DEEPSEEK_API_KEY=sk-...
 pnpm web                   # http://127.0.0.1:8787
 ```
 
-也可以不设环境变量，直接在页面「设置与模型」里填写 Key；Key 只保存在浏览器 localStorage，并随发起运行的请求发送，不写入台账。
+首次进入 Web 会自动检查绑定状态；未绑定会弹出窗口要求输入 DeepSeek API Key。绑定后服务端加密持久化到 `data/keyring.json`（主密钥 `data/keyring.key`），刷新或重启都不需要再次输入；可在「设置与模型」中清除绑定。Key 不通过环境变量读取，也不写入台账/报告。
 
 ### 页面里能做什么
 
@@ -73,7 +72,9 @@ pnpm bole web --port 8787     # 对话式控制台
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/config` | 模型档位、OCR 状态、是否已有环境变量 Key |
+| GET | `/api/config` | 模型档位、OCR 状态、Key 绑定状态（masked） |
+| POST | `/api/key` | `{apiKey}` 绑定并持久化；返回绑定状态 |
+| DELETE | `/api/key` | 清除 Key 绑定 |
 | GET | `/api/jobs` | 会话列表与计数 |
 | POST | `/api/uploads` | `{filename, contentBase64}` → `uploadId` |
 | POST | `/api/run` | `{requirements, uploadIds[], deepseekApiKey?}` 创建并启动 |
@@ -94,7 +95,6 @@ pnpm bole web --port 8787     # 对话式控制台
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | 空 | 真实模型必填（也可在页面填写） |
 | `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
 | `BOLE_FLASH_MODEL` | `deepseek-chat` | flash 模型名 |
 | `BOLE_PRO_MODEL` | `deepseek-reasoner` | pro 模型名 |
@@ -120,6 +120,7 @@ bole/
 │  ├─ ingest/            # 上传、PDF.js/DOCX/HTML 归一化、Tesseract OCR、去重、PII
 │  ├─ llm/               # DeepSeek 提供方（含 streaming）、路由、成本
 │  ├─ report/            # Markdown / JSON / cost / convergence 渲染
+│  ├─ settings/          # DeepSeek Key 加密持久化（服务端）
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
 ├─ config/               # agents.json、pipeline.json、prompts/
@@ -136,7 +137,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **49 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **52 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 
@@ -144,5 +145,5 @@ pnpm test:all
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
 - 仅支持单附件简历，不做 IMAP/Exchange 邮箱接入。
 - 不生成 HTML 报告；Markdown/JSON 是唯一报告格式。
-- 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。
+- 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。DeepSeek Key 由服务端加密持久化在 `data/keyring.*`，请保护数据目录权限。
 - 真实模型质量取决于 DeepSeek；温度=0 仍可能有 ±1 分波动。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。

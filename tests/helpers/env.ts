@@ -7,7 +7,7 @@ export interface TempEnv {
   restore: () => Promise<void>;
 }
 
-const KEYS = ['BOLE_DATA_DIR', 'BOLE_DB', 'BOLE_RUNS', 'BOLE_UPLOADS', 'BOLE_OCR_DIR', 'DEEPSEEK_API_KEY'];
+const KEYS = ['BOLE_DATA_DIR', 'BOLE_DB', 'BOLE_RUNS', 'BOLE_UPLOADS', 'BOLE_OCR_DIR'];
 
 /** 为每个集成测试隔离台账/运行/上传目录；不依赖任何预置黄金集。 */
 export async function setupTempEnv(): Promise<TempEnv> {
@@ -18,7 +18,6 @@ export async function setupTempEnv(): Promise<TempEnv> {
   process.env.BOLE_RUNS = path.join(dir, 'runs');
   process.env.BOLE_UPLOADS = path.join(dir, 'uploads');
   process.env.BOLE_OCR_DIR = path.join(dir, 'ocr');
-  delete process.env.DEEPSEEK_API_KEY;
   return {
     dir,
     restore: async () => {

@@ -25,13 +25,13 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前结果：**49 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**52 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
 pnpm web
+# 首次进入按弹窗绑定 DeepSeek Key（服务端持久化，只需一次）
 ```
 
 建议用 10–30 份真实简历（至少包含 1 份 PDF、1 份 DOCX、1 张图片）走一遍，检查：
@@ -66,7 +66,7 @@ pnpm web
 ## 6. 验收清单（提交前）
 
 - [ ] `pnpm typecheck` 通过
-- [ ] `pnpm test:all` 49/49 通过
+- [ ] `pnpm test:all` 52/52 通过
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件

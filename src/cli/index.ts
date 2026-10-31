@@ -14,6 +14,7 @@ import { formatDuration } from '../util/time.ts';
 import { listFilesRecursive } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
 import { detectContentType, isSupportedUpload } from '../ingest/uploads.ts';
+import { KeyStore } from '../settings/key-store.ts';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string, text: string): string => (useColor ? `\u001b[${code}m${text}\u001b[0m` : text);
@@ -91,7 +92,7 @@ function printHelp(): void {
   --jd <text>         招聘需求（run 必填）
   --files <dir>       简历目录（PDF/DOCX/图片/TXT/HTML；run 必填）
   --yes               非交互模式（HITL 自动采纳推荐项）
-  --key <sk-...>      DeepSeek API Key（也可用 DEEPSEEK_API_KEY）
+  --key <sk-...>      临时使用 Key（不持久化；Web 绑定会持久化）
   --host <ip>         web 监听地址（默认 127.0.0.1）
   --port <n>          web 端口（默认 8787）
   --job <id>          resume/status/audit/report/cost 指定任务
@@ -230,7 +231,10 @@ async function cmdRun(args: Args): Promise<void> {
     }));
   if (files.length === 0) throw new Error(`目录中没有可处理的简历：${filesDir}`);
 
-  const boot = await bootstrap({ requirements, deepseekApiKey: str(args, 'key') });
+  const store = new KeyStore(resolvePaths().dataDir);
+  const apiKey = str(args, 'key') ?? (await store.get());
+  if (!apiKey) throw new Error('尚未绑定 DeepSeek API Key：请先运行 pnpm web 在页面绑定，或用 --key 传入。');
+  const boot = await bootstrap({ requirements, deepseekApiKey: apiKey });
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, boot.job.id);
   try {
@@ -252,7 +256,10 @@ async function cmdResume(args: Args): Promise<void> {
   const job = reader.getJob(jobId);
   reader.close();
   if (!job) throw new Error(`任务不存在: ${jobId}`);
-  const boot = await bootstrap({ requirements: job.requirements, jobId, seed: job.seed ?? 'resume', deepseekApiKey: str(args, 'key') });
+  const store = new KeyStore(paths.dataDir);
+  const apiKey = str(args, 'key') ?? (await store.get());
+  if (!apiKey) throw new Error('尚未绑定 DeepSeek API Key：请先运行 pnpm web 在页面绑定，或用 --key 传入。');
+  const boot = await bootstrap({ requirements: job.requirements, jobId, seed: job.seed ?? 'resume', deepseekApiKey: apiKey });
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, jobId);
   try {
@@ -442,13 +449,14 @@ function cmdAgents(): void {
   }
 }
 
-function cmdDoctor(): void {
+async function cmdDoctor(): Promise<void> {
   const paths = resolvePaths();
   const config = loadPipelineConfig();
   process.stdout.write(`${bold('环境自检')}\n`);
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   process.stdout.write(`Node ${process.versions.node}：${nodeMajor >= 22 ? green('OK') : red('需要 >=22.6')}\n`);
-  process.stdout.write(`DeepSeek API Key：${process.env.DEEPSEEK_API_KEY ? green('已配置') : red('未配置（必需）')}\n`);
+  const keyStatus = await new KeyStore(paths.dataDir).status();
+  process.stdout.write(`DeepSeek Key：${keyStatus.bound ? green(`已绑定 ${keyStatus.masked ?? ''}`) : red('未绑定（进入 Web 会提示绑定）')}\n`);
   process.stdout.write(`简历来源：上传目录 ${relativeToCwd(paths.uploadsDir)}\n`);
   const knowledge = existsSync(paths.knowledgeDir) ? readdirSync(paths.knowledgeDir).filter((name) => name.endsWith('.md')).length : 0;
   process.stdout.write(`RAG 知识库：${knowledge} 个文档\n`);
@@ -522,7 +530,7 @@ async function main(): Promise<void> {
       cmdAgents();
       break;
     case 'doctor':
-      cmdDoctor();
+      await cmdDoctor();
       break;
     case 'reset':
       await cmdReset(args);

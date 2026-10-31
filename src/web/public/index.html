@@ -107,18 +107,19 @@
 
 <div id="settings-modal" class="modal hidden">
   <div class="modal-card">
-    <div class="modal-head"><h2>设置与模型</h2><button class="btn ghost" id="settings-close">✕</button></div>
+    <div class="modal-head"><h2 id="settings-title">DeepSeek 绑定</h2><button class="btn ghost" id="settings-close">✕</button></div>
     <div class="form-grid">
-      <label class="span-2">DeepSeek API Key（保存在浏览器 localStorage，仅随请求发送）
+      <label class="span-2">DeepSeek API Key（加密保存在本机服务端，只需绑定一次）
         <input id="set-key" class="input" type="password" placeholder="sk-...">
       </label>
+      <div class="span-2 settings-status" id="settings-status"></div>
       <div class="span-2 muted" id="settings-hint"></div>
     </div>
     <div class="modal-actions">
-      <button class="btn ghost" id="settings-clear">清除 Key</button>
+      <button class="btn ghost" id="settings-clear">清除绑定</button>
       <span class="spacer"></span>
       <button class="btn ghost" id="settings-cancel">取消</button>
-      <button class="btn primary" id="settings-save">保存</button>
+      <button class="btn primary" id="settings-save">绑定并保存</button>
     </div>
   </div>
 </div>

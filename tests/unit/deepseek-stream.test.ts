@@ -49,6 +49,6 @@ test('DeepSeek 无 Key 时明确报错', async () => {
   const provider = new DeepSeekProvider({ apiKey: '' });
   await assert.rejects(
     () => provider.chat({ agent: 'x', tier: 'flash', system: 's', user: 'u' }),
-    /DEEPSEEK_API_KEY/,
+    /未绑定 DeepSeek API Key/,
   );
 });

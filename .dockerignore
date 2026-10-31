@@ -8,6 +8,9 @@ data/ledger.db-journal
 data/index
 data/uploads
 data/ocr
+data/keyring.json
+data/keyring.key
+data/keyring.json.tmp
 *.log
 tests
 docs

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { resolvePaths, loadPipelineConfig } from '../config.ts';
 import { AgentRegistry } from '../core/registry.ts';
 import { Ledger } from '../core/ledger.ts';
+import { KeyStore } from '../settings/key-store.ts';
 
 export interface DoctorCheck {
   name: string;
@@ -41,7 +42,7 @@ export function getAgents(): {
   };
 }
 
-export function getDoctor(): { checks: DoctorCheck[] } {
+export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
   const paths = resolvePaths();
   const checks: DoctorCheck[] = [];
   const nodeMajor = Number(process.versions.node.split('.')[0]);
@@ -72,10 +73,11 @@ export function getDoctor(): { checks: DoctorCheck[] } {
   } catch (error) {
     checks.push({ name: '台账', status: 'fail', detail: error instanceof Error ? error.message : String(error) });
   }
+  const keyStatus = await new KeyStore(paths.dataDir).status();
   checks.push({
     name: 'DeepSeek Key',
-    status: process.env.DEEPSEEK_API_KEY ? 'ok' : 'warn',
-    detail: process.env.DEEPSEEK_API_KEY ? '环境变量已配置' : '未配置（页面可填写）',
+    status: keyStatus.bound ? 'ok' : 'warn',
+    detail: keyStatus.bound ? `已绑定 ${keyStatus.masked ?? ''}（服务端持久化）` : '未绑定；进入 Web 会提示绑定',
   });
   const ocrReady = Boolean(process.env.BOLE_OCR_URL)
     || ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) => existsSync(path.join(paths.ocrDir, name)));

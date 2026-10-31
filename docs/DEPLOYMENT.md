@@ -15,12 +15,11 @@
 ```bash
 pnpm install
 pnpm ocr:download
-export DEEPSEEK_API_KEY=sk-...
 pnpm web
 # http://127.0.0.1:8787
 ```
 
-也可以不设环境变量，在页面「设置与模型」中填写 Key；Key 保存在浏览器 localStorage，运行请求时随 body 发送给本机服务，不写入台账。
+首次进入页面会自动检查 Key 绑定；未绑定时弹出绑定窗口。绑定后写入服务端 `data/keyring.json`（AES-256-GCM，主密钥 `data/keyring.key`），刷新/重启无需重复输入。可在「设置与模型」中清除绑定。CLI 不会读取环境变量；需要时用 `--key` 临时传入，或先通过 Web 绑定。
 
 ### OCR 说明
 
@@ -56,10 +55,11 @@ pnpm bole reset --yes
 
 ```bash
 docker compose build
-DEEPSEEK_API_KEY=sk-... docker compose up
-# http://127.0.0.1:8787
+docker compose up
+# 打开 http://127.0.0.1:8787，首次进入按提示绑定 Key
 ```
 
+- Key 绑定持久化在 `bole-data` 卷的 `keyring.*`；容器重启后仍然有效。不要通过环境变量注入 Key。
 - 镜像构建时执行 `pnpm ocr:download`，OCR 数据位于 `/app/ocr`（`BOLE_OCR_DIR`），不会被 `/app/data` 数据卷覆盖。
 - `bole-data` 卷保存台账与上传缓存；`bole-runs` 保存运行产物。
 - 容器内监听 `0.0.0.0:8787`；生产环境请在前面加反向代理与鉴权，当前应用本身没有登录。
@@ -68,7 +68,6 @@ DEEPSEEK_API_KEY=sk-... docker compose up
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | 空 | 必填（或页面填写） |
 | `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
 | `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-chat` / `deepseek-reasoner` | 档位模型 |
 | `BOLE_DATA_DIR` | `data` | 数据根 |
@@ -86,7 +85,7 @@ DEEPSEEK_API_KEY=sk-... docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 49 个测试
+pnpm test:all          # 52 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 
@@ -100,7 +99,9 @@ curl -s http://127.0.0.1:8787/api/doctor
 
 | 现象 | 处理 |
 |---|---|
-| `未配置 DEEPSEEK_API_KEY` | 页面设置 Key，或设置环境变量；不会回退 mock |
+| 页面提示未绑定 Key | 在弹窗中输入并绑定；绑定会持久化到 `data/keyring.*` |
+| 绑定失败 401/403 | Key 无效或已撤销；重新生成后绑定 |
+| 绑定提示网络 warning | Key 已保存，但 `/models` 校验未成功；检查网络/`BOLE_BASE_URL` 后运行 |
 | 图片简历失败，提示缺 OCR 语言数据 | `pnpm ocr:download`，或配置 `BOLE_OCR_URL` |
 | PDF 失败，提示无文本层 | 扫描件导出为 PNG/JPG 后上传 |
 | SSE 不显示 token | 检查反向代理是否缓冲 SSE（关闭 `proxy_buffering`）；本机直连正常 |

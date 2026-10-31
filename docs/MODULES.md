@@ -77,12 +77,19 @@
 
 ## 12. Web（`src/web/*`）
 
-- `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、agents/doctor/reset。
+- `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、agents/doctor/reset、Key 绑定。
 - `data.ts`：jobs/snapshot/candidates/events/cost 查询。
 - `ops.ts`：agents/doctor/reset。
-- `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具。
+- `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具、首次绑定弹窗。
 
-## 13. 测试（`tests/*`）
+## 13. Key 持久化（`src/settings/key-store.ts`）
+
+- `POST /api/key` 绑定：校验 Key（`/models`，仅 401/403 判无效），AES-256-GCM 加密后写 `data/keyring.json`；主密钥 `data/keyring.key`。
+- `GET /api/config` 返回 `{bound, masked, updatedAt}`，前端进入时若未绑定则强制弹窗。
+- `DELETE /api/key` 清除绑定；Key 不从环境变量读取，也不回传浏览器。
+- CLI 可用 `--key` 临时传入；否则读取服务端已绑定 Key。
+
+## 14. 测试（`tests/*`）
 
 - `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag。
 - `integration/`：真实上传端到端、失败隔离、检查点续跑、无 Key 失败。

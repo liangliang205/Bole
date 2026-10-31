@@ -3,6 +3,9 @@ node_modules/
 runs/
 data/uploads/
 data/ocr/
+data/keyring.json
+data/keyring.key
+data/keyring.json.tmp
 data/ledger.db
 data/ledger.db-journal
 data/ledger.db-wal

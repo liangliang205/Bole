@@ -50,7 +50,7 @@ export class DeepSeekProvider implements LlmProvider {
   private maxRetries: number;
 
   constructor(opts: DeepSeekOptions = {}) {
-    this.apiKey = opts.apiKey ?? process.env.DEEPSEEK_API_KEY ?? '';
+    this.apiKey = opts.apiKey ?? '';
     this.baseUrl = (opts.baseUrl ?? process.env.BOLE_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
     this.timeoutMs = opts.timeoutMs ?? 180_000;
     this.maxRetries = opts.maxRetries ?? 3;
@@ -58,7 +58,7 @@ export class DeepSeekProvider implements LlmProvider {
 
   async chat(req: ChatRequest): Promise<ProviderResult> {
     if (!this.apiKey) {
-      throw new Error('未配置 DEEPSEEK_API_KEY：请在设置中填写 Key 或设置环境变量。');
+      throw new Error('未绑定 DeepSeek API Key：请先在 Web 页面完成绑定。');
     }
     const model = req.model ?? (req.tier === 'pro' ? 'deepseek-reasoner' : 'deepseek-chat');
     const started = performance.now();

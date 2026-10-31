@@ -6,6 +6,7 @@ import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
+import { KeyStore, verifyDeepSeekKey } from '../settings/key-store.ts';
 import type { StreamToken, UploadedFile } from '../types.ts';
 import {
   findReportDir,
@@ -137,6 +138,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const port = options.port ?? 8787;
   const runs = new Map<string, ActiveRun>();
   const paths = resolvePaths();
+  const keys = new KeyStore(paths.dataDir);
 
   const buildRunInfo = (jobId: string) => {
     const snapshot = getSnapshot(jobId);
@@ -234,12 +236,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
 
       if (method === 'GET' && pathname === '/api/config') {
         const config = loadPipelineConfig();
+        const key = await keys.status();
         const ocrLocal = ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) =>
           existsSync(path.join(paths.ocrDir, name)),
         );
         json(res, 200, {
           ok: true,
-          hasDeepseekKey: Boolean(process.env.DEEPSEEK_API_KEY),
+          key,
           ocr: { external: Boolean(process.env.BOLE_OCR_URL), local: ocrLocal },
           pipeline: {
             batchSize: config.batchSize,
@@ -250,6 +253,31 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             models: config.models,
           },
         });
+        return;
+      }
+
+      if (method === 'POST' && pathname === '/api/key') {
+        const body = await readJsonBody(req);
+        const apiKey = String(body.apiKey ?? '').trim();
+        if (!apiKey) {
+          json(res, 400, { ok: false, error: 'API Key 不能为空' });
+          return;
+        }
+        let verification: { verified: boolean; warning?: string };
+        try {
+          verification = await verifyDeepSeekKey(apiKey, process.env.BOLE_BASE_URL ?? 'https://api.deepseek.com');
+        } catch (error) {
+          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+        const status = await keys.save(apiKey);
+        json(res, 200, { ok: true, key: status, verified: verification.verified, warning: verification.warning });
+        return;
+      }
+
+      if (method === 'DELETE' && pathname === '/api/key') {
+        await keys.clear();
+        json(res, 200, { ok: true, key: await keys.status() });
         return;
       }
 
@@ -304,15 +332,15 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 400, { ok: false, error: '上传文件不存在或已过期，请重新上传' });
           return;
         }
-        const deepseekApiKey = String(body.deepseekApiKey ?? '').trim();
-        if (!deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
-          json(res, 400, { ok: false, error: '未配置 DeepSeek API Key：请在设置中填写。' });
+        const deepseekApiKey = await keys.get();
+        if (!deepseekApiKey) {
+          json(res, 400, { ok: false, error: '尚未绑定 DeepSeek API Key：请先在设置中完成绑定。' });
           return;
         }
         const listeners = new Set<(chunk: StreamToken) => void>();
         const boot = await bootstrap({
           requirements,
-          deepseekApiKey: deepseekApiKey || undefined,
+          deepseekApiKey,
           stream: (chunk) => {
             for (const listener of listeners) {
               try {
@@ -496,10 +524,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 409, { ok: false, error: '该任务正在运行，不能重复启动' });
           return;
         }
-        const body = await readJsonBody(req);
-        const deepseekApiKey = String(body.deepseekApiKey ?? '').trim();
-        if (!deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
-          json(res, 400, { ok: false, error: '未配置 DeepSeek API Key' });
+        const deepseekApiKey = await keys.get();
+        if (!deepseekApiKey) {
+          json(res, 400, { ok: false, error: '尚未绑定 DeepSeek API Key：请先在设置中完成绑定。' });
           return;
         }
         const listeners = new Set<(chunk: StreamToken) => void>();
@@ -507,7 +534,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           requirements: job.requirements,
           jobId,
           seed: job.seed ?? 'resume',
-          deepseekApiKey: deepseekApiKey || undefined,
+          deepseekApiKey,
           stream: (chunk) => {
             for (const listener of listeners) {
               try {
@@ -529,7 +556,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
       if (method === 'GET' && pathname === '/api/doctor') {
-        json(res, 200, { ok: true, ...getDoctor() });
+        json(res, 200, { ok: true, ...(await getDoctor()) });
         return;
       }
       if (method === 'POST' && pathname === '/api/reset') {

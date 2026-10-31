@@ -39,9 +39,9 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const events = new EventLog(ledger);
   const rag = RagIndex.loadOrBuild(paths.knowledgeDir, paths.indexDir);
 
-  if (!opts.provider && !opts.deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
+  if (!opts.provider && !opts.deepseekApiKey) {
     ledger.close();
-    throw new Error('未配置 DEEPSEEK_API_KEY：请先在设置中填写 DeepSeek API Key，或设置环境变量。');
+    throw new Error('未绑定 DeepSeek API Key：请先在 Web 页面完成绑定（服务端持久化，只需一次）。');
   }
 
   let job: JobRow;

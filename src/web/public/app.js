@@ -3,7 +3,6 @@
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-  const KEY_KEY = 'bole.deepseekApiKey';
   const AGENT_NAMES = {
     coordinator: '伯乐', profiler: '画像师', fetcher: '探马', parser: '录事',
     assessor: '相马官', auditor: '监军', advisor: '谋士',
@@ -18,9 +17,9 @@
   const state = {
     jobId: '', jobs: [], run: null, snapshot: null, report: null, config: null,
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
-    key: localStorage.getItem(KEY_KEY) || '', attachments: [], uploadSeq: 0,
+    attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
-    candidates: [], candidatesLoaded: false, cost: null, sending: false,
+    candidates: [], candidatesLoaded: false, cost: null, sending: false, settingsForced: false,
   };
 
   function esc(value) {
@@ -569,9 +568,9 @@
     if (requirements.length < 5) { showHint('请填写至少 5 个字符的招聘需求', true); return; }
     const uploaded = state.attachments.filter((file) => file.status === 'uploaded');
     if (uploaded.length === 0) { showHint('请先上传至少一份简历', true); return; }
-    if (!state.key && !state.config?.hasDeepseekKey) {
-      showHint('请先在设置中填写 DeepSeek API Key', true);
-      openSettings();
+    if (!state.config?.key?.bound) {
+      showHint('请先绑定 DeepSeek API Key（服务端持久化，只需一次）', true);
+      openSettings(true);
       return;
     }
     const button = $('#new-start');
@@ -580,7 +579,7 @@
     try {
       const data = await api('/api/run', {
         method: 'POST',
-        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId), deepseekApiKey: state.key }),
+        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId) }),
       });
       state.attachments = [];
       renderAttachments();
@@ -604,9 +603,9 @@
 
   async function resumeCurrent() {
     if (!state.jobId || state.run?.status === 'running') return;
-    if (!state.key && !state.config?.hasDeepseekKey) { toast('请先配置 DeepSeek API Key', 'error'); openSettings(); return; }
+    if (!state.config?.key?.bound) { toast('请先绑定 DeepSeek API Key', 'error'); openSettings(true); return; }
     try {
-      await api(`/api/run/${encodeURIComponent(state.jobId)}/resume`, { method: 'POST', body: JSON.stringify({ deepseekApiKey: state.key }) });
+      await api(`/api/run/${encodeURIComponent(state.jobId)}/resume`, { method: 'POST', body: JSON.stringify({}) });
       state.events = [];
       state.seen.clear();
       state.lastSeq = 0;
@@ -780,9 +779,16 @@
   // ---------------------------------------------------------------- settings / tools
 
   function updateEnvLine() {
-    const keyState = state.key ? '浏览器 Key 已保存' : state.config?.hasDeepseekKey ? '环境变量 Key 已配置' : '未配置 Key';
+    const key = state.config?.key;
+    const keyState = key?.bound ? `Key 已绑定 ${key.masked || ''}` : 'Key 未绑定';
     const ocr = state.config?.ocr?.external ? '外部 OCR' : state.config?.ocr?.local ? '本地 OCR 就绪' : 'OCR 未就绪';
     $('#env-line').textContent = `DeepSeek · ${keyState} · ${ocr}`;
+  }
+
+  function setSettingsStatus(text, tone = '') {
+    const el = $('#settings-status');
+    el.textContent = text;
+    el.className = `settings-status ${tone}`;
   }
 
   async function loadConfig() {
@@ -793,24 +799,70 @@
       $('#settings-hint').textContent = pipeline
         ? `流水线：batch=${pipeline.batchSize} · 池=${pipeline.pools.parse}/${pipeline.pools.assess}/${pipeline.pools.review} · 深评 ${pipeline.deepEval.percent}%→${pipeline.deepEval.tier} · OCR ${state.config.ocr.external ? '外部服务' : state.config.ocr.local ? '本地就绪' : '未下载'}`
         : '';
+      if (!state.config.key?.bound && !state.settingsForced) openSettings(true);
     } catch (error) {
       toast(`读取配置失败：${error.message}`, 'error');
     }
   }
 
-  function openSettings() {
-    $('#set-key').value = state.key;
+  function openSettings(force = false) {
+    const bound = Boolean(state.config?.key?.bound);
+    state.settingsForced = Boolean(force || !bound);
+    $('#settings-title').textContent = bound ? '设置与模型' : '绑定 DeepSeek API Key';
+    $('#set-key').value = '';
+    $('#set-key').placeholder = bound ? '输入新 Key 可覆盖当前绑定' : 'sk-...';
+    $('#settings-close').style.display = state.settingsForced ? 'none' : '';
+    $('#settings-cancel').style.display = state.settingsForced ? 'none' : '';
+    $('#settings-clear').style.display = bound ? '' : 'none';
+    $('#settings-save').textContent = bound ? '保存新 Key' : '绑定并保存';
+    setSettingsStatus(
+      bound ? `当前已绑定 ${state.config.key.masked || ''}；更换时输入新 Key 保存即可。` : '尚未绑定。绑定后加密保存在本机服务端，刷新/重启 Web 都不需要再次输入。',
+      bound ? 'ok' : 'warn',
+    );
     $('#settings-modal').classList.remove('hidden');
-    loadConfig();
+    setTimeout(() => $('#set-key')?.focus(), 30);
   }
-  function closeSettings() { $('#settings-modal').classList.add('hidden'); }
-  function saveSettings() {
-    state.key = $('#set-key').value.trim();
-    if (state.key) localStorage.setItem(KEY_KEY, state.key);
-    else localStorage.removeItem(KEY_KEY);
-    updateEnvLine();
-    closeSettings();
-    toast('设置已保存', 'ok');
+
+  function closeSettings() {
+    if (state.settingsForced) return;
+    $('#settings-modal').classList.add('hidden');
+  }
+
+  async function saveSettings() {
+    const apiKey = $('#set-key').value.trim();
+    if (!apiKey) { setSettingsStatus('请输入 DeepSeek API Key', 'error'); return; }
+    const button = $('#settings-save');
+    button.disabled = true;
+    setSettingsStatus('正在验证并保存…');
+    try {
+      const data = await api('/api/key', { method: 'POST', body: JSON.stringify({ apiKey }) });
+      state.config = { ...(state.config || {}), key: data.key };
+      updateEnvLine();
+      state.settingsForced = false;
+      $('#settings-modal').classList.add('hidden');
+      if (data.warning) toast(data.warning, 'error');
+      else toast('DeepSeek Key 已绑定并持久化', 'ok');
+      if (!state.config?.key?.bound) openSettings(true);
+    } catch (error) {
+      setSettingsStatus(`绑定失败：${error.message}`, 'error');
+      toast(`绑定失败：${error.message}`, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function clearKey() {
+    if (!window.confirm('确定清除已绑定的 DeepSeek API Key？清除后需要重新绑定才能运行。')) return;
+    try {
+      const data = await api('/api/key', { method: 'DELETE' });
+      state.config = { ...(state.config || {}), key: data.key };
+      updateEnvLine();
+      state.settingsForced = false;
+      openSettings(true);
+      toast('已清除 DeepSeek Key 绑定', 'ok');
+    } catch (error) {
+      toast(`清除失败：${error.message}`, 'error');
+    }
   }
 
   function openTools() { $('#tools-modal').classList.remove('hidden'); }
@@ -883,17 +935,11 @@
     $('#reply-input').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply(); }
     });
-    $('#open-settings').addEventListener('click', openSettings);
+    $('#open-settings').addEventListener('click', () => openSettings(false));
     $('#settings-close').addEventListener('click', closeSettings);
     $('#settings-cancel').addEventListener('click', closeSettings);
     $('#settings-save').addEventListener('click', saveSettings);
-    $('#settings-clear').addEventListener('click', () => {
-      state.key = '';
-      localStorage.removeItem(KEY_KEY);
-      $('#set-key').value = '';
-      updateEnvLine();
-      toast('已清除 Key', 'ok');
-    });
+    $('#settings-clear').addEventListener('click', clearKey);
     $('#open-tools').addEventListener('click', openTools);
     $('#tools-close').addEventListener('click', closeTools);
     $('#tool-output').parentElement.addEventListener('click', (event) => {
