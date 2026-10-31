@@ -63,7 +63,8 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     provider = new DeepSeekProvider({
       apiKey,
       baseUrl: active.baseUrl,
-      apiStyle: active.api === 'openai' ? 'openai' : 'deepseek',
+      protocol: active.api,
+      deepseekStyle: active.builtin,
       name: active.name,
     });
     models = {

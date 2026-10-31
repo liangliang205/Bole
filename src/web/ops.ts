@@ -88,7 +88,7 @@ export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
     || ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) => existsSync(path.join(paths.ocrDir, name)));
   const fallback = process.env.BOLE_OCR_FALLBACK !== 'false';
   if (ocrMode === 'deepseek' || ocrMode === 'auto') {
-    const visionReady = activeProvider?.api === 'deepseek' && Boolean(activeProvider.apiKey);
+    const visionReady = Boolean(activeProvider?.builtin && activeProvider.apiKey);
     checks.push({
       name: 'OCR',
       status: visionReady ? 'ok' : 'warn',

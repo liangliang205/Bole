@@ -77,7 +77,7 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 
 把它设为 `enabled:false` 即为"全量 flash 评估"（成本最低、质量风险最高）；把 assessor preset 改回 `pro` 且关闭深评即为"全量 pro 评估"（质量优先、成本最高）。两种极端都在配置层可切换，无需改代码。
 
-`LlmRouter` 负责：tier→model 映射、温度 0、JSON mode、错误重试、usage 记账、缓存前缀核算。模型提供商由 `ProviderStore` 管理，支持 DeepSeek 与 OpenAI 兼容网关，统一走 `DeepSeekProvider`（`apiStyle` 区分请求参数）；测试替身仅存在于 `tests/fixtures/`，不会进入 `bootstrap` 的生产分支。
+`LlmRouter` 负责：tier→model 映射、温度 0、JSON mode、错误重试、usage 记账、缓存前缀核算。模型提供商由 `ProviderStore` 管理，支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages；统一走 `DeepSeekProvider`（`protocol` 与 `deepseekStyle` 区分请求参数）；测试替身仅存在于 `tests/fixtures/`，不会进入 `bootstrap` 的生产分支。
 
 ## 6. 新增一个 Agent 的步骤
 

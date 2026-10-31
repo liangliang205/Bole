@@ -13,7 +13,7 @@
 | 状态 | 任务两阶段提交、committed 单调守卫、简历生命周期回退 | `tests/unit/state.test.ts`、`tests/unit/structured.test.ts` |
 | 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
 | 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
-| 模型接口 | schema 违规同轮重试；流式回调；flash/pro 模型名与 thinking 参数；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
+| 模型接口 | schema 违规同轮重试；流式回调；三种协议（OpenAI Chat/Responses、Anthropic Messages）；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
 | Vision OCR | 图片以 `image_url` 发送；OCR usage 计入 fetcher；本地回退可配置 | `tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
 | 成本 | 官方 peak/off-peak 价格与缓存命中 | `tests/unit/cost.test.ts` |
 | 流式预览 | 未完成 JSON → 人类可读字段/分数/裁决；不泄露原始 JSON | `tests/unit/stream-preview.test.ts` |
@@ -28,7 +28,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前结果：**65 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析、档位参数与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**67 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -69,7 +69,7 @@ pnpm web
 ## 6. 验收清单（提交前）
 
 - [ ] `pnpm typecheck` 通过
-- [ ] `pnpm test:all` 65/65 通过
+- [ ] `pnpm test:all` 67/67 通过
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件

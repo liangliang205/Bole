@@ -5,7 +5,15 @@ import path from 'node:path';
 import { newId } from '../util/ids.ts';
 import { KeyStore } from './key-store.ts';
 
-export type ProviderApi = 'deepseek' | 'openai';
+export type ProviderApi = 'openai-chat' | 'openai-responses' | 'anthropic-messages';
+
+const PROVIDER_APIS: ProviderApi[] = ['openai-chat', 'openai-responses', 'anthropic-messages'];
+
+function normalizeApi(value: unknown): ProviderApi {
+  if (value === 'openai-responses' || value === 'anthropic-messages' || value === 'openai-chat') return value;
+  // 旧版 deepseek/openai 都是 Chat Completions 兼容格式；内置 DeepSeek 由 builtin 标记走特殊参数。
+  return 'openai-chat';
+}
 
 interface EncryptedKey {
   iv: string;
@@ -64,7 +72,7 @@ const DEFAULT_PROVIDER = {
   id: 'deepseek',
   name: 'DeepSeek',
   baseUrl: 'https://api.deepseek.com',
-  api: 'deepseek' as ProviderApi,
+  api: 'openai-chat' as ProviderApi,
   flashModel: 'deepseek-flash',
   proModel: 'deepseek-v4-pro',
   builtin: true,
@@ -157,6 +165,11 @@ export class ProviderStore {
               provider.builtin = builtin;
               changed = true;
             }
+            const api = normalizeApi(provider.api);
+            if (provider.api !== api) {
+              provider.api = api;
+              changed = true;
+            }
           }
           if (!parsed.providers.some((provider) => provider.id === DEFAULT_PROVIDER.id)) {
             parsed.providers.unshift({
@@ -243,7 +256,8 @@ export class ProviderStore {
     const baseUrl = validateBaseUrl(input.baseUrl);
     const flashModel = validateModel(input.flashModel, 'Flash 模型');
     const proModel = validateModel(input.proModel, 'Pro 模型');
-    if (input.api !== 'deepseek' && input.api !== 'openai') throw new Error(`不支持的 API 类型：${input.api}`);
+    if (!PROVIDER_APIS.includes(input.api)) throw new Error(`不支持的 API 类型：${input.api}`);
+    const api = normalizeApi(input.api);
     const id = input.id?.trim() || newId('prov');
     if (!/^[a-z0-9][a-z0-9_-]{0,49}$/.test(id)) throw new Error('Provider ID 只能使用小写字母、数字、- 或 _，且以字母/数字开头');
     const index = store.providers.findIndex((provider) => provider.id === id);
@@ -264,7 +278,7 @@ export class ProviderStore {
           id,
           name,
           baseUrl,
-          api: input.api,
+          api,
           flashModel,
           proModel,
           maskedKey: newKey ? maskKey(newKey) : existing?.maskedKey ?? null,

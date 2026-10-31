@@ -142,18 +142,24 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const paths = resolvePaths();
   const providers = new ProviderStore(paths.dataDir);
 
-  const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => ({
-    id: existing?.id ?? (typeof body.id === 'string' ? body.id.trim() : undefined),
-    name: String(body.name ?? existing?.name ?? ''),
-    baseUrl: String(body.baseUrl ?? existing?.baseUrl ?? ''),
-    api: ((body.api ?? existing?.api) === 'openai' ? 'openai' : 'deepseek') as ProviderApi,
-    flashModel: String(body.flashModel ?? existing?.flashModel ?? ''),
-    proModel: String(body.proModel ?? existing?.proModel ?? ''),
-    apiKey: typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined,
-  });
+  const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => {
+    const requested = body.api ?? existing?.api;
+    const api: ProviderApi = requested === 'openai-responses' || requested === 'anthropic-messages' || requested === 'openai-chat'
+      ? requested
+      : 'openai-chat';
+    return {
+      id: existing?.id ?? (typeof body.id === 'string' ? body.id.trim() : undefined),
+      name: String(body.name ?? existing?.name ?? ''),
+      baseUrl: String(body.baseUrl ?? existing?.baseUrl ?? ''),
+      api,
+      flashModel: String(body.flashModel ?? existing?.flashModel ?? ''),
+      proModel: String(body.proModel ?? existing?.proModel ?? ''),
+      apiKey: typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined,
+    };
+  };
 
   const resolveProviderModels = async (input: ProviderInput, existing: ProviderPublic | undefined, apiKey: string | undefined): Promise<void> => {
-    if (input.api === 'deepseek') {
+    if (input.id === 'deepseek' || existing?.builtin) {
       input.flashModel ||= 'deepseek-flash';
       input.proModel ||= 'deepseek-v4-pro';
       return;
@@ -165,7 +171,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     if (input.flashModel && input.proModel) return;
     const key = input.apiKey || apiKey;
     if (!key) throw new Error('需要 API Key 才能自动发现模型');
-    const ids = await fetchModelIds(key, input.baseUrl);
+    const ids = await fetchModelIds(key, input.baseUrl, input.api);
     if (ids.length === 0) {
       throw new Error('无法从该网关的 /models 发现模型；请确认网关支持 /models，或使用内置 DeepSeek');
     }

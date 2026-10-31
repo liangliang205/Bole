@@ -61,7 +61,7 @@
 ## 4. 档位与路由
 
 - 配置：`config/agents.json` 每个 preset 的 `tier`；`config/pipeline.json` 的 `models`、`deepEval`。
-- `LlmRouter` 负责 tier→model、温度 0、token 记账、成本、缓存前缀；`DeepSeekProvider` 负责 HTTP/streaming。`ProviderStore` 管理多个 DeepSeek/OpenAI 兼容提供商，当前使用项在设置页切换。
+- `LlmRouter` 负责 tier→model、温度 0、token 记账、成本、缓存前缀；`DeepSeekProvider` 负责 HTTP/streaming（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages）。`ProviderStore` 管理多个提供商，当前使用项在设置页切换。
 - `eval_tasks` 记录 `tier`（flash/pro）与 `phase`（screen/deep/revise），报告按 `${schema}@${tier}` 聚合成本。
 - 深评短名单：批次内按初筛分排序取前 `deepEval.percent`（默认 40%），异常/边界样本可进入深评。
 

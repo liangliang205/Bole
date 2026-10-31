@@ -12,11 +12,11 @@ pnpm ocr:download          # 本地 Tesseract 回退语言数据（模型 OCR �
 pnpm web                   # http://127.0.0.1:8787
 ```
 
-首次进入 Web 会自动检查模型提供商；没有可用 Key 时会打开设置。默认带一个 DeepSeek 提供商，也可以添加任意 OpenAI 兼容网关（名称、Base URL、Key、Flash/Pro 模型名），并选择当前使用的提供商。Key 使用 AES-256-GCM 加密持久化在 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重填；不通过环境变量读取，也不写入台账/报告。
+首次进入 Web 会自动检查模型提供商；没有可用 Key 时会打开设置并定位到 DeepSeek 密钥。默认带一个 DeepSeek 内置提供商，也可以添加任意 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages 网关，并选择当前使用的提供商。Key 使用 AES-256-GCM 加密持久化在 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重填；不通过环境变量读取，也不写入台账/报告。
 
 ### 页面里能做什么
 
-- 设置：DSH 风格的「模型」页；DeepSeek 为内置提供商（不可删除），自定义模型 API 使用 OpenAI Chat Completions 协议，填写 Provider ID、显示名称、API 地址与密钥；模型从网关 `/models` 自动发现，可添加、编辑、测试、切换、删除。
+- 设置：DSH 风格的「模型」页；DeepSeek 为内置提供商（不可删除），自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；模型从网关自动发现，可添加、编辑、测试、切换、删除。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
@@ -76,7 +76,7 @@ pnpm bole web --port 8787     # 对话式控制台
 |---|---|---|
 | GET | `/api/config` | 模型提供商、当前选择、档位模型、OCR 状态 |
 | GET | `/api/providers` | 提供商列表（Key 仅 masked） |
-| POST | `/api/providers` | 添加提供商；`{id,name,baseUrl,api,apiKey}`；模型自动发现 |
+| POST | `/api/providers` | 添加提供商；`{id,name,baseUrl,api,apiKey}`；api 为 `openai-chat`/`openai-responses`/`anthropic-messages` |
 | PATCH | `/api/providers/:id` | 编辑提供商（apiKey 留空保留） |
 | DELETE | `/api/providers/:id` | 删除提供商 |
 | POST | `/api/providers/:id/activate` | 设为当前提供商 |
@@ -144,7 +144,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **65 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、Vision OCR 与本地回退、多提供商 Key 加密与迁移、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **67 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、Vision OCR 与本地回退、多提供商 Key 加密与迁移、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 

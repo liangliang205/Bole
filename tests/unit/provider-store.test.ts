@@ -20,7 +20,7 @@ test('ProviderStore：默认 DeepSeek 提供商，保存 Key 后加密且可读�
       id: 'deepseek',
       name: 'DeepSeek',
       baseUrl: 'https://api.deepseek.com',
-      api: 'deepseek',
+      api: 'openai-chat',
       flashModel: 'deepseek-flash',
       proModel: 'deepseek-v4-pro',
       apiKey: 'sk-test-1234567890abcdef',
@@ -42,7 +42,7 @@ test('ProviderStore：新增、切换、删除提供商', async () => {
     const xiaomi = await store.save({
       name: 'xiaomi',
       baseUrl: 'https://api.xiaomi.example/v1',
-      api: 'openai',
+      api: 'openai-chat',
       flashModel: 'mimo-flash',
       proModel: 'mimo-pro',
       apiKey: 'sk-xiaomi-1234567890',

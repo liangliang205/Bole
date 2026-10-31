@@ -143,16 +143,20 @@ export async function verifyDeepSeekKey(apiKey: string, baseUrl = 'https://api.d
   }
 }
 
-/** 读取 OpenAI 兼容 /models 的模型 ID，用于没有模型目录的自定义提供商自动选型。 */
-export async function fetchModelIds(apiKey: string, baseUrl: string): Promise<string[]> {
+/** 读取 OpenAI/Anthropic 兼容 /models 的模型 ID，用于没有模型目录的自定义提供商自动选型。 */
+export async function fetchModelIds(apiKey: string, baseUrl: string, protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages' = 'openai-chat'): Promise<string[]> {
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const base = baseUrl.replace(/\/$/, '');
+    const endpoint = protocol === 'anthropic-messages'
+      ? (base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`)
+      : `${base}/models`;
+    const headers: Record<string, string> = protocol === 'anthropic-messages'
+      ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+      : { Authorization: `Bearer ${apiKey}` };
+    const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(10_000) });
     if (!response.ok) return [];
-    const parsed = (await response.json()) as { data?: { id?: unknown }[] };
-    return (parsed.data ?? [])
+    const parsed = (await response.json()) as { data?: { id?: unknown }[]; models?: { id?: unknown }[] };
+    return [...(parsed.data ?? []), ...(parsed.models ?? [])]
       .map((item) => (typeof item.id === 'string' ? item.id.trim() : ''))
       .filter(Boolean);
   } catch {

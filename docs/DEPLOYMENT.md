@@ -19,7 +19,7 @@ pnpm web
 # http://127.0.0.1:8787
 ```
 
-首次进入页面会自动检查模型提供商；没有可用 Key 时打开设置。DeepSeek 是内置提供商（不可删除）；自定义模型 API 使用 OpenAI Chat Completions 协议，填写 Provider ID、显示名称、API 地址与密钥，模型从网关 `/models` 自动发现。Key 使用 AES-256-GCM 加密写入 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重复输入。CLI 不会读取环境变量；需要时用 `--key` 临时覆盖当前提供商的 Key。
+首次进入页面会自动检查模型提供商；没有可用 Key 时打开设置并定位到 DeepSeek 密钥。DeepSeek 是内置提供商（不可删除）；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥，模型从网关自动发现。Key 使用 AES-256-GCM 加密写入 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重复输入。CLI 不会读取环境变量；需要时用 `--key` 临时覆盖当前提供商的 Key。
 
 ### OCR 说明
 
@@ -31,7 +31,7 @@ pnpm web
 
 ## 3. 页面操作
 
-1. 打开「设置与模型 → 模型」：DeepSeek 内置（不可删除）；添加自定义模型 API（OpenAI 协议）并选择当前使用项。自定义提供商的模型由 `/models` 自动发现。
+1. 打开「设置与模型 → 模型」：DeepSeek 内置（不可删除，首次使用会定位到密钥）；添加自定义模型 API（三种协议）并选择当前使用项。自定义提供商的模型由网关自动发现。
 2. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / GIF / BMP / TIFF，单文件 ≤25MB）。
 3. 填写招聘需求 → 开始筛选。
 4. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
@@ -90,7 +90,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 65 个测试
+pnpm test:all          # 67 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 

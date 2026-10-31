@@ -4,6 +4,11 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const THEME_KEY = 'bole.theme';
+  const PROVIDER_PROTOCOL_LABELS = {
+    'openai-chat': 'OpenAI Chat Completions',
+    'openai-responses': 'OpenAI Responses',
+    'anthropic-messages': 'Anthropic Messages',
+  };
   const AGENT_NAMES = {
     coordinator: '伯乐', profiler: '画像师', fetcher: '探马', parser: '录事',
     assessor: '相马官', auditor: '监军', advisor: '谋士',
@@ -818,7 +823,12 @@
       state.config = await api('/api/config');
       state.providers = state.config.providers || [];
       state.activeProviderId = state.config.activeProviderId ?? null;
-      if (!state.providers.length || !state.providers.find((provider) => provider.id === state.activeProviderId)?.hasKey) {
+      const deepseek = state.providers.find((provider) => provider.builtin);
+      const anyKey = state.providers.some((provider) => provider.hasKey);
+      if (!anyKey) {
+        openSettings();
+        if (deepseek) setTimeout(() => openProviderEditor(deepseek), 30);
+      } else if (!state.providers.find((provider) => provider.id === state.activeProviderId)?.hasKey) {
         openSettings();
       }
     } catch (error) {
@@ -853,7 +863,7 @@
           ${provider.builtin ? '<span class="tag">内置</span>' : ''}
           ${!provider.hasKey ? '<span class="tag warn">未绑定 Key</span>' : ''}
         </div>
-        <div class="provider-meta">${esc(provider.id)} · ${esc(provider.api === 'deepseek' ? 'DeepSeek' : 'OpenAI Chat Completions')} · ${esc(provider.baseUrl)}</div>
+        <div class="provider-meta">${esc(provider.id)} · ${esc(provider.builtin ? 'DeepSeek' : (PROVIDER_PROTOCOL_LABELS[provider.api] || provider.api))} · ${esc(provider.baseUrl)}</div>
         <div class="provider-models"><span>Flash</span>${esc(provider.flashModel)}<span>Pro</span>${esc(provider.proModel)}</div>
         <div class="provider-key">${provider.maskedKey ? `Key ${esc(provider.maskedKey)}` : '未绑定 API Key'}</div>
       </div>
@@ -895,7 +905,7 @@
     $('#provider-id').value = provider?.id ?? '';
     $('#provider-id').disabled = Boolean(provider);
     $('#provider-name').value = provider?.name ?? '';
-    $('#provider-api').value = provider?.api ?? 'openai';
+    $('#provider-api').value = provider?.api ?? 'openai-chat';
     $('#provider-base').value = provider?.baseUrl ?? '';
     $('#provider-key').value = '';
     $('#provider-key').placeholder = provider?.hasKey ? '留空使用已保存凭据' : '输入 API 密钥';
@@ -1072,8 +1082,13 @@
     $('#provider-api').addEventListener('change', () => {
       const api = $('#provider-api').value;
       const base = $('#provider-base').value;
-      if (!base || base === 'https://api.deepseek.com' || base === 'https://api.openai.com/v1') {
-        $('#provider-base').value = api === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.openai.com/v1';
+      const defaults = {
+        'openai-chat': 'https://api.openai.com/v1',
+        'openai-responses': 'https://api.openai.com/v1',
+        'anthropic-messages': 'https://api.anthropic.com',
+      };
+      if (!base || base === 'https://api.openai.com/v1' || base === 'https://api.anthropic.com') {
+        $('#provider-base').value = defaults[api] ?? '';
       }
     });
     $('#open-tools').addEventListener('click', openTools);
