@@ -153,7 +153,7 @@ task: pending → running
 
 ## 10. 可观测性与审计
 
-- Web UI（`pnpm web`，默认 `127.0.0.1:8787`）只做一件事：把台账/事件/HITL 包装成可交互页面；它不维护第二份状态，也不绕过编排层。单用户、无认证，禁止直接暴露公网。
+- Web UI（`pnpm web`，默认 `127.0.0.1:8787`）把任务列表、发起运行、实时事件、HITL、候选人审计、合规/成本、续跑与维护工具包装成可交互页面；它不维护第二份状态，也不绕过编排层。单用户、无认证，禁止直接暴露公网。
 - `events` 表 append-only（数据库触发器禁止 UPDATE/DELETE），字段：`seq/ts/job_id/actor/type/payload_json`。CLI `status`、Web UI 与 `audit` 都只读事件与台账重建视图。
 - 任务台账记录 `worker_id/attempt/result_path/stop_reason/committed_ts`，可回答"谁做的、试了几次、产物在哪、为什么停"。
 - `decisions` 表记录每次 HITL：问题、选项、回答、操作者（区分 `HR(console)` 与 `HR(auto-demo)`）、时间。

@@ -48,6 +48,7 @@ pnpm bole web --host 127.0.0.1 --port 8787   # 等价
 ```
 
 - 页面可发起 run、实时查看事件流、回答 HITL、查看多视图报告（总览/候选人/合规/成本/HITL）。
+- 任务切换、候选人审计（解析 span / 评估档位 / 核查逐条 verdict / 证据表）、续跑、报告、工具箱（Agent 注册表、自检、seed、bench、清空台账）都在页面完成，不需要再开终端。
 - 模型可选 mock 或 deepseek；DeepSeek Key 可用 `DEEPSEEK_API_KEY`，也可在页面输入（保存在浏览器 localStorage，仅随请求发送）。
 - **安全边界**：单用户、无登录/权限、默认只监听 loopback；不要直接暴露公网。多租户/鉴权在 P1。
 
