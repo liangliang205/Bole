@@ -85,3 +85,17 @@ export async function ocrImage(buffer: Buffer, filename = 'resume.png'): Promise
   queue = run.catch(() => {});
   return run;
 }
+
+/** 结束本地 Tesseract worker，释放子进程/定时器；CLI 与每批 OCR 完成后必须调用。 */
+export async function closeOcr(): Promise<void> {
+  await queue.catch(() => {});
+  const current = workerPromise;
+  workerPromise = null;
+  if (!current) return;
+  try {
+    const worker = await current;
+    await worker.terminate();
+  } catch {
+    // worker 未成功创建或已退出
+  }
+}
