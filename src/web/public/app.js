@@ -26,7 +26,7 @@
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
-    providers: [], activeProviderId: null, editingProvider: null,
+    providers: [], activeProviderId: null, editingProvider: null, editorModels: [],
   };
 
   function esc(value) {
@@ -902,6 +902,7 @@
     $('#provider-builtin-name').textContent = provider?.name ?? 'DeepSeek';
     $('#provider-builtin-id').textContent = provider?.id ?? 'deepseek';
     $('#provider-custom-fields').classList.toggle('hidden', builtin);
+    $('#provider-model-section').classList.toggle('hidden', builtin);
     $('#provider-id').value = provider?.id ?? '';
     $('#provider-id').disabled = Boolean(provider);
     $('#provider-name').value = provider?.name ?? '';
@@ -910,11 +911,123 @@
     $('#provider-key').value = '';
     $('#provider-key').placeholder = provider?.hasKey ? '留空使用已保存凭据' : '输入 API 密钥';
     $('#provider-save').textContent = provider ? '保存' : '创建提供商';
+    state.editorModels = builtin
+      ? []
+      : (provider?.models?.length
+          ? provider.models.map((model) => ({ id: model.id, name: model.name || model.id }))
+          : provider
+            ? [{ id: provider.flashModel, name: provider.flashModel }, { id: provider.proModel, name: provider.proModel }]
+            : []);
+    renderModelDirectory(provider?.flashModel, provider?.proModel);
     setProviderStatus(
-      builtin ? 'DeepSeek 是内置提供商，只需维护 API 密钥。' : provider ? '修改后保存；Key 留空则保留原密钥。' : '自定义模型 API 使用 OpenAI Chat Completions 协议；模型会从网关 /models 自动发现。',
+      builtin ? 'DeepSeek 是内置提供商，只需维护 API 密钥。' : provider ? '修改后保存；Key 留空则保留原密钥。' : '自定义模型 API：选择协议、获取模型，再为 Flash/Pro 选择档位模型。',
       builtin || provider?.hasKey ? 'ok' : 'warn',
     );
     $('#provider-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function modelHeuristics(ids) {
+    const flash = ids.find((id) => /flash|mini|small|turbo|lite|haiku/i.test(id)) ?? ids[0] ?? '';
+    const pro = ids.find((id) => /pro|max|large|opus|sonnet|gpt-4|reason/i.test(id)) ?? ids[ids.length - 1] ?? flash;
+    return { flash, pro };
+  }
+
+  function refreshModelSelects(preferredFlash, preferredPro) {
+    const ids = [...new Set(state.editorModels.map((model) => model.id.trim()).filter(Boolean))];
+    const auto = modelHeuristics(ids);
+    for (const [selector, preferred, fallback] of [
+      ['#provider-flash-select', preferredFlash, auto.flash],
+      ['#provider-pro-select', preferredPro, auto.pro],
+    ]) {
+      const select = $(selector);
+      const current = select.value || preferred || fallback || '';
+      select.innerHTML = `<option value="">请选择</option>${ids.map((id) => `<option value="${esc(id)}">${esc(id)}</option>`).join('')}`;
+      select.value = ids.includes(current) ? current : (fallback && ids.includes(fallback) ? fallback : '');
+    }
+  }
+
+  function renderModelDirectory(preferredFlash, preferredPro) {
+    const list = $('#provider-model-list');
+    if (!list) return;
+    list.innerHTML = state.editorModels.length
+      ? state.editorModels.map((model, index) => `<div class="model-row">
+          <input class="input" data-model-id="${index}" value="${esc(model.id)}" placeholder="模型 ID">
+          <input class="input" data-model-name="${index}" value="${esc(model.name)}" placeholder="显示名称（可选）">
+          <button class="btn ghost danger-text" type="button" data-model-remove="${index}" title="删除">⌫</button>
+        </div>`).join('')
+      : '<div class="model-empty">还没有模型；点击「获取可用模型」或「添加模型」。</div>';
+    list.querySelectorAll('[data-model-id]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const index = Number(input.dataset.modelId);
+        const previousId = state.editorModels[index].id;
+        const syncName = !state.editorModels[index].name || state.editorModels[index].name === previousId;
+        state.editorModels[index].id = input.value;
+        if (syncName) {
+          state.editorModels[index].name = input.value;
+          const nameInput = list.querySelector(`[data-model-name="${index}"]`);
+          if (nameInput) nameInput.value = input.value;
+        }
+        refreshModelSelects($('#provider-flash-select').value, $('#provider-pro-select').value);
+      });
+    });
+    list.querySelectorAll('[data-model-name]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const index = Number(input.dataset.modelName);
+        state.editorModels[index].name = input.value;
+      });
+    });
+    list.querySelectorAll('[data-model-remove]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.editorModels.splice(Number(button.dataset.modelRemove), 1);
+        renderModelDirectory($('#provider-flash-select').value, $('#provider-pro-select').value);
+      });
+    });
+    const stateLabel = $('#provider-model-state');
+    if (stateLabel) stateLabel.textContent = state.editorModels.length ? `已自定义模型目录（${state.editorModels.length}）` : '未添加模型，保存时自动发现';
+    refreshModelSelects(preferredFlash, preferredPro);
+  }
+
+  async function fetchAvailableModels() {
+    const baseUrl = $('#provider-base').value.trim();
+    const api = $('#provider-api').value;
+    const apiKey = $('#provider-key').value.trim();
+    if (!baseUrl) { setProviderStatus('请先填写 API 地址', 'error'); return; }
+    if (!apiKey && !state.editingProvider) { setProviderStatus('获取模型需要先填写 API 密钥', 'error'); return; }
+    const button = $('#provider-model-fetch');
+    button.disabled = true;
+    setProviderStatus('正在获取模型…');
+    try {
+      const data = await api('/api/providers/discover-models', {
+        method: 'POST',
+        body: JSON.stringify({
+          baseUrl,
+          api,
+          apiKey: apiKey || undefined,
+          providerId: state.editingProvider?.id,
+        }),
+      });
+      state.editorModels = (data.models || []).map((model) => ({ id: model.id, name: model.name || model.id }));
+      renderModelDirectory();
+      if (data.warning) setProviderStatus(data.warning, 'warn');
+      else setProviderStatus(`已获取 ${state.editorModels.length} 个模型`, 'ok');
+    } catch (error) {
+      setProviderStatus(`获取模型失败：${error.message}`, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function resetEditorModels() {
+    state.editorModels = [];
+    renderModelDirectory();
+    setProviderStatus('已清空模型目录；保存时将自动从网关发现模型。', 'warn');
+  }
+
+  function addEditorModel() {
+    state.editorModels.push({ id: '', name: '' });
+    renderModelDirectory($('#provider-flash-select').value, $('#provider-pro-select').value);
+    const inputs = $('#provider-model-list').querySelectorAll('[data-model-id]');
+    inputs[inputs.length - 1]?.focus();
   }
 
   async function handleProviderAction(action, id) {
@@ -957,11 +1070,19 @@
       if (!name || !baseUrl) { setProviderStatus('请填写显示名称与 API 地址', 'error'); return; }
       if (!apiKey) { setProviderStatus('新提供商必须填写 API 密钥', 'error'); return; }
     }
+    const models = state.editorModels
+      .map((model) => ({ id: model.id.trim(), name: (model.name || model.id).trim() }))
+      .filter((model) => model.id);
+    const flashModel = $('#provider-flash-select').value.trim();
+    const proModel = $('#provider-pro-select').value.trim();
     const body = {
       ...(editing ? {} : { id: providerId }),
       name,
       baseUrl,
       api: $('#provider-api').value,
+      ...(models.length ? { models } : {}),
+      ...(flashModel ? { flashModel } : {}),
+      ...(proModel ? { proModel } : {}),
       ...(apiKey ? { apiKey } : {}),
     };
     const button = $('#provider-save');
@@ -1076,6 +1197,9 @@
       state.editingProvider = null;
     });
     $('#provider-test').addEventListener('click', testEditingProvider);
+    $('#provider-model-fetch').addEventListener('click', fetchAvailableModels);
+    $('#provider-model-reset').addEventListener('click', resetEditorModels);
+    $('#provider-model-add').addEventListener('click', addEditorModel);
     $('#provider-id').addEventListener('input', (event) => {
       event.target.value = event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     });

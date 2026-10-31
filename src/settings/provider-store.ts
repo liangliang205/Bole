@@ -21,6 +21,11 @@ interface EncryptedKey {
   ciphertext: string;
 }
 
+export interface ProviderModel {
+  id: string;
+  name: string;
+}
+
 interface ProviderRecord {
   id: string;
   name: string;
@@ -28,6 +33,7 @@ interface ProviderRecord {
   api: ProviderApi;
   flashModel: string;
   proModel: string;
+  models?: ProviderModel[];
   maskedKey: string | null;
   updatedAt: string;
   builtin?: boolean;
@@ -47,6 +53,7 @@ export interface ProviderPublic {
   api: ProviderApi;
   flashModel: string;
   proModel: string;
+  models: ProviderModel[];
   maskedKey: string | null;
   hasKey: boolean;
   updatedAt: string;
@@ -65,6 +72,7 @@ export interface ProviderInput {
   api: ProviderApi;
   flashModel: string;
   proModel: string;
+  models?: ProviderModel[];
   apiKey?: string;
 }
 
@@ -75,6 +83,10 @@ const DEFAULT_PROVIDER = {
   api: 'openai-chat' as ProviderApi,
   flashModel: 'deepseek-flash',
   proModel: 'deepseek-v4-pro',
+  models: [
+    { id: 'deepseek-flash', name: 'deepseek-flash' },
+    { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
+  ],
   builtin: true,
 };
 
@@ -170,6 +182,13 @@ export class ProviderStore {
               provider.api = api;
               changed = true;
             }
+            if (!Array.isArray(provider.models) || provider.models.length === 0) {
+              provider.models = [
+                { id: provider.flashModel, name: provider.flashModel },
+                { id: provider.proModel, name: provider.proModel },
+              ].filter((model, index, list) => model.id && list.findIndex((item) => item.id === model.id) === index);
+              changed = true;
+            }
           }
           if (!parsed.providers.some((provider) => provider.id === DEFAULT_PROVIDER.id)) {
             parsed.providers.unshift({
@@ -221,6 +240,10 @@ export class ProviderStore {
       api: provider.api,
       flashModel: provider.flashModel,
       proModel: provider.proModel,
+      models: provider.models ?? [
+        { id: provider.flashModel, name: provider.flashModel },
+        { id: provider.proModel, name: provider.proModel },
+      ],
       maskedKey: provider.maskedKey,
       hasKey: Boolean(provider.key),
       updatedAt: provider.updatedAt,
@@ -266,10 +289,19 @@ export class ProviderStore {
     const newKey = input.apiKey?.trim() ?? '';
     const encrypted = newKey ? await this.encrypt(newKey) : existing?.key ?? null;
     if (!encrypted) throw new Error('API Key 不能为空');
+    const models: ProviderModel[] = [];
+    for (const model of input.models ?? existing?.models ?? []) {
+      const idValue = model.id.trim();
+      if (!idValue || models.some((item) => item.id === idValue)) continue;
+      models.push({ id: idValue, name: (model.name || idValue).trim() });
+    }
+    if (!models.some((model) => model.id === flashModel)) models.unshift({ id: flashModel, name: flashModel });
+    if (!models.some((model) => model.id === proModel)) models.push({ id: proModel, name: proModel });
     const record: ProviderRecord = builtin
       ? {
           ...DEFAULT_PROVIDER,
           id: DEFAULT_PROVIDER.id,
+          models: DEFAULT_PROVIDER.models,
           maskedKey: newKey ? maskKey(newKey) : existing?.maskedKey ?? null,
           updatedAt: new Date().toISOString(),
           key: encrypted,
@@ -281,6 +313,7 @@ export class ProviderStore {
           api,
           flashModel,
           proModel,
+          models,
           maskedKey: newKey ? maskKey(newKey) : existing?.maskedKey ?? null,
           updatedAt: new Date().toISOString(),
           builtin: false,

@@ -86,7 +86,7 @@
 
 ## 13. 模型提供商与 Key（`src/settings/provider-store.ts`）
 
-- `ProviderStore` 管理多个提供商：名称、Base URL、协议（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages）、加密 Key、当前使用项；自定义提供商的 Flash/Pro 模型由网关自动发现。
+- `ProviderStore` 管理多个提供商：名称、Base URL、协议（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages）、模型目录、加密 Key、当前使用项；模型目录可通过网关获取或手动添加，并选择 Flash/Pro。
 - Key 使用 AES-256-GCM 加密写入 `data/providers.json`，主密钥 `data/keyring.key`；首次启动会把旧版 `keyring.json` 的单一 DeepSeek Key 迁移为默认提供商。
 - DeepSeek 是内置提供商，API/UI 均禁止删除；`/api/providers` 提供列表、添加、编辑、删除、切换、测试；Key 只返回 masked。
 - `bootstrap` 读取当前提供商创建 `DeepSeekProvider`（`protocol` 与 `deepseekStyle` 区分协议/DeepSeek 参数），并用提供商的 Flash/Pro 模型名。

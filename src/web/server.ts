@@ -154,6 +154,14 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       api,
       flashModel: String(body.flashModel ?? existing?.flashModel ?? ''),
       proModel: String(body.proModel ?? existing?.proModel ?? ''),
+      models: Array.isArray(body.models)
+        ? body.models
+            .map((item) => {
+              const model = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+              return { id: String(model.id ?? '').trim(), name: String(model.name ?? model.id ?? '').trim() };
+            })
+            .filter((model) => model.id)
+        : undefined,
       apiKey: typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined,
     };
   };
@@ -163,6 +171,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       input.flashModel ||= 'deepseek-flash';
       input.proModel ||= 'deepseek-v4-pro';
       return;
+    }
+    if (input.models?.length) {
+      const ids = input.models.map((model) => model.id);
+      input.flashModel ||= ids.find((id) => /flash|mini|small|turbo|lite|haiku/i.test(id)) ?? ids[0];
+      input.proModel ||= ids.find((id) => /pro|max|large|opus|sonnet|gpt-4|reason/i.test(id)) ?? ids[ids.length - 1] ?? ids[0];
     }
     if (existing?.flashModel && existing?.proModel) {
       input.flashModel ||= existing.flashModel;
@@ -346,6 +359,33 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         } catch (error) {
           json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
         }
+        return;
+      }
+
+      const discoverMatch = /^\/api\/providers\/discover-models$/.exec(pathname);
+      if (method === 'POST' && discoverMatch) {
+        const body = await readJsonBody(req);
+        const baseUrl = String(body.baseUrl ?? '').trim().replace(/\/$/, '');
+        if (!/^https?:\/\//i.test(baseUrl)) {
+          json(res, 400, { ok: false, error: 'API 地址必须以 http:// 或 https:// 开头' });
+          return;
+        }
+        const apiValue = String(body.api ?? 'openai-chat');
+        const api: ProviderApi = apiValue === 'openai-responses' || apiValue === 'anthropic-messages' || apiValue === 'openai-chat'
+          ? apiValue
+          : 'openai-chat';
+        const providerId = String(body.providerId ?? '').trim();
+        const apiKey = String(body.apiKey ?? '').trim() || (providerId ? await providers.getKey(providerId) : null);
+        if (!apiKey) {
+          json(res, 400, { ok: false, error: '请先填写 API 密钥，或先保存提供商' });
+          return;
+        }
+        const ids = await fetchModelIds(apiKey, baseUrl, api);
+        json(res, 200, {
+          ok: true,
+          models: ids.map((id) => ({ id, name: id })),
+          warning: ids.length === 0 ? '网关没有返回模型列表；可手动添加模型 ID' : undefined,
+        });
         return;
       }
 

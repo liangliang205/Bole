@@ -14,6 +14,7 @@ test('ProviderStore：默认 DeepSeek 提供商，保存 Key 后加密且可读�
     assert.equal(initial.providers.length, 1);
     assert.equal(initial.providers[0].id, 'deepseek');
     assert.equal(initial.providers[0].builtin, true);
+    assert.equal(initial.providers[0].models.length, 2);
     assert.equal(initial.providers[0].hasKey, false);
 
     await store.save({
@@ -45,9 +46,11 @@ test('ProviderStore：新增、切换、删除提供商', async () => {
       api: 'openai-chat',
       flashModel: 'mimo-flash',
       proModel: 'mimo-pro',
+      models: [{ id: 'mimo-flash', name: 'Mimo Flash' }, { id: 'mimo-pro', name: 'Mimo Pro' }],
       apiKey: 'sk-xiaomi-1234567890',
     });
     assert.equal(xiaomi.hasKey, true);
+    assert.equal(xiaomi.models.length, 2);
     assert.equal((await store.list()).activeId, xiaomi.id);
     await store.activate('deepseek');
     assert.equal((await store.list()).activeId, 'deepseek');

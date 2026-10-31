@@ -137,6 +137,21 @@
           <div class="form-grid">
             <label class="span-2">API 密钥<input id="provider-key" class="input" type="password" placeholder="输入 API 密钥"></label>
           </div>
+          <div id="provider-model-section" class="model-directory">
+            <div class="directory-head">
+              <span>模型目录 <span id="provider-model-state" class="muted">已自定义模型目录</span></span>
+              <div class="directory-actions">
+                <button class="link-btn" id="provider-model-reset" type="button">恢复默认模型</button>
+                <button class="link-btn" id="provider-model-fetch" type="button">获取可用模型</button>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label>Flash 模型<select id="provider-flash-select" class="input"></select></label>
+              <label>Pro 模型<select id="provider-pro-select" class="input"></select></label>
+            </div>
+            <div id="provider-model-list" class="model-list"></div>
+            <button class="btn ghost" id="provider-model-add" type="button">＋ 添加模型</button>
+          </div>
           <div class="settings-status" id="provider-status"></div>
           <div class="modal-actions">
             <button class="btn ghost" id="provider-test">测试连接</button>
