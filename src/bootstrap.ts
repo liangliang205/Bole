@@ -6,22 +6,23 @@ import { Ledger } from './core/ledger.ts';
 import { EventLog } from './core/events.ts';
 import { RagIndex } from './tools/rag.ts';
 import { LlmRouter } from './llm/router.ts';
-import { MockProvider } from './llm/mock.ts';
 import { DeepSeekProvider } from './llm/deepseek.ts';
 import { ensureDir, writeJson } from './util/fsx.ts';
-import type { FaultInjection, AgentDeps } from './agents/deps.ts';
-import type { JobRow } from './types.ts';
+import type { AgentDeps } from './agents/deps.ts';
+import type { LlmProvider } from './llm/provider.ts';
+import type { JobRow, StreamSink } from './types.ts';
 
 export interface BootstrapOptions {
   requirements: string;
   seed?: string;
-  llm?: 'mock' | 'deepseek';
   deepseekApiKey?: string;
   cacheAlignment?: boolean;
-  faults?: FaultInjection;
   jobId?: string;
   runId?: string;
-  mockLatencyMs?: number;
+  /** 测试/自定义网关注入；生产默认 DeepSeek。 */
+  provider?: LlmProvider;
+  /** SSE token 流回调。 */
+  stream?: StreamSink;
 }
 
 export interface Bootstrapped {
@@ -38,6 +39,11 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const events = new EventLog(ledger);
   const rag = RagIndex.loadOrBuild(paths.knowledgeDir, paths.indexDir);
 
+  if (!opts.provider && !opts.deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
+    ledger.close();
+    throw new Error('未配置 DEEPSEEK_API_KEY：请先在设置中填写 DeepSeek API Key，或设置环境变量。');
+  }
+
   let job: JobRow;
   if (opts.jobId) {
     const existing = ledger.getJob(opts.jobId);
@@ -50,25 +56,16 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     job = ledger.createJob({
       title: '待画像岗位',
       requirements: opts.requirements,
-      seed: opts.seed ?? 'demo-2026',
+      seed: opts.seed ?? 'live',
     });
   }
-  const seed = opts.seed ?? job.seed ?? 'demo-2026';
+  const seed = opts.seed ?? job.seed ?? 'live';
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const runId = opts.runId ?? `run_${stamp}_${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runsDir, runId);
   await ensureDir(runDir);
 
-  const providerKind = opts.llm ?? (process.env.BOLE_LLM as 'mock' | 'deepseek' | undefined) ?? 'mock';
-  const provider =
-    providerKind === 'deepseek'
-      ? new DeepSeekProvider({ apiKey: opts.deepseekApiKey })
-      : new MockProvider({
-          latencyMs: opts.mockLatencyMs ?? Number(process.env.BOLE_MOCK_LATENCY_MS ?? 0),
-          invalidSchemaOnce: opts.faults?.invalidSchemaFor,
-          faults: { fabricate: opts.faults?.fabricate, bias: opts.faults?.bias },
-        });
-
+  const provider = opts.provider ?? new DeepSeekProvider({ apiKey: opts.deepseekApiKey });
   const llm = new LlmRouter({
     provider,
     pricing: config.pricing,
@@ -93,25 +90,24 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     jobId: job.id,
     seed,
     rag,
-    faults: opts.faults,
+    stream: opts.stream,
   };
 
   await writeJson(path.join(runDir, 'run.json'), {
     runId,
     jobId: job.id,
     seed,
-    provider: providerKind,
+    provider: provider.name,
     cacheAlignment: opts.cacheAlignment ?? true,
     registryFingerprint: registry.fingerprint,
     registryVersion: registry.version,
     models: { flash: config.models.flash, pro: config.models.pro },
-    faults: opts.faults ?? {},
     startedTs: new Date().toISOString(),
   });
 
   ledger.appendEvent(job.id, 'coordinator', 'run.created', {
     runId,
-    provider: providerKind,
+    provider: provider.name,
     seed,
     registryFingerprint: registry.fingerprint,
   });

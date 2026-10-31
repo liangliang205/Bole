@@ -144,6 +144,9 @@ export class AuditorWorker {
       runDir: deps.runDir,
       ledger: deps.ledger,
       llm: deps.llm,
+      stream: deps.stream,
+      phase: 'review',
+      label: resume.label,
       meta: {
         resumeId: resume.id,
         label: resume.label,

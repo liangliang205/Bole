@@ -154,6 +154,9 @@ export class AssessorWorker {
       runDir: deps.runDir,
       ledger: deps.ledger,
       llm: deps.llm,
+      stream: deps.stream,
+      phase,
+      label: resume.label,
       meta: {
         resumeId: resume.id,
         label: resume.label,

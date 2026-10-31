@@ -1,138 +1,90 @@
-# 模块设计：设计理念 / 模型与 Token 影响 / 已知限制
+# 模块说明
 
-> 沿用 DSH 文档骨架：每个包固定三段，既讲清"为什么这么做"，也交代代价与边界。
+## 1. 编排（`src/agents/coordinator.ts`）
 
-## 1. 需求理解模块（profiler + HITL）
+- `runPipeline(deps, { requirements, hitl, uploadFiles?, resumeOnly? })`：
+  - 非续跑：要求至少一个 `uploadFiles`，调用 `runFetcher`；全部失败则抛错。
+  - 续跑：`recoverIncomplete` 从批次检查点恢复。
+  - JD 画像 → 批流动 → 短名单深评 → 核查/自环 → 建议 → 报告。
+- 批流动：`chunk` + `flowBatches`，`maxBatchesInFlight` 限制在途批；批间无全局 barrier。
+- 容量池：`CapacityPool` + `withSlot`，满时 `PoolFullError` 退避重试，不排队。
+- 报告：`buildReport` + `selectTopCandidates` + `writeReports`。
 
-**设计理念**
-- 需求理解是强耦合、低并发的工作，由单个 pro 档 Agent 完成，不扇出——多 Agent 不是万能答案。
-- 模型先做"疑点自查"再产出结构化 JD：薪资面议、团队规模、到岗时间、条件冲突、受保护属性都会被转成**可选项式反问**，而不是让 HR 重写需求。
-- 受保护属性做**双重剥离**：模型侧 prompt 红线 + 确定性 `reviewRequirements` 规则兜底。即使模型漏判，规则仍会把"限男性/30 岁以下"从评分维度中移除，并追加一条 blocking 反问。
-- 权重由平台归一化：模型给出的权重和不等于 100 时按比例归一，并记录 `scorecard.normalized` 事件。
+## 2. 接入（`src/agents/fetcher.ts` + `src/ingest/*`）
 
-**模型与 Token 影响**
-- 每次运行 1 次 pro 调用（约 3k 输入 / 0.7k 输出），是整条流水线里最便宜的一环。
-- RAG 检索只注入 Top3 片段（每段 ≤180 字符），避免把整个语料库塞进 prompt。
-- 输出 schema 固定，便于缓存系统提示词；HITL 回答不回灌给模型，只写入台账与 JD 字段，避免重复计费。
+- `runFetcher(deps, { files })`：上传文件 → `normalizeDocument` → 去重 → 落盘 → `resumes` 行。
+- `uploads.ts`：保存/读取上传，白名单扩展名，单文件 ≤25MB，ID 校验，meta.json。
+- `normalize.ts`：PDF.js、DOCX 解压、HTML 去标签、TXT/MD 解码；图片走 OCR；旧版 `.doc` 明确拒绝。
+- `ocr.ts`：本地 Tesseract（`chi_sim+eng`）串行队列；或 `BOLE_OCR_URL` 外部服务。
+- `dedup.ts`：sha256 + 身份指纹。
+- `pii.ts`：报告/日志掩码工具。
+- 事件：`fetch.started` / `resume.fetched` / `resume.duplicate` / `resume.fetch_failed` / `fetch.completed`。
 
-**已知限制**
-- 疑点识别是"规则 + 单次 LLM"的组合，可能漏掉领域特有的隐含条件（如"能接受大小周"）。
-- HITL 选项由模型生成，HR 只能选不能自由编辑选项文本；P0 不支持多轮追问。
-- 反问只在流水线开始前进行；运行中途的需求变更（SRS S3）尚未实现，仅能通过新任务重跑。
+## 3. 画像（`src/agents/profiler.ts`）
 
-## 2. 简历接入模块（fetcher + mock MCP）
+- 输入 HR 需求；`callAgentJson` 生成 `jd_analysis`（JD + Scorecard + fairness）。
+- `scanProtected` 做确定性兜底：识别受保护条件并写入 `fairness.removed/findings`。
+- 歧义/权重不合理时通过 HITL 反问；结果写 `jobs.jd_json/scorecard_json/fairness_json`。
 
-**设计理念**
-- 全流程唯一入口：其他 Agent 只能从台账拿 `resume_id` 与归一化文本路径，不允许直接读邮箱或原始附件。
-- MCP 抽象：mock server 实现 `initialize / tools/list / tools/call`（`inbox.list`、`inbox.get`），客户端支持 in-process 与 stdio 两种传输；P1 换 IMAP/Exchange 时客户端不变。
-- 去重双指纹：附件字节 sha256 + 身份指纹（姓名/手机/邮箱归一化后的哈希），命中任一即标记 `duplicate`，并把"与谁重复"写进原因。
-- 格式归一化：docx（ZIP + word/document.xml）、html（去标签/实体）、txt/md（UTF-8/GBK 探测）、pdf（文本层尽力提取）。原始文件与归一化文本都落盘，台账只存路径与哈希。
-- PII：报告/日志渲染时脱敏；台账不存明文手机号/邮箱；原文只存在于受控运行目录。
+## 4. 解析（`src/agents/parser.ts`）
 
-**模型与 Token 影响**
-- 接入阶段**不调用模型**，成本为 0；MIME/ZIP 解析是确定性的，可单测、可复现。
-- 归一化文本会作为解析 prompt 的末尾差异块，体积直接决定解析成本；因此只保留正文，不保留邮件签名与免责声明（正文仅作 fallback）。
+- 输入归一化文本；`runStructuredTask('parse')` 生成 `parse_resume`。
+- 每个字段必须有 `spans`；平台定位 quote → `charStart/charEnd`；失败进入 postValidate 重试。
+- 最小字段数校验；成功后写 `parse_tasks`，提交简历到 `parsed`。
 
-**已知限制**
-- P0 只支持本地 mock 邮箱；真实 IMAP/Exchange 的认证、增量拉取、附件大小限制在 P1。
-- 旧版 `.doc`、加密 PDF、扫描件（无文本层）无法解析，会进入失败明细；这是刻意的"如实失败"而不是静默丢弃。
-- 去重是同 job 内去重；跨岗位重复投递不会互相抑制（语义上也应允许）。
+## 5. 评估（`src/agents/assessor.ts`）
 
-## 3. 简历解析模块（parser，flash 档 × N）
+- `AssessorWorker` 有容量池与自环重评能力；`tier/phase` 由 coordinator 指定（screen/deep/revise）。
+- 评分维度必须引用原文；`scorecard` 代码按权重重算总分，不采信模型自报总分。
+- 输出 `EvaluateResult`；写 `eval_tasks`（tier/phase/loop/attempt）。
+- 深评短名单：批次内按初筛分排序，取 `deepEval.percent`（默认 40%）。
 
-**设计理念**
-- 解析是"高并发、低难度、结构化"的任务，适合 flash 档 + 低温 + 固定 schema + 容量池扇出。
-- 模型只输出 `value + quote`，字符偏移由平台 `locateQuote` 计算（支持空白差异、全半角标点、省略号拼接）。引用在原文中定位不到 → 整份结果 schema 违规 → 同轮重试。
-- 单份失败重试一次后标记 `failed`，**不阻塞整批**：批次继续流转，失败明细进报告。
-- 字段中空值必须显式留空并在 `anomalies` 说明，禁止补全；证据稀疏样本会在这里被标注，供后续核查重点检查。
+## 6. 核查（`src/agents/auditor.ts`）
 
-**模型与 Token 影响**
-- flash 档（`deepseek-chat`）成本约为 pro 档的 1/2；解析 18 份合计约 23.7k 输入 / 9.4k 输出（mock 估算口径）。
-- 共享前缀 = 系统提示词 + 工具池 + 字段清单；每份简历的差异内容只放在请求末尾，缓存命中率随批大小提升。
-- 命中缓存的前缀按缓存价计费（DeepSeek 返回 `prompt_cache_hit_tokens`），成本报表会对比"有/无前缀对齐"。
+- `review_eval`：逐条检查评估引用的 claim 是否能被原文支持；输出 `pass/re_eval/escalate_human`。
+- 不通过 → `requiredFixes`；coordinator 打回评估，`loop+1`，复用原 Worker 与档位。
+- 超过 `selfLoop.maxLoops` → `quarantine` 转人工，写 `escalation_reason`。
 
-**已知限制**
-- 字段清单是固定的 9 个通用字段；不抽取教育/项目内的细粒度结构（如每段经历的时间轴）。
-- 中文 PDF 的 CID 字体文本层可能提取失败；表格型简历会被压平成文本。
-- 时间线冲突、经历断档只做异常标记，不做自动核对。
+## 7. 建议（`src/agents/advisor.ts`）
 
-## 4. 匹配评估模块（assessor：flash 初筛 + pro 深评）
+- 对通过核查的候选人生成 `interview_plan`：问题、追问、风险。
+- 失败不阻塞主流程；报告里标注"建议缺失"。
 
-**设计理念**
-- 评估同时包含"扇出"与"判断"两种性质，不能一刀切：
-  - **全量初筛用 flash**：成本随简历数线性增长，先用便宜模型完成分维度打分与证据抽取；
-  - **短名单用 pro 深评**：批内 Top40% + 解析异常/不确定项，再评一次，重点判断"证据是否足以支持结论"。
-- 每个维度强制至少一条原文引用，无证据必须降级到 `uncertainties`；初筛与深评都受同样的 schema 与 span 门禁约束。
-- 评分卡维度由 profiler 产出并锁定；评估结果若缺少维度或出现新维度，视为 schema 违规重试，防止模型自行改评分口径。
-- 总分与结论由平台按 `Σ(weight × score / 5)` 重算，模型自报总分只作参考（偏差 >2 也不影响台账），从机制上消除"总分幻觉"。
-- 深评失败不淘汰候选人，回退初筛结果并记录 `deep_eval.failed`；Self-Loop 返工沿用被核查那次的档位，避免口径漂移。
+## 8. 结构化调用（`src/core/structured.ts`、`src/agents/structured-call.ts`）
 
-**模型与 Token 影响**
-- 一次黄金运行：初筛 18 次 flash（约 49.0k 输入 / 7.9k 输出，$0.0194）；深评 + 返工 15 次 pro（约 40.8k / 6.6k，$0.0326）。
-- 相比"全量 pro 评估"，pro 调用从 21 次降到 15 次，且简历量越大比例越低（300 份时约 40% 进入深评）；flash 承担了大部分 token。
-- mock 下总调用数从 66 增加到 78（多了一次深评 pass），成本约 $0.1136；真实模式下 pro 单价与推理 token 更高，降档收益更明显，但必须用真实 Key 做 A/B 验证。
-- 共享前缀包含完整评分卡与 JD（稳定），差异部分是解析摘要 + RAG 片段 + 返工意见；返工只发送被驳回的条目。
+- `runStructuredTask`：任务台账 + 两阶段提交 + schema 校验 + 同轮重试 + postValidate/persist。
+- `callAgentJson`：无台账任务（画像/建议）的 schema 重试。
+- 两者都支持 `stream` 回调；token 进入 SSE，最终仍以完整 JSON 校验为准。
 
-**已知限制**
-- 初筛 flash 可能漏掉"证据弱但潜力高"的候选人；当前用"Top40% + 异常样本升级"缓解，但不等于全局最优。
-- mock 模式下 flash 与 pro 返回相同规则结果，无法证明质量差异；真实质量需 DeepSeek 模式重跑黄金集。
-- 不做跨候选人相对排序校准（pairwise），只做绝对分排序；同分依赖技术栈/年限/项目的 tie-break。
-- 简历自述的量化结果（QPS、P99）无法外部核验，只能核验"原文是否存在该表述"。
+## 9. 台账与状态（`src/core/*`）
 
-## 5. 核查模块（auditor，pro 档，独立验证者）
+- `ledger.ts`：jobs/resumes/parse_tasks/eval_tasks/review_tasks/events/llm_calls/decisions/batches。
+- `state.ts`：任务状态机、简历生命周期、五类 stop reason、单调守卫。
+- `events.ts`：append-only 事件；Web/CLI 轮询或 SSE。
+- `db.ts`：SQLite schema + `migrate()`（`tier/phase` 等列）。
 
-**设计理念**
-- 相马官与监军**严格分离**：不同 preset、不同 prompt、不同调用；监军只能裁决，不能改评估。
-- 所有候选人（含仅初筛者、深评短名单）都由 pro 监军逐条核查；核查不因"初筛 flash"而降档，避免绕过验证。
-- 逐条举证：`review_eval` schema 要求 checks 数组，每条维度结论一个 verdict；pass 时不得包含 unsupported 项。
-- 双轨验证：LLM 语义复核 + 确定性机制层（span 是否存在、偏移是否正确、理由是否使用受保护属性、是否有维度缺证据）。LLM 判 pass 但机制层发现问题的，强制改为 `re_eval`。
-- 裁决三态：`pass` / `re_eval`（≤2 轮，续用原 assessor Worker，携带驳回意见）/ `escalate_human`（超限或合规高风险）。
-- 公平性哨兵：规则扫性别/年龄/婚育/地域/民族/星座/残障等；只扫描"评估理由"，简历里出现受保护属性本身不算违规，被用于判断才算。
-- 防橡皮图章：报告计算否决率；低于 5% 时输出告警；所有裁决进台账，HR 可抽查。
+## 10. 模型（`src/llm/*`）
 
-**模型与 Token 影响**
-- 每次核查约 2k 输入 / 0.37k 输出（21 次合计约 41.9k / 7.8k）。
-- 核查 prompt 只发送评估摘要（维度/理由/引用），不重发简历以外的上下文；原文只作为定位事实源。
-- 打回重评只让 assessor 重做被驳回的结论，避免整份重写带来的 token 浪费。
+- `deepseek.ts`：OpenAI 兼容请求；`stream:true` 解析 SSE；usage/cache；429/5xx 退避；无 Key 明确报错。
+- `router.ts`：tier→model、JSON schema 提示、成本、缓存前缀、调用记录。
+- `cost.ts`：按 token 与单价计算 USD。
 
-**已知限制**
-- 语义"支持度"仍由模型判断，规则只能拦截显式的强度拔高（"主导"无对应原文）与关键词重合度过低。
-- 2 轮上限是成本与收敛的折中；更复杂的争议直接转人工。
-- 公平性规则是词表 + 语义复核，不构成法律意见，也不覆盖所有隐性偏见。
+## 11. 报告（`src/report/*`）
 
-## 6. 汇总输出模块（coordinator + advisor + report）
+- `builder.ts`：装配 `ReportData`（job/run/top/escalations/others/compliance/hitl/cost/pools/convergence）。
+- `render.ts`：`report.md`、`report.json`、`cost-report.md`、`convergence.svg`；**没有 HTML**。
+- 报告中 PII 掩码；证据链带 quote 与字符区间。
 
-**设计理念**
-- 主 Agent 只消费台账中 committed 的评估与核查结果，不读原文、不臆测未返回结果。
-- 深评短名单在**批内**选出（Top40% + 解析异常/不确定项），不引入全局屏障；初筛与深评都落 `eval_tasks`，用 `tier/phase` 标记。
-- 排序规则固定：总分 → 技术栈 → 年限 → 项目复杂度；排序与 TopN 截断由代码完成，不让模型决定名次。
-- 报告三格式：Markdown 给人看，JSON 给机器/演示；HTML 为可交互多视图（总览/候选人/合规/成本/HITL），另有成本报表与收敛曲线 SVG。
-- HITL-2 门控：报告生成后必须 HR 确认才标记终稿；确认动作与回答写入 `decisions`。草稿状态会明确标注。
-- 合规报告固定包含：受保护条件剥离明细、去重明细、失败明细、转人工原因、PII 脱敏说明、核查否决率。
+## 12. Web（`src/web/*`）
 
-**模型与 Token 影响**
-- advisor 只对 Top5 调用，每次约 1.4k 输入 / 0.33k 输出（5 次合计约 13.7k / 3.3k）。
-- 汇总本身不调用模型；报告文本由模板渲染，确保数字与台账一致。
-- 若 advisor 失败，降级为确定性模板（不阻塞报告），并记录 `advisor.failed`。
+- `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、agents/doctor/reset。
+- `data.ts`：jobs/snapshot/candidates/events/cost 查询。
+- `ops.ts`：agents/doctor/reset。
+- `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具。
 
-**已知限制**
-- 只出建议，不生成 offer/拒信；不做面试安排与薪资核算（SRS 范围外）。
-- 报告中的面试问题由模型生成，未做事实核验（只引用已验证证据片段）。
-- 暂不支持导出 PDF/Word 报告；Markdown/HTML 已满足演示与审阅。
+## 13. 测试（`tests/*`）
 
-## 7. 调度与台账基础设施（core）
-
-**设计理念**
-- 状态机、结算语义、两阶段提交、容量池、深度预算全部在 `core` 中实现，Agent 只能通过这些原语改变状态。
-- 事件溯源：所有节点写 append-only 事件；CLI/Web 视图由事件 + 台账重建，不维护第二份状态。
-- 批流动原语与容量池解耦：编排层决定批大小与在途批数，池只负责"准入/拒绝"。
-- 档位与深评比例集中在 `config/pipeline.json`（`deepEval.enabled/percent/tier`），换模型档只改配置。
-- 恢复语义（P0）：未提交任务标记 `aborted`；有 committed parse 的简历回到 `parsed` 重新评估，否则回到 `queued` 重新解析；已提交产物复用。
-
-**模型与 Token 影响**
-- 基础设施不直接产生模型调用；但缓存前缀、池容量、批大小直接决定成本与延迟，参数集中在 `config/pipeline.json`，换模型档只改配置。
-
-**已知限制**
-- SQLite 单机写入，不适合多机并发调度；P1 可换 Postgres（表结构已按兼容设计）。
-- 恢复是批次粒度，不是事务级；进程崩溃时正在进行的批次会整批重做。
-- 事件 payload 超过 8KB 会被截断（保留 preview），避免单条事件膨胀。
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag。
+- `integration/`：真实上传端到端、失败隔离、检查点续跑、无 Key 失败。
+- `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
+- `fixtures/documents.ts`：生成 DOCX/PDF 测试文件。

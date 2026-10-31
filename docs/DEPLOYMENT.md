@@ -1,165 +1,109 @@
-# 部署与运行手册
+# 部署与运行
 
 ## 1. 环境要求
 
 | 项 | 要求 |
 |---|---|
-| Node.js | ≥ 22.6（本仓库在 24.11.1 验证；依赖 Node 内置 TypeScript 类型擦除与 `node:sqlite`） |
-| pnpm | ≥ 10（`corepack enable` 可获得） |
-| 操作系统 | Windows / macOS / Linux 均可；无原生编译依赖 |
-| 磁盘 | 首次安装约 30 MB（含依赖）；运行产物每轮约 1–2 MB |
-| 网络 | 离线可运行 mock 模式；真实模型模式需要访问 DeepSeek/OpenAI 兼容网关 |
+| Node.js | **≥ 22.6**（推荐 24；项目直接运行 `.ts`，依赖 type stripping） |
+| 包管理 | pnpm 10 |
+| 网络 | 真实 DeepSeek API；本地 OCR 首次需下载语言数据 |
+| 磁盘 | 运行产物 + 上传缓存；OCR 语言数据约 31MB |
+| 浏览器 | Chromium / Edge / Firefox 现代版本（EventSource、FileReader） |
 
-> `node:sqlite` 在 Node 24 仍是 experimental，启动时会出现一条 `ExperimentalWarning`。不影响功能。
-
-## 2. 本地安装
+## 2. 本机启动
 
 ```bash
-cd bole
 pnpm install
-pnpm seed        # 生成 data/inbox/*.eml 与 data/golden/manifest.json
-pnpm doctor      # 环境自检：Node、配置、邮箱数量、台账可写、模型档位
-```
-
-## 3. 运行演示
-
-```bash
-# 非交互（推荐用于验收/CI）：HITL 自动采纳推荐项，actor 记录为 HR(auto-demo)
-pnpm demo:auto
-
-# 交互式：3 个 JD 疑点 + 1 次终稿确认，用键盘选编号
-pnpm demo
-
-# 从零开始，清空旧台账与 runs
-pnpm bole demo --yes --fresh
-
-# 只用干净台账（历史保留，但新建 job）
-pnpm bole demo --yes
-```
-
-演示会实时打印事件流，最后输出 Top5、容量池统计、成本与报告路径。
-
-## 3.1 Web 交互前端
-
-```bash
-pnpm web
-# 打开 http://127.0.0.1:8787
-pnpm bole web --host 127.0.0.1 --port 8787   # 等价
-```
-
-- 页面可发起 run、实时查看事件流、回答 HITL、查看多视图报告（总览/候选人/合规/成本/HITL）。
-- 任务切换、候选人审计（解析 span / 评估档位 / 核查逐条 verdict / 证据表）、续跑、报告、工具箱（Agent 注册表、自检、seed、bench、清空台账）都在页面完成，不需要再开终端。
-- 模型可选 mock 或 deepseek；DeepSeek Key 可用 `DEEPSEEK_API_KEY`，也可在页面输入（保存在浏览器 localStorage，仅随请求发送）。
-- **安全边界**：单用户、无登录/权限、默认只监听 loopback；不要直接暴露公网。多租户/鉴权在 P1。
-
-## 4. 自定义岗位
-
-```bash
-pnpm bole run --jd "招聘高级 Java 后端，5 年以上，熟悉 Spring Cloud 与 Kafka，base 深圳" --yes
-```
-
-可配置项在 `config/pipeline.json`：
-
-| 配置 | 默认 | 说明 |
-|---|---|---|
-| `batchSize` | 8 | 每批简历数（流水线最小流动单位） |
-| `maxBatchesInFlight` | 2 | 同时在途的批数（无全量屏障） |
-| `pools.parse / assess / review` | 4 / 2 / 1 | 各阶段容量池上限；满载拒绝不排队 |
-| `admission.maxRefusalRetries` | 200 | 有界准入重试次数 |
-| `selfLoop.maxLoops` | 2 | 验真环上限，超限转人工 |
-| `deepEval.enabled / percent / tier` | true / 40 / pro | 短名单深评开关、比例与档位；关闭即"全量 flash 评估" |
-| `structuredOutput.maxAttempts` | 2 | 同轮 schema 校验重试次数 |
-| `topN` | 5 | 推荐人数 |
-| `models.flash / pro` | deepseek-chat / deepseek-reasoner | 模型档位；只改配置不改代码 |
-| `pricing` | DeepSeek 公开价（占位） | 成本核算单价，可按实际账单调整 |
-| `bench` | 60 项 / 1,4,8 并发 | 调度微基准参数 |
-
-Agent 角色、工具、schema、深度预算在 `config/agents.json`；提示词在 `config/prompts/*.md`。改动后 `bole agents` 会显示新的版本与指纹，指纹写入 `run.json`，便于审计"这次用的是哪版 prompt/配置"。
-
-## 5. 真实模型模式
-
-```bash
+pnpm ocr:download
 export DEEPSEEK_API_KEY=sk-...
-pnpm bole demo --llm deepseek
-# 或
-BOLE_LLM=deepseek pnpm bole run --jd "..." --yes
+pnpm web
+# http://127.0.0.1:8787
 ```
 
-环境变量：
+也可以不设环境变量，在页面「设置与模型」中填写 Key；Key 保存在浏览器 localStorage，运行请求时随 body 发送给本机服务，不写入台账。
+
+### OCR 说明
+
+- 本地 OCR 需要 `data/ocr/eng.traineddata.gz` 与 `data/ocr/chi_sim.traineddata.gz`；`pnpm ocr:download` 会下载。
+- 若使用外部 OCR 服务，设置 `BOLE_OCR_URL`（POST JSON `{filename, imageBase64}`，返回 `{text}` 或 `{result:{text}}`），可加 `BOLE_OCR_KEY`。
+- 扫描版 PDF 不走 OCR：请把页面导出为图片后上传；平台会明确提示"pdf 无文本层"。
+
+## 3. 页面操作
+
+1. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF，单文件 ≤25MB）。
+2. 填写招聘需求 → 开始筛选。
+3. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
+4. 完成后在最终消息中下载 Markdown / JSON，或打开右侧「任务面板」查看候选人证据链、合规与成本。
+5. 中断后可点「续跑」从批次检查点恢复；不会重复上传。
+
+## 4. CLI
+
+```bash
+pnpm bole run --jd "招 Java 后端，3-5 年，base 上海" --files ./resumes --yes
+pnpm bole status
+pnpm bole audit --resume R01
+pnpm bole report
+pnpm bole cost
+pnpm bole doctor
+pnpm bole reset --yes
+```
+
+- `run` 的 `--files` 直接读取本地目录，不经过 HTTP 上传；这是自动化/验收路径。
+- 不带 `--yes` 时在终端交互回答 HITL；非 TTY 自动采纳推荐项。
+- `reset` 删除台账、`runs/`、`data/uploads/`，不删除知识库与 OCR 数据。
+
+## 5. Docker
+
+```bash
+docker compose build
+DEEPSEEK_API_KEY=sk-... docker compose up
+# http://127.0.0.1:8787
+```
+
+- 镜像构建时执行 `pnpm ocr:download`，OCR 数据位于 `/app/ocr`（`BOLE_OCR_DIR`），不会被 `/app/data` 数据卷覆盖。
+- `bole-data` 卷保存台账与上传缓存；`bole-runs` 保存运行产物。
+- 容器内监听 `0.0.0.0:8787`；生产环境请在前面加反向代理与鉴权，当前应用本身没有登录。
+
+## 6. 环境变量
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | 空 | 真实模式必填；缺失时启动即报错并提示用 mock |
-| `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关地址 |
-| `BOLE_FLASH_MODEL` | `deepseek-chat` | 覆盖 flash 档模型 |
-| `BOLE_PRO_MODEL` | `deepseek-reasoner` | 覆盖 pro 档模型 |
-| `BOLE_LLM` | `mock` | 默认提供方 |
-| `BOLE_MOCK_LATENCY_MS` | 0（demo 默认 8） | mock 模拟时延，用于观察批流动 |
-| `BOLE_DEEP_EVAL_PERCENT` | 40 | 覆盖短名单深评比例 |
-| `BOLE_DB` / `BOLE_RUNS` / `BOLE_INBOX` / `BOLE_DATA_DIR` | 见 `.env.example` | 数据与运行目录 |
+| `DEEPSEEK_API_KEY` | 空 | 必填（或页面填写） |
+| `BOLE_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容网关 |
+| `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-chat` / `deepseek-reasoner` | 档位模型 |
+| `BOLE_DATA_DIR` | `data` | 数据根 |
+| `BOLE_DB` | `data/ledger.db` | SQLite |
+| `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
+| `BOLE_RUNS` | `runs` | 运行产物 |
+| `BOLE_OCR_DIR` | `data/ocr` | OCR 语言数据 |
+| `BOLE_OCR_URL` / `BOLE_OCR_KEY` | 空 | 外部 OCR |
+| `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
+| `BOLE_BATCH_SIZE` | 8 | 批大小 |
+| `BOLE_MAX_BATCHES_IN_FLIGHT` | 2 | 在途批 |
+| `BOLE_DEEP_EVAL_PERCENT` | 40 | 深评比例 |
 
-真实模式的成本/缓存数据来自 API 返回的 `usage.prompt_tokens / completion_tokens / prompt_cache_hit_tokens`；mock 模式为确定性估算（CJK 0.7 token/字 + 拉丁按词），两者在报告中都会标注 provider。
-
-## 6. Docker
-
-```bash
-docker build -t bole-mvp .
-docker run --rm -it -v bole-runs:/app/runs bole-mvp
-# 或
-docker compose up --build
-```
-
-镜像内已执行 `pnpm seed`；容器启动即跑 `demo --yes`。若使用真实模型：
+## 7. 验收
 
 ```bash
-DEEPSEEK_API_KEY=sk-... BOLE_LLM=deepseek docker compose up --build
+pnpm typecheck
+pnpm test:all          # 49 个测试
+curl -s http://127.0.0.1:8787/api/doctor
 ```
 
-> 入口镜像不包含 Chroma/Qdrant：P0 的 RAG 是零依赖 TF-IDF 索引（见 `src/tools/rag.ts`），数据在 `data/knowledge/`。P1 换向量库时只需替换 `RagIndex` 的实现。
-
-> 注意：在受限沙箱/容器内运行时，Docker CLI 可能无法访问 daemon 的命名管道（`docker build` 被拒绝）。`docker compose config` 可通过；实际构建请在普通开发机或 CI 上执行，并据此调整基础镜像与代理设置。
-
-## 7. 数据与产物
-
-```
-data/ledger.db          # 任务台账（SQLite，可删）
-data/inbox/*.eml        # mock 邮箱
-data/knowledge/*.md     # RAG 语料
-data/index/rag.json     # 检索索引缓存（可删，自动重建）
-runs/<runId>/           # 每轮产物：report.*、cost-report.md、convergence.svg、artifacts/、resumes/
-```
-
-- `pnpm bole reset --yes` 清空台账与 `runs/`（不动 inbox 与知识库）。
-- `pnpm seed` 可随时重建黄金集（固定内容、固定 Message-ID，幂等）。
-- 台账为单文件 SQLite；复制 `data/ledger.db` 即可迁移到另一台机器（需同版本 schema）。
+手工冒烟：
+1. 上传一份 TXT + 一份 DOCX + 一张图片简历，确认均进入批次；
+2. 观察 SSE `/api/run/:id/stream` 的 `token` 事件；
+3. 完成报告后确认 `runs/<runId>/report.md` 与 `report.json` 存在，且**没有** `report.html`；
+4. 打开候选人详情，确认每个维度都有原文 quote 与字符区间。
 
 ## 8. 常见问题
 
-| 现象 | 原因 / 处理 |
+| 现象 | 处理 |
 |---|---|
-| `node:sqlite` ExperimentalWarning | Node 24 的正常提示，可忽略；或用 `NODE_NO_WARNINGS=1` 抑制 |
-| `ExperimentalWarning: Type Stripping` | 直接用 `tsx`/`ts-node` 也可以，但本仓库默认用 Node 原生类型擦除 |
-| `CommandNotFoundException: npm/npx` | 本环境未把 npm 加入 PATH；用 `pnpm exec tsc`、`pnpm test` 等脚本 |
-| `spawn EPERM`（MCP stdio / 测试子进程） | 运行在受限沙箱时，Node 子进程管道被禁止。默认 `--mcp in-process` 不受影响；测试脚本已加 `--test-isolation=none`。若需验证 stdio server，可在普通终端或容器内运行 |
-| `SQLITE_BUSY` | 同一台账被多个进程同时写；关闭其他 `bole` 进程，或为不同运行设置 `BOLE_DB` |
-| 终端中文乱码 | Windows 控制台编码问题，报告文件本身是 UTF-8；用编辑器或浏览器打开 `report.md/html` |
-| 报告 Top5 为空 | 检查 `bole status`：可能所有简历都 `failed/quarantine`；报告会如实列出原因 |
-| `--llm deepseek` 立即失败 | 未配置 `DEEPSEEK_API_KEY`；或网络不可达（错误信息含 HTTP 状态与响应片段） |
-| `pnpm web` 端口被占用 | `EADDRINUSE`：换端口 `pnpm bole web --port 8788`，或关闭占用进程 |
-
-## 9. 验收复现清单
-
-```bash
-pnpm install
-pnpm seed
-pnpm typecheck
-pnpm test:all
-pnpm bole demo --yes --fresh
-pnpm bole status --events 40
-pnpm bole audit --resume R17
-pnpm bole report
-pnpm bole cost
-pnpm web          # 可选：浏览器验证 HITL 与多视图报告
-```
-
-预期：42 个测试通过；demo 终稿 Top5 为 R01/R05/R11/R03/R15；状态计数 reported=16、quarantine=2、duplicate=1、failed=1；`audit R17` 能看到"首轮 unsupported → 续用同一 Worker → 第二轮 pass"的完整记录；报告/`status` 中可见评估阶段 `screen/deep/revise` 与实际档位 `flash/pro`。
+| `未配置 DEEPSEEK_API_KEY` | 页面设置 Key，或设置环境变量；不会回退 mock |
+| 图片简历失败，提示缺 OCR 语言数据 | `pnpm ocr:download`，或配置 `BOLE_OCR_URL` |
+| PDF 失败，提示无文本层 | 扫描件导出为 PNG/JPG 后上传 |
+| SSE 不显示 token | 检查反向代理是否缓冲 SSE（关闭 `proxy_buffering`）；本机直连正常 |
+| 端口被占用 | `pnpm bole web --port 8788` |
+| 台账需要清空 | `pnpm bole reset --yes` 或页面「工具与环境 → 清空台账」 |
+| 旧运行报告仍存在 | 报告按 `jobId` 关联；reset 会删 `runs/`，或手工删除对应目录 |

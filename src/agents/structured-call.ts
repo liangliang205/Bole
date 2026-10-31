@@ -1,5 +1,5 @@
 import type { ZodType } from 'zod';
-import type { ChatResult } from '../types.ts';
+import type { ChatResult, StreamSink } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
 
 export interface JsonCallOptions<T> {
@@ -11,6 +11,9 @@ export interface JsonCallOptions<T> {
   user: string;
   sharedPrefix?: string;
   meta?: Record<string, unknown>;
+  phase?: string;
+  label?: string;
+  stream?: StreamSink;
   maxAttempts?: number;
   postValidate?: (value: T) => string[];
 }
@@ -24,6 +27,7 @@ export async function callAgentJson<T>(
   opts: JsonCallOptions<T>,
 ): Promise<{ ok: true; value: T; attempts: number; chat: ChatResult } | { ok: false; errors: string[] }> {
   const maxAttempts = opts.maxAttempts ?? deps.config.structuredOutput.maxAttempts;
+  const stream = opts.stream ?? deps.stream;
   let errors: string[] = [];
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const retry = errors.length
@@ -40,6 +44,17 @@ export async function callAgentJson<T>(
         sharedPrefix: opts.sharedPrefix,
         temperature: 0,
         maxTokens: 4096,
+        onToken: stream
+          ? (delta: string) =>
+              stream({
+                type: 'token',
+                agent: opts.agent,
+                taskId: opts.schemaName,
+                phase: opts.phase ?? opts.schemaName,
+                label: opts.label,
+                delta,
+              })
+          : undefined,
         meta: opts.meta,
       });
     } catch (error) {

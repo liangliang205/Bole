@@ -1,5 +1,8 @@
 node_modules/
+.trash/
 runs/
+data/uploads/
+data/ocr/
 data/ledger.db
 data/ledger.db-journal
 data/ledger.db-wal

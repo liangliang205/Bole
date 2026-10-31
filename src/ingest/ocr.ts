@@ -1,0 +1,87 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { resolvePaths } from '../config.ts';
+
+export class OcrUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OcrUnavailableError';
+  }
+}
+
+type TesseractWorker = {
+  recognize: (image: Buffer) => Promise<{ data: { text: string } }>;
+  terminate: () => Promise<void>;
+};
+
+let workerPromise: Promise<TesseractWorker> | null = null;
+let queue: Promise<unknown> = Promise.resolve();
+
+function langList(): string[] {
+  const raw = process.env.BOLE_OCR_LANG || 'chi_sim+eng';
+  return raw.split('+').map((item) => item.trim()).filter(Boolean);
+}
+
+async function assertLocalLanguageData(langPath: string, langs: string[]): Promise<void> {
+  const missing = langs.filter((lang) => !existsSync(path.join(langPath, `${lang}.traineddata.gz`)));
+  if (missing.length > 0) {
+    throw new OcrUnavailableError(
+      `缺少 OCR 语言数据：${missing.join(', ')}。请运行 pnpm ocr:download，或设置 BOLE_OCR_URL 使用外部 OCR 服务。`,
+    );
+  }
+}
+
+async function getWorker(): Promise<TesseractWorker> {
+  if (workerPromise) return workerPromise;
+  workerPromise = (async () => {
+    const paths = resolvePaths();
+    const langs = langList();
+    await assertLocalLanguageData(paths.ocrDir, langs);
+    const { createWorker } = (await import('tesseract.js')) as unknown as {
+      createWorker: (langs: string, oem: number, options: Record<string, unknown>) => Promise<TesseractWorker>;
+    };
+    return createWorker(langs.join('+'), 1, {
+      langPath: paths.ocrDir,
+      logger: () => {},
+      cachePath: paths.ocrDir,
+      gzip: true,
+    });
+  })();
+  try {
+    return await workerPromise;
+  } catch (error) {
+    workerPromise = null;
+    throw error;
+  }
+}
+
+async function ocrViaHttp(buffer: Buffer, filename: string): Promise<string> {
+  const url = process.env.BOLE_OCR_URL as string;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (process.env.BOLE_OCR_KEY) headers.Authorization = `Bearer ${process.env.BOLE_OCR_KEY}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ filename, imageBase64: buffer.toString('base64') }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) {
+    throw new OcrUnavailableError(`外部 OCR 服务失败：HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
+  }
+  const data = (await response.json()) as { text?: string; result?: { text?: string } };
+  const text = data.text ?? data.result?.text ?? '';
+  if (!text.trim()) throw new OcrUnavailableError('外部 OCR 服务返回空文本');
+  return text;
+}
+
+/** 图片 OCR：优先使用配置的外部 OCR 服务，否则使用本地 Tesseract（需要 pnpm ocr:download）。 */
+export async function ocrImage(buffer: Buffer, filename = 'resume.png'): Promise<string> {
+  if (process.env.BOLE_OCR_URL) return ocrViaHttp(buffer, filename);
+  const run = queue.then(async () => {
+    const worker = await getWorker();
+    const result = await worker.recognize(buffer);
+    return result.data.text;
+  });
+  queue = run.catch(() => {});
+  return run;
+}

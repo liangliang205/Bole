@@ -70,6 +70,8 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
     system: systemPrompt(deps, 'profiler'),
     user: `${user}\n\n【HR 原始需求】\n${input.requirements}`,
     sharedPrefix: sharedPrefix(deps, 'profiler', [`【检索到的历史 JD/评分卡参考】\n${references.join('\n')}`]),
+    stream: deps.stream,
+    phase: 'jd_analysis',
     meta: { requirements: input.requirements },
     postValidate: (value) => {
       const issues: string[] = [];

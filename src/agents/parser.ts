@@ -74,6 +74,9 @@ export class ParserWorker {
       runDir: deps.runDir,
       ledger: deps.ledger,
       llm: deps.llm,
+      stream: deps.stream,
+      phase: 'parse',
+      label: resume.label,
       meta: { resumeId: resume.id, label: resume.label, text },
       maxAttempts: deps.config.structuredOutput.maxAttempts,
       postValidate: (value) => {

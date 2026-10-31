@@ -1,176 +1,75 @@
-# 评测与回归（BoLe-Bench · MVP 版）
+# 评测与验收
 
-> 原则：**评结果，不评过程**；所有数字来自可重跑的命令与落盘产物；没做的指标明确标注"未实现"，不把黄金集通过包装成模型效果。
+> 原则：**只写能复跑的结果**。当前版本已移除 mock 模型与黄金简历集，因此不再声称"Top5 冻结基线"或"模型质量 A/B"；这些需要真实 API Key 与人工标注数据，属于后续工作。
 
-## 1. 评测对象与基线
+## 1. 评测对象
 
-| 对象 | 说明 |
-|---|---|
-| 黄金集 | 20 份固定简历（`.eml`），含 5 类陷阱样本；固定 Message-ID 与 seed，可幂等重建 |
-| 冻结基线 | `data/golden/expectations.json`：Top5 顺序、分数容差 ±2、状态计数、转人工/重复/失败明细、自环统计 |
-| 运行模式 | 默认 mock（确定性规则模拟）；真实 DeepSeek 模式同一 schema/流水线，需另建有 Key 的基线 |
-| 回归命令 | `pnpm test:golden`（端到端跑完黄金集并逐项断言） |
+伯乐当前可被客观验证的是**机制与产物**，不是"筛得准不准"：
 
-> 分档说明：mock 提供方对 `tier` 不敏感（同一份简历 flash/pro 输出相同），所以冻结基线衡量的是"结果与机制"，不是"档位质量"。tier 的差异只体现在路由、计费、事件与 `eval_tasks.tier/phase`；真实质量 A/B 必须使用 `DEEPSEEK_API_KEY`，目前**未做**，不虚构结论。
-
-> 明确边界：本 MVP **未实现**与"关键词 ATS / 单 Agent 直通"的横向对比，也**未计算**字段级 P/R/F1、Spearman/NDCG。这些需要额外基线实现与人工标注，列入 P1（见第 7 节），不在本文虚构数字。
-
-## 2. 黄金集构成
-
-| 简历 | 格式 | 设计意图 | 预期行为 |
-|---|---|---|---|
-| R01 | docx | 7 年、支付/风控、带 6 人团队、量化结果充分 | Top1；技术/年限/项目/团队证据齐全 |
-| R02 | txt | 5 年电商交易，带 3 人 | Top5 竞争位（本次第 6） |
-| R03 | md | 4 年支付清结算，参与为主 | Top5；项目证据真实但非主导 |
-| R04 | html | 8 年银行技术负责人，带 12 人 | 年限略超区间，综合仍高 |
-| R05 | txt | 6 年支付收单，带 5 人，量化充分 | Top2 竞争者；R18 的重复源 |
-| R06 | docx | 3 年电商，参与订单查询 | 中低分，正常通过 |
-| R07 | html | 5 年交易/秒杀，QPS 5 万，带 4 人 | 高分，技术栈略窄 |
-| R08 | txt | 2 年外包，证据较少 | 低分通过，不误升 |
-| R09 | md | 9 年银行，年限超区间 | 中分，不因"资历老"自动上调 |
-| R10 | docx | 4 年 Python/Go 数据平台 | 技术栈错配，低分 |
-| R11 | txt | 6 年金融风控，日均 1 亿调用，带 3 人 | Top3 竞争者 |
-| R12 | html | 3 年支付对账，参与为主 | 中低分通过 |
-| R13 | docx | 5 年保险核心，主导查询重构 | 中分通过 |
-| R14 | txt | 7 年电商中台，带 8 人 | 高分，年限略超 |
-| R15 | md | 4 年证券行情，百万连接 | Top5 竞争者 |
-| R16 | txt | **证据稀疏**：仅 3 行技能描述 | 两轮重评仍无法举证 → 转人工 |
-| R17 | docx | **模拟幻觉**：原文只"参与"，评估被拔高为"主导/架构设计" | 首轮 `re_eval` → 续用原 Worker 修正 → `pass` |
-| R18 | txt | **重复投递**：与 R05 附件字节、身份指纹完全一致 | 去重，不进入解析 |
-| R19 | doc | **格式残缺**：旧版 Word 二进制 | 解析失败，批次继续，失败明细可见 |
-| R20 | html | **偏见理由**：简历含年龄/婚育信息，评估理由出现"年龄偏大" | 公平性哨兵 `escalate_human` |
-
-## 3. 端到端结果（mock，seed=demo-2026）
-
-| 指标 | 结果 |
-|---|---|
-| 简历总数 | 20 |
-| 核查通过并上报 | 16 |
-| 转人工 | 2（R16 证据不足超限、R20 公平性拦截） |
-| 重复去重 | 1（R18 → R05） |
-| 接入/解析失败 | 1（R19 旧版 doc） |
-| Top5 | R01 89.0 · R05 87.0 · R11 80.0 · R03 79.5 · R15 79.5 |
-| 核查裁决 | 21 次：16 `pass` / 3 `re_eval` / 2 `escalate_human` |
-| 核查否决率 | 23.8% |
-| 自环 | 重评 3 次；R17 第 1 轮修正后通过；R16 达 2 轮上限转人工 |
-| 证据链 | 所有通过候选人的维度结论均挂原文引用，核查后 `verified=1` |
-| 运行耗时 | 约 2.0s（mock，无网络） |
-| 模型调用 | 78 次（profiler 1 / parser 18 / assessor 初筛 18 + 深评及返工 15 / auditor 21 / advisor 5） |
-| 分档 | 初筛 18 次全 flash；深评 12 人 + 返工 3 次为 pro；Top5 全部来自 pro 深评 |
-
-### 3.1 验真环收敛
-
-| 轮次 | 核查数 | 通过 | 通过率 | 说明 |
-|---|---|---|---|---|
-| 第 0 轮 | 18 | 15 | 83.3% | R17、R16 被打回，R20 合规拦截 |
-| 第 1 轮 | 2 | 1 | 50.0% | R17 修正后通过；R16 仍缺证据 |
-| 第 2 轮 | 1 | 0 | 0% | R16 达上限，转人工 |
-
-收敛曲线由 `convergence.svg` 渲染；数据来自 `review_tasks.loop_count/verdict`，不是人工填写。
-
-## 4. 成本与缓存（mock 估算口径）
-
-| 阶段 | 调用 | 输入 tokens | 输出 tokens | 成本 USD |
-|---|---|---|---|---|
-| jd_analysis@pro | 1 | 3,095 | 688 | 0.002859 |
-| parse_resume@flash | 18 | 23,680 | 9,428 | 0.015594 |
-| evaluate_resume@flash | 18 | 48,982 | 7,908 | 0.019373 |
-| evaluate_resume@pro | 15 | 40,798 | 6,627 | 0.032599 |
-| review_eval@pro | 21 | 41,868 | 7,759 | 0.036464 |
-| interview_plan@pro | 5 | 6,864 | 1,658 | 0.006753 |
-| **合计** | **78** | **165,287** | **34,068** | **0.113639** |
-
-缓存前缀对齐：
-
-| 指标 | 无前缀对齐（基线） | 有前缀对齐（本次） |
+| 层级 | 验证内容 | 证据 |
 |---|---|---|
-| 缓存命中 tokens | 0 | 40,354 |
-| 命中率 | 0% | 24.4% |
-| 成本 USD | 0.126275 | 0.113639 |
-| 节省 | — | 0.012636（约 10%） |
+| 接入 | 真实上传文件可落盘、去重、格式归一（PDF/DOCX/HTML/TXT/图片 OCR） | `tests/unit/ingest.test.ts` |
+| 调度 | 容量池满时拒绝而非排队；批流动无全局 barrier；检查点续跑 | `tests/unit/pool.test.ts`、`tests/integration/*` |
+| 状态 | 任务两阶段提交、committed 单调守卫、简历生命周期回退 | `tests/unit/state.test.ts`、`tests/unit/structured.test.ts` |
+| 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
+| 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
+| 模型接口 | schema 违规同轮重试；流式回调；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/integration/pipeline.test.ts` |
+| 报告 | Markdown/JSON 生成；不生成 HTML | `tests/integration/pipeline.test.ts` |
+| 真实上传端到端 | 4 份 TXT（含重复）+ 伪造结论触发验真环 + 报告 | `tests/integration/pipeline.test.ts` |
+| 失败隔离 | `.doc` 旧格式失败但批次继续；全失败给出可读错误 | `tests/integration/errors.test.ts` |
 
-说明：mock 的缓存命中来自"系统提示词 + 工具池 + 评分卡/JD"共享前缀的确定性估算；真实模式取 DeepSeek `prompt_cache_hit_tokens`。成本单价在 `config/pipeline.json` 中可改，按实际账单核对。
-
-### 4.1 分档结构与成本含义
-
-| 环节 | 档位 | 调用 | 成本 USD |
-|---|---|---|---|
-| assessor 初筛 | flash | 18 | 0.019373 |
-| assessor 深评 + 返工 | pro | 15 | 0.032599 |
-| auditor | pro | 21 | 0.036464 |
-| parser | flash | 18 | 0.015594 |
-| profiler / advisor | pro | 1 / 5 | 0.002859 / 0.006753 |
-
-- 深评触发：每批 Top40%（批内）∪ 解析异常/不确定项；本次 18 人中有 12 人进入深评。
-- 相比"全量 pro 评估"，pro 评估调用从 21 次降到 15 次；简历量越大比例越低（300 份时约 40%+异常）。
-- mock 下总调用从 66 增到 78、成本从 $0.107 增到 $0.114（多了一次深评 pass，且 mock 不区分档位质量）；真实模式下 pro 单价与推理 token 更高，pro 调用占比下降才是主要成本杠杆。
-- **mock 与档位无关**：同一份简历用 flash/pro 会得到相同规则结果，因此本表只能证明路由、计费与状态机正确，不能证明质量；质量差异需真实 Key 的 A/B（见第 7 节）。
-
-## 5. 调度实验（`pnpm bole bench`）
-
-调度层微基准：30 个任务、模拟单次模型时延 5ms、不含网络与真实推理。
-
-| 并发度 | 吞吐（项/秒） | 总耗时 | P50 | P95 | 成功 |
-|---|---|---|---|---|---|
-| 1 | 66.4 | 452ms | 15ms | 16ms | 30/30 |
-| 4 | 240.6 | 125ms | 16ms | 16ms | 30/30 |
-| 8 | 479.6 | 63ms | 16ms | 16ms | 30/30 |
-
-并发 8 相对串行吞吐提升 **7.22×**。该实验验证的是容量池/批流动的调度开销，不是端到端简历处理吞吐；真实吞吐受模型网关限流、简历长度、缓存命中影响。
-
-## 6. 测试矩阵
-
-| 类型 | 用例 | 覆盖点 |
-|---|---|---|
-| 单元 | 容量池 4 个 | 满载拒绝、重复释放、准入等待、超限 `PoolFullError` |
-| 单元 | 状态机 7 个 | 合法/非法迁移、终态、验真环回退、结算五分类、单调守卫 |
-| 单元 | 引用定位 9 个 | 精确/空白/标点/省略号、无法定位、偏移修正、PII、token 重合 |
-| 单元 | 评分卡 4 个 | 权重重算、归一化、阈值、tie-break |
-| 单元 | 结构化输出 3 个 | 同轮重试、两阶段提交、失败结算 |
-| 单元 | 接入/去重/RAG/公平性 11 个 | MIME、docx/html/txt、doc 拒绝、重复附件、身份指纹、检索确定性、公平性词表 |
-| 集成 | 端到端 1 个 | 批流动早于上游完成、flash 初筛/pro 深评分档断言、Self-Loop、转人工、报告产物、提交锁定、检查点恢复 |
-| 集成 | 错误注入 2 个 | MCP 超时、每任务首轮 schema 违规 |
-| 黄金回归 | 1 个 | Top5/分数容差/状态计数/转人工/重复/失败/自环/R17 两轮记录/Top5 均来自深评 |
-| **合计** | **42 个** | `pnpm test:all` 全部通过 |
-
-Web UI 另做了 HTTP 冒烟验证：静态资源 → `/api/jobs` / `agents` / `doctor` / `bench` → 发起 run → 回答 HITL → 候选人列表与详情 → 成本 → 报告 → 续跑 → 清空台账。该链路目前是手工脚本验证，尚未纳入 `pnpm test:all`（P1 补浏览器级 e2e）。
-
-## 7. SRS 第 7 章指标对照（哪些做了、哪些没做）
-
-| SRS 指标 | 状态 | 本仓库证据 / 缺口 |
-|---|---|---|
-| 结构化抽取字段级 P/R/F1 | 未实现 | 黄金集校验"字段覆盖 + 引用可定位"；P/R/F1 需人工标注与基线直抽，P1 |
-| 人岗匹配 Spearman/NDCG vs ATS/单 Agent | 未实现 | 当前只做绝对分排序与冻结 Top5；需实现两个基线，P1 |
-| 证据溯源覆盖率 / span 正确率 | 已实现 | 所有提交结论必须挂 span；引用无法定位即 schema 失败；核查后 `verified` 可查询 |
-| 验真环通过率-轮数曲线 | 已实现 | 第 3.1 节 + `convergence.svg` |
-| 公平性对抗样本检出率 / 分数漂移 | 部分实现 | R20 植入偏见理由被拦截；JD 歧视性条件剥离 2 项；未做系统化对抗样本集与漂移统计 |
-| 调度吞吐/P50/P95/成功率/成本 | 已实现（微基准） | 第 5 节；真实端到端压测未做 |
-| 双标注一致性 kappa | 未实现 | 黄金集为单人构造；需双人标注，P1 |
-
-## 8. 与开发方案评分点的对应
-
-| 评分项 | 本仓库兑现 |
-|---|---|
-| 平台功能完整性 | 五模块全部有运行实现：定义（preset）、编排（批流动）、调度（容量池/深度预算）、执行（台账/事件）、验证（span/核查/公平性）、反馈（Self-Loop/转人工/HITL） |
-| 技术可靠性与可复现性 | 一键 `pnpm demo:auto`；42 测试；错误注入；失败明细；结算五分类；CLI + 本地 Web UI；已知限制文档 |
-| AI 使用充分性与合理性 | LLM 负责语义判断，代码负责算术与纪律；档位按难度分配（flash 初筛 / pro 深评与核查）；MCP/RAG/记忆/结构化输出均有明确选型与边界 |
-| 文档质量 | README + 架构 + 模块三段式 + 部署 + 评测 + 演示脚本 + 限制清单 |
-| 无夸大 | 未实现的指标（P/R/F1、NDCG、kappa、真实压测）明确列为 P1；mock 与真实模型差异单独说明 |
-
-## 9. 复现实验
+## 2. 复跑命令
 
 ```bash
-pnpm install
-pnpm seed
+pnpm typecheck
 pnpm test:all
-pnpm bole demo --yes --fresh
-pnpm bole bench
-pnpm bole cost
 ```
 
-检查点：
+当前结果：**49 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
-- `runs/<runId>/report.json` 中 `top`、`compliance.reviewStats`、`convergence`、`cost`；
-- `pnpm test:golden` 输出通过；
-- `pnpm bole audit --resume R17` 能看到 `re_eval → pass`；
-- `pnpm bole audit --resume R20` 能看到公平性 `escalate_human`。
+## 3. 真实数据验收（需要 Key）
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+pnpm web
+```
+
+建议用 10–30 份真实简历（至少包含 1 份 PDF、1 份 DOCX、1 张图片）走一遍，检查：
+
+1. `/api/run/:id/events` 中 `resume.fetched` 的 `format` 与 `chars` 是否符合预期；
+2. `token` 事件是否连续（SSE 未被代理缓冲）；
+3. 最终 `report.md` / `report.json` 中每位候选人的 `evidenceChain` 是否都有 `quote` 与 `charStart/charEnd`；
+4. 被核查打回的候选人是否留下 `review.verdict=re_eval` 与第二轮 `eval` 记录；
+5. 成本报表的 `promptTokens/completionTokens` 是否来自 DeepSeek `usage`（流式缺少 usage 时为估算，报告中会体现模型与计价）。
+
+> 真实模型输出具有随机性（温度=0 仍可能 ±1 分），不要用一次运行的结果当"模型质量"结论；需要多次重复与人工评分。
+
+## 4. 成本与缓存
+
+- 成本按 `config/pipeline.json` 中 `deepseek-chat` / `deepseek-reasoner` 单价与 token 用量计算，单位为 USD。
+- 缓存命中优先读取 DeepSeek `prompt_cache_hit_tokens`；流式响应若未返回 usage，按 `estimateTokens` 估算并在成本页标注。
+- 档位策略：解析/初筛 flash，画像/深评/核查/建议 pro；`eval_tasks.tier/phase` 可在候选人详情与审计中核对。
+- 当前没有"降本 X%"的可靠结论：mock 已移除，必须用真实 Key 在相同简历集上对比全 pro 与分档两种配置。
+
+## 5. 未实现/不声称
+
+| 项 | 状态 |
+|---|---|
+| 字段级 P/R/F1 | 未实现；需要人工标注 |
+| NDCG / TopK 质量 | 未实现；需要带相关性标注的岗位-简历对 |
+| 双标注一致性 kappa | 未实现 |
+| 真实模型 A/B（flash vs pro 质量） | 未实现；需真实 Key 与重复实验 |
+| 300 份真实压测 | 未实现；容量池/批流动只做了机制测试 |
+| 浏览器级 e2e | 未实现；UI 目前做 HTTP 冒烟与静态检查 |
+| HTML 报告 | 已移除，不再作为评测对象 |
+
+## 6. 验收清单（提交前）
+
+- [ ] `pnpm typecheck` 通过
+- [ ] `pnpm test:all` 49/49 通过
+- [ ] `pnpm web` 可打开，无 mock/demo 入口
+- [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
+- [ ] 运行中 SSE 有 `token` 事件
+- [ ] 报告目录只有 `report.md` / `report.json` / `cost-report.md` / `convergence.svg`，无 `report.html`
+- [ ] `pnpm ocr:download` 或 `BOLE_OCR_URL` 已就绪（图片简历）
+- [ ] 未配置 Key 时请求返回明确错误，不产生模拟报告

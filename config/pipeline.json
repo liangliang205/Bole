@@ -38,11 +38,6 @@
     "flash": "deepseek-chat",
     "pro": "deepseek-reasoner"
   },
-  "bench": {
-    "concurrency": [1, 4, 8],
-    "itemsPerRun": 60,
-    "simulatedLatencyMs": 8
-  },
   "fairness": {
     "protectedCategories": ["gender", "age", "marital", "childbearing", "hometown", "ethnicity", "zodiac", "disability", "religion"]
   }

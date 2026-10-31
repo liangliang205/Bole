@@ -6,5 +6,8 @@ data/ledger.db-wal
 data/ledger.db-shm
 data/ledger.db-journal
 data/index
-data/inbox
+data/uploads
+data/ocr
 *.log
+tests
+docs

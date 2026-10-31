@@ -11,6 +11,7 @@ import type {
   ModelTier,
   EvalPhase,
   ParseResult,
+  UploadedFile,
 } from '../types.ts';
 import type { RatingThresholds } from '../tools/scorecard.ts';
 import type { AgentDeps } from './deps.ts';
@@ -28,8 +29,7 @@ import { writeReports, type ReportPaths } from '../report/render.ts';
 export interface PipelineRunOptions {
   requirements: string;
   hitl: HitlResponder;
-  inboxDir: string;
-  mcpMode?: 'in-process' | 'stdio';
+  uploadFiles?: UploadedFile[];
   resumeOnly?: boolean;
 }
 
@@ -129,9 +129,11 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   const scorecard: Scorecard = analysis.scorecard;
 
   if (!opts.resumeOnly) {
-    const fetched = await runFetcher(deps, { inboxDir: opts.inboxDir, mcpMode: opts.mcpMode });
+    const files = opts.uploadFiles ?? [];
+    if (files.length === 0) throw new Error('请至少上传一份简历（支持 PDF / DOCX / 图片 / 文本）');
+    const fetched = await runFetcher(deps, { files });
     if (fetched.resumes.length === 0) {
-      throw new Error('未从邮箱获取到任何简历：请检查 inbox 目录或 mock MCP 服务');
+      throw new Error('上传文件未能接入：请检查文件格式与内容');
     }
     const usable = fetched.resumes.filter((resume) => resume.status === 'queued').length;
     if (usable === 0) {

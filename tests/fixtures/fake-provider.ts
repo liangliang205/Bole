@@ -1,10 +1,10 @@
-import type { ChatRequest, StopReason } from '../types.ts';
-import type { LlmProvider, ProviderResult } from './provider.ts';
-import { estimateTokens, locateQuote, normalizeText, splitSentences, tokenOverlap, truncate } from '../util/text.ts';
-import { sleep } from '../util/time.ts';
-import { scanProtected } from '../tools/fairness.ts';
+import type { ChatRequest, StopReason } from '../../src/types.ts';
+import type { LlmProvider, ProviderResult } from '../../src/llm/provider.ts';
+import { estimateTokens, locateQuote, normalizeText, splitSentences, tokenOverlap, truncate } from '../../src/util/text.ts';
+import { sleep } from '../../src/util/time.ts';
+import { scanProtected } from '../../src/tools/fairness.ts';
 
-export interface MockOptions {
+export interface FakeOptions {
   latencyMs?: number;
   /** 故障注入：指定 key（meta.key）的第一次调用返回非法 schema，用于验证同轮重试。 */
   invalidSchemaOnce?: string[];
@@ -693,7 +693,7 @@ function handlerFor(schemaName: string | undefined): ((meta: Meta) => unknown) |
 }
 
 /** 离线确定性 Mock：用规则模拟模型行为，保证无 API Key 时 Demo 可复现。 */
-export class MockProvider implements LlmProvider {
+export class FakeProvider implements LlmProvider {
   readonly name = 'mock';
   readonly kind = 'mock' as const;
   private latencyMs: number;
@@ -701,7 +701,7 @@ export class MockProvider implements LlmProvider {
   private invalidSeen = new Set<string>();
   private faults: { fabricate: string[]; bias: string[] };
 
-  constructor(opts: MockOptions = {}) {
+  constructor(opts: FakeOptions = {}) {
     this.latencyMs = opts.latencyMs ?? Number(process.env.BOLE_MOCK_LATENCY_MS ?? 0);
     this.invalidSchemaOnce = new Set(opts.invalidSchemaOnce ?? []);
     this.faults = {
@@ -727,6 +727,11 @@ export class MockProvider implements LlmProvider {
     }
 
     const text = JSON.stringify(json);
+    if (req.onToken) {
+      for (let offset = 0; offset < text.length; offset += 24) {
+        req.onToken(text.slice(offset, offset + 24));
+      }
+    }
     const promptText = `${req.system}\n${req.user}`;
     const promptTokens = estimateTokens(promptText) + (req.jsonSchema ? estimateTokens(JSON.stringify(req.jsonSchema)) : 0);
     const cachedPromptTokens = req.sharedPrefix

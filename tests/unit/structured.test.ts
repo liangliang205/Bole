@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { Ledger } from '../../src/core/ledger.ts';
 import { runStructuredTask } from '../../src/core/structured.ts';
 import { LlmRouter } from '../../src/llm/router.ts';
-import { MockProvider } from '../../src/llm/mock.ts';
+import { FakeProvider } from '../fixtures/fake-provider.ts';
 import { AlreadyCommittedError } from '../../src/core/state.ts';
 
 const pricing = {
@@ -20,7 +20,7 @@ async function setup(taskKey: string, schema: z.ZodTypeAny = z.object({ ok: z.bo
   const ledger = new Ledger(':memory:');
   const job = ledger.createJob({ title: 't', requirements: 'r' });
   const task = ledger.createTask('eval', { jobId: job.id, resumeId: 'res_1', batchId: 1 });
-  const provider = new MockProvider({ invalidSchemaOnce: invalid ? [taskKey === 'task' ? task.id : taskKey] : [] });
+  const provider = new FakeProvider({ invalidSchemaOnce: invalid ? [taskKey === 'task' ? task.id : taskKey] : [] });
   const router = new LlmRouter({
     provider,
     pricing,

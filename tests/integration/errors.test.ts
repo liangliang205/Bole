@@ -1,80 +1,105 @@
-import { test, before } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { bootstrap } from '../../src/bootstrap.ts';
 import { runPipeline } from '../../src/agents/coordinator.ts';
-import { runFetcher } from '../../src/agents/fetcher.ts';
 import { AutoHitlResponder } from '../../src/agents/hitl.ts';
-import { HireboxClient, type McpTransport } from '../../src/mcp/client.ts';
-import { DEMO_FAULTS, DEMO_REQUIREMENTS } from '../../src/cli/demo-data.ts';
-import { generateGoldenSet } from '../../scripts/generate-golden.ts';
-import { projectRoot } from '../../src/util/fsx.ts';
+import type { UploadedFile } from '../../src/types.ts';
+import { FakeProvider } from '../fixtures/fake-provider.ts';
 import { setupTempEnv } from '../helpers/env.ts';
 
-const inboxDir = path.join(projectRoot(), 'data', 'inbox');
+const TEXT = `姓名：李娜
+手机：13800000002
+邮箱：lina@example.com
+求职意向：Java 后端
+工作年限：6 年
+技能标签：Java、Spring Boot、MySQL
+工作经历：2020-2024 某公司后端工程师，负责清结算服务。
+项目经历：清结算平台重构，日处理 300 万笔。
+`;
 
-before(async () => {
-  if (!existsSync(path.join(inboxDir, 'R01.eml'))) await generateGoldenSet();
+async function upload(dir: string, name: string, content: string): Promise<UploadedFile> {
+  const file = path.join(dir, name);
+  await writeFile(file, content, 'utf8');
+  return {
+    uploadId: `up_err_${name}`,
+    filename: name,
+    path: file,
+    size: Buffer.byteLength(content),
+    contentType: 'text/plain; charset=utf-8',
+  };
+}
+
+test('未配置 DeepSeek Key 时 bootstrap 立即失败（不静默回退 mock）', async () => {
+  const env = await setupTempEnv();
+  try {
+    await assert.rejects(() => bootstrap({ requirements: '招 Java 后端工程师' }), /DEEPSEEK_API_KEY/);
+  } finally {
+    await env.restore();
+  }
 });
 
-test('错误注入：MCP 超时不影响台账一致性，失败如实上报', async () => {
+test('schema 违规同轮重试：首次坏输出不进入 committed', async () => {
   const env = await setupTempEnv();
-  const boot = await bootstrap({ requirements: DEMO_REQUIREMENTS, seed: 'err-mcp', llm: 'mock' });
-  const failing: McpTransport = {
-    kind: 'fake-timeout',
-    async request() {
-      throw new Error('MCP 请求超时：inbox.list (5000ms)');
-    },
-    notify() {},
-    async close() {},
-  };
+  const dir = path.join(env.dir, 'uploads');
+  await mkdir(dir, { recursive: true });
+  const boot = await bootstrap({
+    requirements: '招 Java 后端，3 年以上经验。',
+    provider: new FakeProvider({ invalidSchemaOnce: ['*'] }),
+  });
   try {
-    const client = new HireboxClient(failing);
-    const result = await runFetcher(boot.deps, { inboxDir, client });
-    assert.equal(result.manifest.pulled, 0);
-    assert.equal(result.resumes.length, 0);
-    assert.equal(result.manifest.failed.length, 1);
-    assert.match(result.manifest.failed[0].reason, /超时/);
-    assert.equal(boot.deps.ledger.listResumes(boot.job.id).length, 0);
-    assert.ok(
-      boot.deps.ledger
-        .listEvents({ jobId: boot.job.id, limit: 100 })
-        .some((event) => event.type === 'fetch.failed'),
-    );
+    const summary = await runPipeline(boot.deps, {
+      requirements: boot.job.requirements,
+      hitl: new AutoHitlResponder(),
+      uploadFiles: [await upload(dir, '李娜.txt', TEXT)],
+    });
+    assert.equal(summary.status, 'final');
+    const parseTasks = boot.deps.ledger.listTasks('parse', { jobId: boot.job.id });
+    assert.ok(parseTasks.some((task) => task.status === 'committed' && Number(task.attempt) >= 2));
   } finally {
     boot.close();
     await env.restore();
   }
 });
 
-test('错误注入：每份任务首轮 schema 违规，同轮重试后仍完成全流程', async () => {
+test('所有上传都失败时给出可读错误，并保留 failed 明细', async () => {
   const env = await setupTempEnv();
-  const boot = await bootstrap({
-    requirements: DEMO_REQUIREMENTS,
-    seed: 'err-schema',
-    llm: 'mock',
-    faults: { ...DEMO_FAULTS, invalidSchemaFor: ['*'] },
-  });
+  const dir = path.join(env.dir, 'uploads');
+  await mkdir(dir, { recursive: true });
+  const boot = await bootstrap({ requirements: '招 Java 后端。', provider: new FakeProvider() });
   try {
-    const summary = await runPipeline(boot.deps, {
-      requirements: DEMO_REQUIREMENTS,
-      hitl: new AutoHitlResponder(),
-      inboxDir,
-    });
-    assert.equal(summary.status, 'final');
-    assert.deepEqual(
-      summary.top.map((item) => item.label),
-      ['R01', 'R05', 'R11', 'R03', 'R15'],
+    const badFile = await upload(dir, '坏文件.doc', 'garbage');
+    await assert.rejects(
+      () =>
+        runPipeline(boot.deps, {
+          requirements: boot.job.requirements,
+          hitl: new AutoHitlResponder(),
+          uploadFiles: [badFile],
+        }),
+      /所有简历均未能接入/,
     );
-    const parses = boot.deps.ledger.listTasks('parse', { jobId: boot.job.id });
-    assert.ok(parses.length >= 18);
-    for (const task of parses) {
-      assert.equal(task.status, 'committed');
-      assert.equal(task.attempt, 2, '首轮违规后应在同一轮内重试并落账 attempt=2');
-    }
-    const evals = boot.deps.ledger.listTasks('eval', { jobId: boot.job.id });
-    assert.ok(evals.some((task) => task.attempt === 2 && task.status === 'committed'));
+    const failed = boot.deps.ledger.listResumes(boot.job.id).filter((resume) => resume.status === 'failed');
+    assert.equal(failed.length, 1);
+    assert.match(failed[0].reasons_json, /doc/);
+  } finally {
+    boot.close();
+    await env.restore();
+  }
+});
+
+test('没有上传文件时拒绝启动，不读取任何本地 mock 邮箱', async () => {
+  const env = await setupTempEnv();
+  const boot = await bootstrap({ requirements: '招 Java 后端。', provider: new FakeProvider() });
+  try {
+    await assert.rejects(
+      () =>
+        runPipeline(boot.deps, {
+          requirements: boot.job.requirements,
+          hitl: new AutoHitlResponder(),
+        }),
+      /请至少上传一份简历/,
+    );
   } finally {
     boot.close();
     await env.restore();

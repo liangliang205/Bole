@@ -9,7 +9,7 @@
 |---|---|---|---|---|---|---|
 | `coordinator` | 伯乐（唯一编排者） | pro | 1 | `coordinator_plan` | dispatch / send_message / stop / query_workspace / hitl | `coordinator.md` |
 | `profiler` | 需求画像师 | pro | 0 | `jd_analysis` | rag_search / fairness_scan / scorecard_validate | `profiler.md` |
-| `fetcher` | 探马 | flash | 0 | `fetch_manifest` | mcp:hirebox / dedup / normalize | `fetcher.md` |
+| `fetcher` | 探马 | flash | 0 | `fetch_manifest` | upload_read / dedup / normalize / ocr | `fetcher.md` |
 | `parser` | 录事 | flash | 0 | `parse_resume` | read_resume / span_locate | `parser.md` |
 | `assessor` | 相马官 | flash（初筛）/ pro（深评） | 0 | `evaluate_resume` | rag_search / scorecard_compute / span_locate | `assessor.md` |
 | `auditor` | 监军 | pro | 0 | `review_eval` | span_verify / fairness_scan / ledger_query | `auditor.md` |
@@ -52,7 +52,7 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 - **任务书自包含**（`src/agents/prompts.ts#taskBook`）：任务、输入路径、参考、schema、完成标准、边界六段缺一不可；缺路径/标准视为"甩锅式委派"。
 - **证据纪律**：parser/assessor 的 prompt 明确"quote 必须逐字来自原文，offset 由平台计算"；auditor 明确"逐条举证，禁止只输出整体通过"。
 - **公平性红线**：profiler/assessor/auditor 都写明禁止使用受保护属性；但真正的兜底是 `src/tools/fairness.ts` 的规则与运行时的强制覆盖。
-- **返工纪律**：assessor 收到驳回意见后逐条修正、保留未驳回部分，并在 `revisionNotes` 写明修改；实测 R17 即此路径。
+- **返工纪律**：assessor 收到驳回意见后逐条修正、保留未驳回部分，并在 `revisionNotes` 写明修改。
 - **不作决定**：advisor 只给问题/风险/建议；报告不生成 offer/拒信。
 
 ## 4. 版本与可审计
@@ -77,7 +77,7 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 
 把它设为 `enabled:false` 即为"全量 flash 评估"（成本最低、质量风险最高）；把 assessor preset 改回 `pro` 且关闭深评即为"全量 pro 评估"（质量优先、成本最高）。两种极端都在配置层可切换，无需改代码。
 
-`LlmRouter` 负责：tier→model 映射、温度 0、JSON mode、错误重试、usage 记账、缓存前缀核算。提供方在 `src/llm/provider.ts` 定义，mock 与 DeepSeek 走同一路由，替换只需改 `bootstrap.ts` 的构造参数。
+`LlmRouter` 负责：tier→model 映射、温度 0、JSON mode、错误重试、usage 记账、缓存前缀核算。产品提供方只有 `DeepSeekProvider`（`src/llm/deepseek.ts`）；测试替身仅存在于 `tests/fixtures/`，不会进入 `bootstrap` 的生产分支。
 
 ## 6. 新增一个 Agent 的步骤
 

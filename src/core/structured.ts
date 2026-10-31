@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { ZodType } from 'zod';
 import { writeJson } from '../util/fsx.ts';
 import { nowIso } from '../util/time.ts';
-import type { ChatResult, StopReason, TaskKind, ModelTier } from '../types.ts';
+import type { ChatResult, StopReason, TaskKind, ModelTier, StreamSink } from '../types.ts';
 import type { Ledger } from './ledger.ts';
 import type { LlmRouter } from '../llm/router.ts';
 
@@ -22,6 +22,9 @@ export interface StructuredTaskOptions<T> {
   sharedPrefix?: string;
   runDir: string;
   meta?: Record<string, unknown>;
+  phase?: string;
+  label?: string;
+  stream?: StreamSink;
   maxAttempts?: number;
   temperature?: number;
   maxTokens?: number;
@@ -72,6 +75,18 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
         sharedPrefix: opts.sharedPrefix,
         temperature: opts.temperature ?? 0,
         maxTokens: opts.maxTokens ?? 4096,
+        onToken: opts.stream
+          ? (delta: string) =>
+              opts.stream?.({
+                type: 'token',
+                agent: opts.agent,
+                taskId: opts.taskId,
+                phase: opts.phase ?? opts.kind,
+                resumeId: opts.resumeId,
+                label: opts.label,
+                delta,
+              })
+          : undefined,
         meta: { ...(opts.meta ?? {}), key: opts.taskId, taskId: opts.taskId, jobId: opts.jobId, resumeId: opts.resumeId, batchId: opts.batchId },
       });
     } catch (error) {

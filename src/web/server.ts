@@ -3,9 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { bootstrap, type Bootstrapped } from '../bootstrap.ts';
 import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
-import { DEMO_FAULTS, DEMO_REQUIREMENTS, DEMO_SEED } from '../cli/demo-data.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
+import { loadUpload } from '../ingest/uploads.ts';
+import type { StreamToken, UploadedFile } from '../types.ts';
 import {
   findReportDir,
   getCandidateDetail,
@@ -16,7 +17,7 @@ import {
   listEvents,
   listJobs,
 } from './data.ts';
-import { getAgents, getDoctor, resetAll, runBench, seedGolden } from './ops.ts';
+import { getAgents, getDoctor, resetAll } from './ops.ts';
 
 type RunStatus = 'running' | 'completed' | 'failed' | 'idle';
 
@@ -28,7 +29,7 @@ interface WebServerOptions {
 interface ActiveRun {
   jobId: string;
   runId: string;
-  provider: 'mock' | 'deepseek';
+  provider: string;
   status: RunStatus;
   startedAt: string;
   completedAt?: string;
@@ -36,6 +37,7 @@ interface ActiveRun {
   error?: string;
   boot: Bootstrapped;
   hitl: WebHitlResponder;
+  listeners: Set<(chunk: StreamToken) => void>;
 }
 
 interface HitlPending {
@@ -72,10 +74,17 @@ function json(res: ServerResponse, code: number, payload: unknown): void {
   res.end(JSON.stringify(payload));
 }
 
-function text(res: ServerResponse, code: number, body: string, contentType = 'text/plain; charset=utf-8'): void {
+function text(
+  res: ServerResponse,
+  code: number,
+  body: string,
+  contentType = 'text/plain; charset=utf-8',
+  headers: Record<string, string> = {},
+): void {
   res.statusCode = code;
   res.setHeader('Content-Type', contentType);
   res.setHeader('Cache-Control', 'no-cache');
+  for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
   res.end(body);
 }
 
@@ -85,7 +94,7 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
   for await (const chunk of req) {
     const buffer = Buffer.from(chunk);
     size += buffer.length;
-    if (size > 2_000_000) throw new Error('请求体过大（>2MB）');
+    if (size > 40 * 1024 * 1024) throw new Error('请求体过大（>40MB）');
     chunks.push(buffer);
   }
   const raw = Buffer.concat(chunks).toString('utf8').trim();
@@ -105,6 +114,16 @@ function inferStatus(jobStatus: string): RunStatus {
   return 'idle';
 }
 
+function readReport(jobId: string): Record<string, unknown> | null {
+  const dir = findReportDir(jobId);
+  if (!dir) return null;
+  try {
+    return JSON.parse(readFileSync(path.join(dir, 'report.json'), 'utf8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 const PUBLIC_DIR = path.join(import.meta.dirname, 'public');
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
@@ -119,23 +138,43 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const runs = new Map<string, ActiveRun>();
   const paths = resolvePaths();
 
+  const buildRunInfo = (jobId: string) => {
+    const snapshot = getSnapshot(jobId);
+    if (!snapshot.job) return null;
+    const runtime = runs.get(jobId);
+    const reportDir = findReportDir(jobId);
+    return {
+      jobId,
+      runId: runtime?.runId ?? (reportDir ? path.basename(reportDir) : ''),
+      provider: runtime?.provider ?? (snapshot.job.status === 'pipeline' ? 'deepseek' : ''),
+      status: runtime?.status ?? inferStatus(snapshot.job.status),
+      startedAt: runtime?.startedAt ?? snapshot.job.created_ts,
+      completedAt: runtime?.completedAt ?? null,
+      pendingHitl: runtime?.hitl.currentQuestion() ?? null,
+      error: runtime?.error ?? null,
+      reportAvailable: Boolean(reportDir),
+      reportDir,
+      summary: runtime?.summary ?? null,
+    };
+  };
+
   const launch = (opts: {
     boot: Bootstrapped;
     hitl: WebHitlResponder;
-    provider: 'mock' | 'deepseek';
+    listeners: Set<(chunk: StreamToken) => void>;
     requirements: string;
-    inboxDir: string;
-    mcpMode: 'in-process' | 'stdio';
+    uploadFiles?: UploadedFile[];
     resumeOnly: boolean;
   }): ActiveRun => {
     const run: ActiveRun = {
       jobId: opts.boot.job.id,
       runId: opts.boot.deps.runId,
-      provider: opts.provider,
+      provider: opts.boot.deps.llm.provider.name,
       status: 'running',
       startedAt: new Date().toISOString(),
       boot: opts.boot,
       hitl: opts.hitl,
+      listeners: opts.listeners,
     };
     runs.set(run.jobId, run);
     void (async () => {
@@ -143,8 +182,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         const summary = await runPipeline(opts.boot.deps, {
           requirements: opts.requirements,
           hitl: opts.hitl,
-          inboxDir: opts.inboxDir,
-          mcpMode: opts.mcpMode,
+          uploadFiles: opts.uploadFiles,
           resumeOnly: opts.resumeOnly,
         });
         run.status = 'completed';
@@ -196,12 +234,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
 
       if (method === 'GET' && pathname === '/api/config') {
         const config = loadPipelineConfig();
+        const ocrLocal = ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) =>
+          existsSync(path.join(paths.ocrDir, name)),
+        );
         json(res, 200, {
           ok: true,
           hasDeepseekKey: Boolean(process.env.DEEPSEEK_API_KEY),
-          defaultLlm: (process.env.BOLE_LLM as 'mock' | 'deepseek' | undefined) ?? 'mock',
-          demoRequirements: DEMO_REQUIREMENTS,
-          demoSeed: DEMO_SEED,
+          ocr: { external: Boolean(process.env.BOLE_OCR_URL), local: ocrLocal },
           pipeline: {
             batchSize: config.batchSize,
             maxBatchesInFlight: config.maxBatchesInFlight,
@@ -223,9 +262,22 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
-      if (method === 'GET' && pathname === '/api/latest') {
-        const jobs = listJobs(1);
-        json(res, 200, { ok: true, jobId: jobs[0]?.id ?? null });
+      if (method === 'POST' && pathname === '/api/uploads') {
+        const body = await readJsonBody(req);
+        const { saveUpload } = await import('../ingest/uploads.ts');
+        const uploaded = await saveUpload(
+          { filename: String(body.filename ?? ''), contentBase64: String(body.contentBase64 ?? '') },
+          paths.uploadsDir,
+        );
+        json(res, 200, {
+          ok: true,
+          upload: {
+            uploadId: uploaded.uploadId,
+            filename: uploaded.filename,
+            size: uploaded.size,
+            contentType: uploaded.contentType,
+          },
+        });
         return;
       }
 
@@ -236,31 +288,38 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 400, { ok: false, error: 'requirements 至少 5 个字符' });
           return;
         }
-        const llm = (String(body.llm ?? 'mock') === 'deepseek' ? 'deepseek' : 'mock') as 'mock' | 'deepseek';
-        const deepseekApiKey = String(body.deepseekApiKey ?? '').trim();
-        if (llm === 'deepseek' && !deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
-          json(res, 400, { ok: false, error: '未提供 DeepSeek API Key：请在设置中填写 key，或配置 DEEPSEEK_API_KEY。' });
+        const uploadIds = Array.isArray(body.uploadIds)
+          ? body.uploadIds.map((id) => String(id)).filter(Boolean)
+          : [];
+        if (uploadIds.length === 0) {
+          json(res, 400, { ok: false, error: '请先上传至少一份简历（PDF/DOCX/图片/文本）' });
           return;
         }
-        const hitl = new WebHitlResponder();
+        const files: UploadedFile[] = [];
+        for (const id of uploadIds) {
+          const file = await loadUpload(id, paths.uploadsDir);
+          if (file) files.push(file);
+        }
+        if (files.length === 0) {
+          json(res, 400, { ok: false, error: '上传文件不存在或已过期，请重新上传' });
+          return;
+        }
+        const deepseekApiKey = String(body.deepseekApiKey ?? '').trim();
+        if (!deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
+          json(res, 400, { ok: false, error: '未配置 DeepSeek API Key：请在设置中填写。' });
+          return;
+        }
+        const listeners = new Set<(chunk: StreamToken) => void>();
         const boot = await bootstrap({
           requirements,
-          seed: String(body.seed ?? DEMO_SEED),
-          llm,
           deepseekApiKey: deepseekApiKey || undefined,
-          faults: body.withFaults === false ? {} : DEMO_FAULTS,
+          stream: (chunk) => {
+            for (const listener of listeners) listener(chunk);
+          },
         });
-        const run = launch({
-          boot,
-          hitl,
-          provider: llm,
-          requirements,
-          // 前端不开放任意 inboxDir，避免本地服务被用作文件读取代理
-          inboxDir: paths.inboxDir,
-          mcpMode: String(body.mcpMode ?? 'in-process') === 'stdio' ? 'stdio' : 'in-process',
-          resumeOnly: false,
-        });
-        json(res, 200, { ok: true, jobId: run.jobId, runId: run.runId, provider: run.provider, status: run.status });
+        const hitl = new WebHitlResponder();
+        const run = launch({ boot, hitl, listeners, requirements, uploadFiles: files, resumeOnly: false });
+        json(res, 200, { ok: true, jobId: run.jobId, runId: run.runId, status: run.status });
         return;
       }
 
@@ -272,25 +331,68 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 404, { ok: false, error: `任务不存在: ${jobId}` });
           return;
         }
+        json(res, 200, { ok: true, run: buildRunInfo(jobId), snapshot });
+        return;
+      }
+
+      const streamMatch = /^\/api\/run\/([^/]+)\/stream$/.exec(pathname);
+      if (method === 'GET' && streamMatch) {
+        const jobId = decodeURIComponent(streamMatch[1]);
         const runtime = runs.get(jobId);
-        const reportDir = findReportDir(jobId);
-        const inferredRunId = reportDir ? path.basename(reportDir) : '';
-        json(res, 200, {
-          ok: true,
-          run: {
-            jobId,
-            runId: runtime?.runId ?? inferredRunId,
-            provider: runtime?.provider ?? 'unknown',
-            status: runtime?.status ?? inferStatus(snapshot.job.status),
-            startedAt: runtime?.startedAt ?? snapshot.job.created_ts,
-            completedAt: runtime?.completedAt ?? null,
-            pendingHitl: runtime?.hitl.currentQuestion() ?? null,
-            error: runtime?.error ?? null,
-            reportAvailable: Boolean(reportDir),
-            reportDir,
-            summary: runtime?.summary ?? null,
-          },
-          snapshot,
+        if (!runtime) {
+          json(res, 404, { ok: false, error: '该任务不在当前运行会话内，无法建立实时流' });
+          return;
+        }
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+        const send = (event: string, data: unknown): void => {
+          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+        let lastSeq = Number(url.searchParams.get('sinceSeq') ?? 0);
+        let closed = false;
+        const tokenListener = (chunk: StreamToken): void => {
+          if (!closed) send('token', chunk);
+        };
+        runtime.listeners.add(tokenListener);
+        send('status', buildRunInfo(jobId));
+        send('snapshot', getSnapshot(jobId));
+        let lastStatus = runtime.status;
+        const poll = setInterval(() => {
+          if (closed) return;
+          try {
+            for (const event of listEvents(jobId, lastSeq, 100)) {
+              lastSeq = Math.max(lastSeq, event.seq);
+              send('log', event);
+            }
+            const info = buildRunInfo(jobId);
+            if (info && (info.status !== lastStatus || info.pendingHitl)) {
+              lastStatus = info.status as RunStatus;
+              send('status', info);
+            }
+            if (runtime.status === 'completed' || runtime.status === 'failed') {
+              send('snapshot', getSnapshot(jobId));
+              send('done', { status: runtime.status, error: runtime.error ?? null });
+              clearInterval(poll);
+              setTimeout(() => {
+                if (!closed) res.end();
+              }, 500);
+            }
+          } catch {
+            // 下一轮重试
+          }
+        }, 350);
+        const heartbeat = setInterval(() => {
+          if (!closed) res.write(': ping\n\n');
+        }, 15_000);
+        req.on('close', () => {
+          closed = true;
+          runtime.listeners.delete(tokenListener);
+          clearInterval(poll);
+          clearInterval(heartbeat);
         });
         return;
       }
@@ -300,10 +402,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         const jobId = decodeURIComponent(eventsMatch[1]);
         const sinceSeq = Number(url.searchParams.get('sinceSeq') ?? 0);
         const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') ?? 200)));
-        json(res, 200, {
-          ok: true,
-          events: listEvents(jobId, Number.isFinite(sinceSeq) ? sinceSeq : 0, limit),
-        });
+        json(res, 200, { ok: true, events: listEvents(jobId, Number.isFinite(sinceSeq) ? sinceSeq : 0, limit) });
         return;
       }
 
@@ -326,16 +425,29 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
-      const reportMatch = /^\/api\/run\/([^/]+)\/report$/.exec(pathname);
+      const reportMatch = /^\/api\/run\/([^/]+)\/report(\.md|\.json)?$/.exec(pathname);
       if (method === 'GET' && reportMatch) {
         const jobId = decodeURIComponent(reportMatch[1]);
+        const format = reportMatch[2] ?? '';
         const dir = findReportDir(jobId);
-        const file = dir ? path.join(dir, 'report.html') : '';
-        if (!file || !existsSync(file)) {
+        if (!dir) {
           text(res, 404, '报告尚未生成');
           return;
         }
-        text(res, 200, readFileSync(file, 'utf8'), 'text/html; charset=utf-8');
+        if (format === '.md') {
+          text(res, 200, readFileSync(path.join(dir, 'report.md'), 'utf8'), 'text/markdown; charset=utf-8', {
+            'Content-Disposition': `attachment; filename="bole-report-${jobId}.md"`,
+          });
+          return;
+        }
+        const report = readReport(jobId);
+        if (!report) {
+          text(res, 404, '报告尚未生成');
+          return;
+        }
+        text(res, 200, JSON.stringify(report, null, 2), 'application/json; charset=utf-8', {
+          'Content-Disposition': `attachment; filename="bole-report-${jobId}.json"`,
+        });
         return;
       }
 
@@ -379,30 +491,23 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           return;
         }
         const body = await readJsonBody(req);
-        const llm = (String(body.llm ?? 'mock') === 'deepseek' ? 'deepseek' : 'mock') as 'mock' | 'deepseek';
         const deepseekApiKey = String(body.deepseekApiKey ?? '').trim();
-        if (llm === 'deepseek' && !deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
-          json(res, 400, { ok: false, error: '未提供 DeepSeek API Key' });
+        if (!deepseekApiKey && !process.env.DEEPSEEK_API_KEY) {
+          json(res, 400, { ok: false, error: '未配置 DeepSeek API Key' });
           return;
         }
-        const hitl = new WebHitlResponder();
+        const listeners = new Set<(chunk: StreamToken) => void>();
         const boot = await bootstrap({
           requirements: job.requirements,
           jobId,
           seed: job.seed ?? 'resume',
-          llm,
           deepseekApiKey: deepseekApiKey || undefined,
-          faults: body.withFaults === true ? DEMO_FAULTS : {},
+          stream: (chunk) => {
+            for (const listener of listeners) listener(chunk);
+          },
         });
-        const run = launch({
-          boot,
-          hitl,
-          provider: llm,
-          requirements: job.requirements,
-          inboxDir: paths.inboxDir,
-          mcpMode: 'in-process',
-          resumeOnly: true,
-        });
+        const hitl = new WebHitlResponder();
+        const run = launch({ boot, hitl, listeners, requirements: job.requirements, resumeOnly: true });
         json(res, 200, { ok: true, jobId, runId: run.runId, status: run.status });
         return;
       }
@@ -413,21 +518,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       }
       if (method === 'GET' && pathname === '/api/doctor') {
         json(res, 200, { ok: true, ...getDoctor() });
-        return;
-      }
-      if (method === 'POST' && pathname === '/api/seed') {
-        const result = await seedGolden();
-        json(res, 200, { ok: true, ...result });
-        return;
-      }
-      if (method === 'POST' && pathname === '/api/bench') {
-        const body = await readJsonBody(req);
-        const result = await runBench({
-          items: Number(body.items ?? 60),
-          latency: Number(body.latency ?? 8),
-          concurrency: Array.isArray(body.concurrency) ? (body.concurrency as number[]) : undefined,
-        });
-        json(res, 200, { ok: true, ...result });
         return;
       }
       if (method === 'POST' && pathname === '/api/reset') {
@@ -453,7 +543,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       text(res, 404, 'Not Found');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      json(res, 500, { ok: false, error: message });
+      const status = /上传|不支持的文件|文件内容|超过/.test(message) ? 400 : 500;
+      json(res, status, { ok: false, error: message });
     }
   });
 
@@ -463,5 +554,5 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   });
 
   process.stdout.write(`BoLe Web 已启动: http://${host}:${port}\n`);
-  process.stdout.write('提示：所有操作（发起运行 / HITL / 候选人审计 / 成本 / 工具）都在页面完成。\n');
+  process.stdout.write('对话式控制台：上传简历 → 开始筛选 → 实时事件/流式生成 → 证据审计 → 下载 Markdown/JSON。\n');
 }

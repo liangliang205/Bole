@@ -68,6 +68,9 @@ export async function runAdvisor(deps: AgentDeps, input: AdvisorInput): Promise<
     system: systemPrompt(deps, 'advisor'),
     user,
     sharedPrefix: sharedPrefix(deps, 'advisor', [`【岗位】${JSON.stringify(jd)}`]),
+    stream: deps.stream,
+    phase: 'interview_plan',
+    label: resume.label,
     meta: { resumeId: resume.id, label: resume.label, evaluation, jd },
   });
 

@@ -34,7 +34,6 @@ export interface PipelineConfig {
   conclusionScale: Record<string, number>;
   pricing: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitPerMTok: number }>;
   models: Record<ModelTier, string>;
-  bench: { concurrency: number[]; itemsPerRun: number; simulatedLatencyMs: number };
   fairness: { protectedCategories: string[] };
 }
 
@@ -42,10 +41,10 @@ export interface BolePaths {
   root: string;
   configDir: string;
   dataDir: string;
-  inboxDir: string;
+  uploadsDir: string;
+  ocrDir: string;
   knowledgeDir: string;
   indexDir: string;
-  goldenDir: string;
   runsDir: string;
   dbPath: string;
   promptsDir: string;
@@ -61,10 +60,10 @@ export function resolvePaths(root = projectRoot()): BolePaths {
     root,
     configDir: path.join(root, 'config'),
     dataDir,
-    inboxDir: process.env.BOLE_INBOX ?? path.join(dataDir, 'inbox'),
+    uploadsDir: process.env.BOLE_UPLOADS ?? path.join(dataDir, 'uploads'),
+    ocrDir: process.env.BOLE_OCR_DIR ?? path.join(dataDir, 'ocr'),
     knowledgeDir: process.env.BOLE_KNOWLEDGE ?? path.join(dataDir, 'knowledge'),
     indexDir: path.join(dataDir, 'index'),
-    goldenDir: path.join(dataDir, 'golden'),
     runsDir: process.env.BOLE_RUNS ?? path.join(root, 'runs'),
     dbPath: process.env.BOLE_DB ?? path.join(dataDir, 'ledger.db'),
     promptsDir: path.join(root, 'config', 'prompts'),

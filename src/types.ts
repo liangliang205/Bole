@@ -296,7 +296,9 @@ export interface ChatRequest {
   maxTokens?: number;
   /** 共享前缀（系统提示词+工具池+评分卡），用于缓存对齐与成本核算。 */
   sharedPrefix?: string;
-  /** Mock 提供方所需的任务上下文（真实 LLM 不读取该字段）。 */
+  /** 流式 token 回调；存在时提供方应使用 streaming 请求。 */
+  onToken?: (delta: string) => void;
+  /** 真实提供方不读取该字段，保留给测试替身。 */
   meta?: Record<string, unknown>;
 }
 
@@ -328,4 +330,26 @@ export interface RunMeta {
   seed: string;
   startedTs: string;
   llmProvider: string;
+}
+
+/** 前端/SSE 的 token 流：一次结构化调用对应一个 taskId。 */
+export interface StreamToken {
+  type: 'token';
+  agent: string;
+  taskId?: string;
+  phase?: string;
+  resumeId?: string;
+  label?: string;
+  delta: string;
+}
+
+export type StreamSink = (chunk: StreamToken) => void;
+
+/** 用户上传并落盘的简历文件。 */
+export interface UploadedFile {
+  uploadId: string;
+  filename: string;
+  path: string;
+  size: number;
+  contentType: string;
 }

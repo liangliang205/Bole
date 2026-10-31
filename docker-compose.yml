@@ -3,14 +3,15 @@ services:
     build: .
     container_name: bole-mvp
     environment:
-      # mock：离线确定性演示；deepseek：接入真实模型（需 DEEPSEEK_API_KEY）
-      BOLE_LLM: ${BOLE_LLM:-mock}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      BOLE_OCR_DIR: /app/ocr
       NO_COLOR: "1"
+    ports:
+      - "8787:8787"
     volumes:
       - bole-runs:/app/runs
       - bole-data:/app/data
-    command: ["node", "src/cli/index.ts", "demo", "--yes"]
+    restart: unless-stopped
 
 volumes:
   bole-runs:

@@ -1,5 +1,6 @@
-import { inflateRawSync, inflateSync } from 'node:zlib';
+import { inflateRawSync } from 'node:zlib';
 import path from 'node:path';
+import { ocrImage } from './ocr.ts';
 
 export interface NormalizedDoc {
   format: string;
@@ -9,7 +10,7 @@ export interface NormalizedDoc {
 
 export class UnsupportedFormatError extends Error {
   constructor(format: string) {
-    super(`P0 不支持该格式：${format}`);
+    super(`不支持该格式：${format}`);
     this.name = 'UnsupportedFormatError';
   }
 }
@@ -21,15 +22,19 @@ export class EmptyDocumentError extends Error {
   }
 }
 
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff']);
+
 export function detectFormat(filename: string, contentType = ''): string {
   const ext = path.extname(filename).toLowerCase().replace('.', '');
   if (ext) {
     if (ext === 'htm') return 'html';
-    if (['txt', 'md', 'html', 'docx', 'pdf', 'doc'].includes(ext)) return ext;
+    if (ext === 'markdown') return 'md';
+    if (IMAGE_EXT.has(ext)) return 'image';
     return ext;
   }
   if (/pdf/i.test(contentType)) return 'pdf';
   if (/wordprocessingml|docx/i.test(contentType)) return 'docx';
+  if (/image\//i.test(contentType)) return 'image';
   if (/html/i.test(contentType)) return 'html';
   if (/text\//i.test(contentType)) return 'txt';
   return 'unknown';
@@ -43,7 +48,7 @@ function decodeText(buffer: Buffer): { text: string; encoding: string } {
       const gbk = new TextDecoder('gbk').decode(buffer);
       if (!gbk.includes('\uFFFD')) return { text: gbk, encoding: 'gbk' };
     } catch {
-      // 忽略：回退 utf-8
+      // 回退 utf-8
     }
   }
   return { text: utf8, encoding: 'utf-8' };
@@ -99,10 +104,8 @@ export function unzip(buffer: Buffer): Map<string, Buffer> {
     const localExtraLength = buffer.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
     const raw = buffer.subarray(dataStart, dataStart + compressedSize);
-    let content: Buffer;
-    if (method === 0) content = Buffer.from(raw);
-    else if (method === 8) content = inflateRawSync(raw);
-    else throw new Error(`不支持的 ZIP 压缩方法: ${method}`);
+    const content = method === 0 ? Buffer.from(raw) : method === 8 ? inflateRawSync(raw) : null;
+    if (!content) throw new Error(`不支持的 ZIP 压缩方法: ${method}`);
     files.set(name, content);
     cursor += 46 + nameLength + extraLength + commentLength;
   }
@@ -122,54 +125,48 @@ export function docxToText(buffer: Buffer): string {
   return decodeEntities(text);
 }
 
-function pdfUnescape(raw: string): string {
-  return raw
-    .replace(/\\([nrtbf()\\])/g, (_m, ch: string) => ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', '(': '(', ')': ')', '\\': '\\' }[ch] ?? ch))
-    .replace(/\\([0-7]{1,3})/g, (_m, oct: string) => String.fromCharCode(parseInt(oct, 8)));
+interface PdfTextItem {
+  str?: string;
+  hasEOL?: boolean;
 }
 
-/** PDF 尽力而为提取：仅支持未加密、文本操作符可读的 PDF；中文 CID 字体可能失败（已写入已知限制）。 */
-export function pdfToText(buffer: Buffer): string {
-  const latin = buffer.toString('latin1');
-  const chunks: string[] = [];
-  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let match: RegExpExecArray | null;
-  while ((match = streamRe.exec(latin)) !== null) {
-    const raw = Buffer.from(match[1], 'latin1');
-    let content = '';
-    for (const inflater of [inflateSync, inflateRawSync]) {
-      try {
-        content = inflater(raw).toString('latin1');
-        break;
-      } catch {
-        // 尝试下一种
-      }
+interface PdfDocument {
+  numPages: number;
+  getPage: (page: number) => Promise<{ getTextContent: () => Promise<{ items: PdfTextItem[] }>; cleanup: () => void }>;
+  destroy: () => Promise<void>;
+}
+
+/** 使用 PDF.js 提取文本层。扫描件（无文本层）请上传图片走 OCR。 */
+export async function pdfToText(buffer: Buffer): Promise<string> {
+  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
+    getDocument: (options: Record<string, unknown>) => { promise: Promise<PdfDocument> };
+  };
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+    isEvalSupported: false,
+    verbosity: 0,
+  }).promise;
+  const pages: string[] = [];
+  try {
+    for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
+      const page = await doc.getPage(pageNo);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item) => `${item.str ?? ''}${item.hasEOL ? '\n' : ' '}`).join('');
+      pages.push(pageText.trim());
+      page.cleanup();
     }
-    if (!content) content = match[1];
-    const textRe = /\((?:\\.|[^\\()])*\)\s*Tj|\[((?:\\.|[^\]])*)\]\s*TJ/g;
-    let t: RegExpExecArray | null;
-    while ((t = textRe.exec(content)) !== null) {
-      const token = t[0];
-      if (token.endsWith('TJ')) {
-        const inner = token.slice(1, token.lastIndexOf(']'));
-        const parts = inner.match(/\((?:\\.|[^\\()])*\)/g) ?? [];
-        chunks.push(parts.map((p) => pdfUnescape(p.slice(1, -1))).join(''));
-      } else {
-        const open = token.indexOf('(');
-        const close = token.lastIndexOf(')');
-        chunks.push(pdfUnescape(token.slice(open + 1, close)));
-      }
-    }
+  } finally {
+    await doc.destroy();
   }
-  const text = chunks.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  const printable = (text.match(/[\u4e00-\u9fffA-Za-z0-9，。、；：（）()\s]/g) ?? []).length;
-  if (text.length === 0 || printable / text.length < 0.6) {
-    throw new UnsupportedFormatError('pdf（文本层不可提取，可能为扫描件或 CID 字体）');
+  const text = pages.join('\n\n').replace(/[ \t]+\n/g, '\n').trim();
+  if (text.length < 20) {
+    throw new UnsupportedFormatError('pdf（无文本层，可能是扫描件；请上传图片走 OCR）');
   }
   return text;
 }
 
-export function normalizeDocument(buffer: Buffer, filename: string, contentType = ''): NormalizedDoc {
+export async function normalizeDocument(buffer: Buffer, filename: string, contentType = ''): Promise<NormalizedDoc> {
   const format = detectFormat(filename, contentType);
   const warnings: string[] = [];
   let text = '';
@@ -183,10 +180,13 @@ export function normalizeDocument(buffer: Buffer, filename: string, contentType 
   } else if (format === 'docx') {
     text = docxToText(buffer);
   } else if (format === 'pdf') {
-    text = pdfToText(buffer);
-    warnings.push('PDF 文本层提取，复杂排版可能丢失分段');
+    text = await pdfToText(buffer);
+    warnings.push('PDF 文本层提取；扫描件请上传图片走 OCR');
+  } else if (format === 'image') {
+    text = await ocrImage(buffer, filename);
+    warnings.push('图片 OCR 提取，可能存在识别误差');
   } else if (format === 'doc') {
-    throw new UnsupportedFormatError('doc（P0 仅支持 docx，请另存为 docx）');
+    throw new UnsupportedFormatError('doc（旧版 Word，请另存为 docx）');
   } else {
     const decoded = decodeText(buffer);
     const printable = (decoded.text.match(/[\u4e00-\u9fffA-Za-z0-9]/g) ?? []).length;
@@ -202,6 +202,6 @@ export function normalizeDocument(buffer: Buffer, filename: string, contentType 
     .replace(/\u0000/g, '')
     .replace(/\r\n?/g, '\n')
     .trim();
-  if (cleaned.length < 20) throw new EmptyDocumentError('附件内容为空或过短（<20 字符）');
+  if (cleaned.length < 20) throw new EmptyDocumentError('内容为空或过短（OCR/文本层提取后 <20 字符）');
   return { format, text: cleaned, warnings };
 }

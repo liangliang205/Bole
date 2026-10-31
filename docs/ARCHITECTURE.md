@@ -1,194 +1,128 @@
-# BoLe 架构与机制设计
+# 架构
 
-> 本文对应 `BoLe_MVP开发方案.md` §2、§4、§5。所有机制在仓库中都有可运行实现与测试，不做"纸面架构"。
+## 1. 设计原则
 
-## 1. 设计公理
+1. **证据优先**：任何字段、评分、核查结论都必须带原文引用；字符区间由平台计算，模型只负责"引用哪句话"。
+2. **模型做判断，代码做纪律**：模型给语义判断；权重、总分、状态迁移、去重、PII、报告由代码确定性执行。
+3. **扇出用 flash，判断/否决用 pro**：解析/初筛是高并发扇出，走 `deepseek-chat`；JD 画像、深评、核查、建议走 `deepseek-reasoner`。
+4. **无全局 barrier**：按批流动，批内解析→初筛→深评→核查；批间最多 2 批在途，单批慢不阻塞其他批。
+5. **两阶段提交 + 单调守卫**：`running → staged → committed`；committed 后拒绝再写，避免重试覆盖已确认结论。
+6. **真实数据**：只接收用户上传的真实简历；没有 mock 模型、演示 JD、故障注入或预置黄金集。
 
-1. **可验证优先于炫技**：任何结论必须能回到简历原文的连续字符区间；回到不了的结论只能降级或转人工。
-2. **机制优先于提示词**：schema 门禁、状态机、单调守卫、容量池、深度预算都由代码强制；提示词负责语义质量，不负责纪律。
-3. **失败优先于取消**：先结算 `stop_reason` 再清理；已记录的失败不得被"清理成功"改写。
-4. **只有主 Agent 能编排**：子 Agent 深度预算为 0，运行时断言而非口头约定。
-5. **结果落盘、引用消费**：子 Agent 写结构化产物，主 Agent 只读台账里的摘要与路径，避免上下文爆炸与"凭空补结果"。
-6. **能力边界写进文档**：已知限制、失败明细、mock 与真实的差异全部显式呈现。
+## 2. 组件
 
-## 2. 分层
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 人机层   CLI / Web UI（HITL-1 需求反问 / HITL-2 终稿确认）      │
-│          decisions 表全量留痕（node/问题/回答/actor/时间）      │
-├──────────────────────────────────────────────────────────────┤
-│ 编排层   coordinator（唯一编排者）                              │
-│          parallel（批内并发）· pipeline（批间流动，无全量屏障）  │
-│          容量池准入 · Self-Loop 决策 · 汇总与 HITL 门控          │
-├──────────────────────────────────────────────────────────────┤
-│ Agent 层 profiler(pro) → fetcher(flash) → parser×N(flash)     │
-│          → assessor×M(flash 初筛 → pro 深评)                   │
-│          ⇄ auditor(pro) → advisor(pro)                        │
-│          每个 Agent = preset 配置 + prompt 文件 + zod schema    │
-├──────────────────────────────────────────────────────────────┤
-│ 工具层   hirebox MCP（mock 邮箱）· RAG（TF-IDF/余弦）           │
-│          评分卡确定性计算 · 公平性规则 · span 定位/校验 · PII   │
-├──────────────────────────────────────────────────────────────┤
-│ 数据层   SQLite 台账（jobs/resumes/parse_tasks/eval_tasks/      │
-│          review_tasks/evidence/events/decisions/usage）        │
-│          append-only 事件流 · 产物文件（JSON 引用传递）          │
-├──────────────────────────────────────────────────────────────┤
-│ 模型层   LlmRouter：flash=deepseek-chat / pro=deepseek-reasoner│
-│          mock 提供方用于离线确定性演示；统一重试/记账/缓存核算    │
+```text
+┌────────────────────────────────────────────────────────────┐
+│ Web（对话式控制台）                                          │
+│  会话列表 · 对话/工具轨迹 · token 流 · HITL 卡片 · 证据抽屉   │
+│  /api/uploads · /api/run · /api/run/:id/stream (SSE) ...     │
+└──────────────────────────┬─────────────────────────────────┘
+                           │ HTTP / SSE
+┌──────────────────────────▼─────────────────────────────────┐
+│ 编排层                                                       │
+│  Coordinator：JD → 接入 → 批流动 → 短名单 → 深评 → 核查 → 报告 │
+│  CapacityPool：parse=4 / assess=2 / review=1，满则拒绝+退避     │
+│  EventLog：append-only 事件；SSE 推送 + 台账回放               │
+└───────┬──────────────┬──────────────┬──────────────────────┘
+        │              │              │
+┌───────▼──────┐ ┌─────▼──────┐ ┌─────▼──────────┐
+│ 接入/归一化   │ │ 结构化调用  │ │ 证据/核查       │
+│ 上传落盘      │ │ zod schema │ │ quote→span      │
+│ PDF/DOCX/OCR  │ │ 同轮重试   │ │ 逐条 verdict    │
+│ 去重/PII      │ │ 两阶段提交 │ │ 自环/转人工     │
+└───────┬──────┘ └─────┬──────┘ └─────┬──────────┘
+        │              │              │
+┌───────▼──────────────▼──────────────▼──────────────────────┐
+│ 基础设施                                                     │
+│ SQLite 台账（jobs/resumes/tasks/events/llm_calls/decisions） │
+│ DeepSeek 提供方（streaming + usage + cache）                  │
+│ 运行目录（raw/norm/artifacts/report.md/report.json/...）      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## 2.1 档位设计：扇出用 flash，判断与否决用 pro
+## 3. 流水线
 
-档位按**任务难度 × 错误代价 × 调用量**决定，不按"主 Agent / 子 Agent"的职级决定：
+1. **画像师（pro）**：把 HR 原始需求结构化为 `Jd + Scorecard`；剥离性别/年龄/婚育/籍贯/民族/星座/残障/宗教等受保护条件；有歧义时 HITL。
+2. **探马（flash）**：读取 `data/uploads/<uploadId>/`，按扩展名归一化：
+   - PDF → PDF.js 文本层；
+   - DOCX → 解压 `word/document.xml`；
+   - 图片 → Tesseract OCR（或外部 `BOLE_OCR_URL`）；
+   - TXT/MD/HTML → 解码/去标签。
+   去重：文件 sha256 + 身份指纹；命中标记 `duplicate`，不进入解析。
+3. **批流动**：`batch=8`，`maxBatchesInFlight=2`；每批：
+   - 录事（flash）解析字段 + span；
+   - 相马官（flash）初筛；
+   - 取 Top40% 进入相马官（pro）深评；
+   - 监军（pro）逐条核查。
+4. **验真环**：核查不通过 → 打回重评（复用原评估 Worker 与档位），最多 2 轮；仍不足 → `quarantine` 转人工。
+5. **建议**：对通过核查的候选人，谋士（pro）生成面试问题与风险提示。
+6. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML。
 
-| 环节 | 档位 | 依据 |
-|---|---|---|
-| parser ×N | flash | 高并发、低难度、schema 固定；错误由 span 门禁、重试与失败隔离兜底 |
-| assessor 初筛 ×M | flash | 全量打分，成本与简历数线性相关；先做低成本筛选 |
-| assessor 深评（短名单） | pro | 批内 Top40% + 解析异常/不确定项；"证据是否支持结论"是强判断 |
-| auditor | pro | 独立否决权；核查是整个平台可信度的最后一道闸门，不能跟着扇出降档 |
-| profiler / advisor | pro | 调用量小、影响大（JD/评分卡/面试建议） |
-| coordinator | pro | 当前为确定性编排；只有需要 LLM 仲裁或叙述时才真正消耗 pro |
+## 4. 档位与路由
 
-实现要点：
+- 配置：`config/agents.json` 每个 preset 的 `tier`；`config/pipeline.json` 的 `models`、`deepEval`。
+- `LlmRouter` 负责 tier→model、温度 0、token 记账、成本、缓存前缀；`DeepSeekProvider` 负责 HTTP/streaming。
+- `eval_tasks` 记录 `tier`（flash/pro）与 `phase`（screen/deep/revise），报告按 `${schema}@${tier}` 聚合成本。
+- 深评短名单：批次内按初筛分排序取前 `deepEval.percent`（默认 40%），异常/边界样本可进入深评。
 
-- `config/pipeline.json#deepEval` 控制深评开关、比例（默认 40%）与档位（pro）；
-- 初筛与深评都写 `eval_tasks`，用 `tier/phase(screen|deep|revise)` 区分，报告与 `bole audit` 可见；
-- Self-Loop 返工**沿用被核查那次的档位**（`worker.reused`），避免初筛 flash、返工突然 pro 造成口径漂移；
-- 深评失败不淘汰候选人，回退到初筛结果并记 `deep_eval.failed`；
-- 缓存按"模型 + 前缀"隔离：同一阶段保持同一档位，前缀对齐（系统提示词 + 评分卡 + JD）仍然成立。
+## 5. 证据与审计
 
-> 这套设计在 mock 黄金集上验证了路由、成本与状态机；flash 与 pro 的**质量差异**必须配置真实 API Key 后用同一黄金集 A/B，mock 不能替代真实模型评测。
+- 模型输出 `quote`；平台用 `locateQuote` 在归一化文本中定位 `charStart/charEnd`，支持空白差异与省略号片段。
+- 解析任务的每个字段必须有 span；评估维度必须有引用；核查逐条给出 `supported/unsupported`。
+- 监军不通过时写 `requiredFixes`，评估任务回到 `re_eval`；第二轮记录 `revisionOf`。
+- 报告中的 `evidenceChain` 与候选人详情都来自已 committed 的任务，不重新让模型"回忆"。
 
-## 3. 端到端数据流
+## 6. 状态与台账
 
-1. `bootstrap` 创建 job、运行目录、模型路由与 RAG 索引，写 `run.created` 事件。
-2. **需求理解**：profiler 用 RAG 检索历史 JD/评分卡 → 模型输出 `jd_analysis`（zod 校验、失败同轮重试）→ 权重归一化 → 确定性公平性规则二次剥离受保护属性 → 逐条 HITL 反问 → `decisions` 落账 → `jobs.jd_json/scorecard_json/fairness_json` 更新。
-3. **简历接入**：fetcher 经 MCP `inbox.list` / `inbox.get` 拉取邮件 → MIME 解析附件 → `normalizeDocument`（docx/html/txt/md/pdf）→ 附件 sha256 + 身份指纹去重 → 原文与归一化文本落盘 → `resumes` 表记录 `queued/duplicate/failed`。
-4. **批流水线**：按 label 顺序切批（默认 8 份/批），`flowBatches` 允许多批同时流动；每批内：
-   - parser 逐份解析（容量池 4），字段 quote 由平台 `locateQuote` 计算字符偏移；
-   - 批内解析完成后立即可评估，**不等其他批**；
-   - assessor 初筛：全部候选人用 flash 打分（容量池 2），平台按权重重算总分与结论，模型自报总分不采信；
-   - 深评：批内 Top40% + 解析异常/不确定项用 pro 再评一次；深评失败回退初筛结果；
-   - auditor 逐条核对引用（容量池 1），LLM 语义复核 + 确定性 span/公平性规则双管齐下；
-   - 裁决 `re_eval` 时续用同一个 assessor 实例（`worker.reused`），沿用被核查档位，最多 2 轮；超限或合规高风险 → `escalate_human`。
-5. **汇总**：只读取 `status in (verified, reported)` 的评估 → 排序（总分 → 技术栈 → 年限 → 项目复杂度）→ Top5 → advisor 生成面试建议 → 报告（md/html/json/cost/svg）→ HITL-2 确认 → job `completed`，简历 `reported`。
+- 任务状态：`queued → running → staged → committed`；失败/取消为终态；committed 单调守卫。
+- 简历状态：`queued → parsing → parsed → evaluating → evaluated → verifying → verified → reported`；可回退到 `evaluating` 重评；`quarantine/failed/duplicate` 为旁路终态。
+- 事件 append-only；`seq` 单调递增，SSE 按 `sinceSeq` 增量推送。
+- 批检查点：`batches` 表记录每批阶段；`resume` 从检查点续跑，不重复已完成任务。
+- `llm_calls` 记录每次调用（agent/model/tier/tokens/cost/cache），成本页与报告由此聚合。
 
-## 4. 任务状态机与结算语义
+## 7. 流式与前端
 
-任务级：`pending → running → staged → committed`，旁路 `failed / aborted / refused`；`committed` 终态，任何后续写入抛 `AlreadyCommittedError`（单调守卫）。失败/取消任务只能经显式重试回到 `pending`。
+- `DeepSeekProvider` 使用 `stream:true` + SSE 解析；`onToken` 回调把 delta 传给 `AgentDeps.stream`。
+- `runStructuredTask`/`callAgentJson` 在调用时注入 `onToken`，携带 agent/taskId/phase/resumeId/label。
+- Web 服务维护每个 job 的 listener 集合；`GET /api/run/:id/stream` 推送：
+  - `status`：运行状态、待回答 HITL、报告可用性；
+  - `snapshot`：台账计数；
+  - `log`：增量事件；
+  - `token`：原始生成 token；
+  - `done`：结束。
+- 前端不构建、无框架：`index.html + app.js + styles.css`；对话区渲染里程碑与工具轨迹，底部显示实时 token 卡片，HITL 卡片固定在输入框上方。
+- 报告通过 `/report`（JSON）与 `/report.md` 下载；没有 HTML 报告路由。
 
-简历级（可观察视图）：`queued → parsing → parsed → evaluating → evaluated → verifying → verified → reported`，旁路 `quarantine / failed / duplicate`。`verifying → evaluated` 支持 Self-Loop 回退；恢复场景由 `forceResumeStatus` 显式重置并留痕，不绕过正常状态机。
+## 8. 失败处理
 
-结算五分类：`completed / max-tokens / aborted / error / refusal`。`combineStopReasons` 实现"失败优先于取消、取消优先于完成"：
-- 已记录 `error/max-tokens/refusal` 时，后续 `aborted` 不覆盖；
-- 已记录 `completed` 后收到 `aborted`，结果为 `aborted`（取消确实发生）；
-- 该函数有独立单测，避免"清理成功=工作成功"。
-
-## 5. 容量池：拒绝不排队与防死锁论证
-
-- `CapacityPool.tryAcquire` 在满载时**立即返回 null** 并累加 refusals，不维护任何等待队列。
-- 编排层用 `acquire` 做**有界准入重试**（指数退避 + 抖动，上限 200 次 / 30s），超限抛 `PoolFullError`，任务不会被无限悬挂。
-- 为什么不会死锁：池内任务只依赖**已经完成**的上游产物（台账里 committed 的 parse/eval），不会等待仍需本池名额的任务；批 i+1 的解析与批 i 的评估互不阻塞。若改成 FIFO 排队，则可能出现"等待中的任务持有上游依赖"的循环等待。
-- 池统计（capacity/peak/acquired/refused/timeouts）写入报告，演示"拒绝确实发生且被有界重试吸收"。
-
-## 6. 批流动（无全量屏障）
-
-`flowBatches` 最多允许 `maxBatchesInFlight=2` 个批同时流动。每个批独立走"解析 → 评估 → 核查"链路；批 2 在第一份简历解析时就开始，而批 1 可能仍在评估。端到端测试通过事件序号断言：
-
-```
-event(batch.started, batchId=2).seq < event(batch.completed, batchId=1).seq
-```
-
-这样做的收益：首份结果时延从"全部解析完"降为"首批解析完"；代价：台账与报告需要处理"部分候选人有评估、部分没有"的中间态（本实现通过状态机与批次事件解决）。
-
-## 7. 结构化输出两阶段提交
-
-`runStructuredTask` 的固定流程：
-
-```
-task: pending → running
-  → 模型调用（JSON mode）
-  → JSON 解析 → zod schema 校验 → 领域后置校验（引文必须可在原文定位）
-  → 失败：把错误列表回喂模型，同轮重试（≤ maxAttempts=2），attempt+1
-  → 成功：产物写入 runs/<run>/artifacts/<kind>/<taskId>.json
-  → task: staged（result_path 已落盘）
-  → persist()：写业务字段/证据行（仍在 staged，可审计）
-  → task: committed（committed_ts，之后禁止任何写入）
-```
-
-关键点：
-- **落盘在提交之前**：崩溃时不会出现"台账说成功、产物不存在"。
-- **校验即重试**：错误信息回喂，而不是重新起任务；失败原因记录在 `error_json`。
-- **模型不自算偏移**：模型只给 `field + quote`，平台用 `locateQuote` 计算 `charStart/charEnd`，定位失败即视为 schema 违规。
-- **总分不自算**：`applyScorecard` 用权重重算总分与结论，模型自报总分只作参考。
-
-## 8. 证据链与核查
-
-- `evidence` 表以 `(resume_id, field, char_start, char_end)` 唯一，重复插入被忽略。
-- **偏移基准**：字符区间以归一化文本（`resumes.norm_path`）为基准；原始附件另存于 `resumes.raw_path`，归一化只做换行/空白整理，不改变正文语义。报告与 `bole audit` 显示的区间都可直接用归一化文本复核。
-- 解析阶段挂字段级 span；评估阶段挂维度级 span；核查阶段给每条结论一个 `supported / unsupported / missing_evidence` 裁决，并整体标记证据 `verified`。
-- 监军与相马官严格分离：不同 preset、不同 prompt、不同调用；监军拥有否决权，但**不能修改评估**，只能打回。
-- 双重机制防"橡皮图章"：
-  1. 机制层：每条维度必须有证据行；引用需能在原文定位；评估理由出现受保护属性词 → 直接 `escalate_human`；LLM 判 pass 但机制层发现未通过项 → 强制 `re_eval`；
-  2. 文化层：prompt 明确"逐条举证，禁止只输出整体通过"，`review_eval` schema 要求 checks 数组且 pass 时不得含非 supported 项。
-
-## 9. 框架取舍：为什么没有直接依赖 Mastra
-
-`开发方案 §5` 选择 Mastra，并在 §11 给出退路："若其 Workflow 语义与批流动需求冲突，退路是仅用其 Agent/模型层，编排层切回自研"。
-
-本 MVP 的实际取舍：
-
-| 维度 | Mastra 方案 | 本仓库 | 结论 |
-|---|---|---|---|
-| 离线可复现 | 需安装大量依赖、Playground/存储栈较重 | 仅 `zod` + Node 内置能力，`pnpm install` 秒级，无 API Key 可跑 | 参赛演示优先 |
-| 评分核心机制 | 需在框架语义内实现容量池/两阶段提交/批流动 | 机制层全部自研，代码即证据 | 评分点必须能讲清实现 |
-| 模型接缝 | model router | `src/llm/provider.ts` + `LlmRouter`，真实/ mock 同一路由 | 可替换 |
-| 编排接缝 | Workflow suspend/resume | `src/core/pipeline.ts` + `Ledger` 事件溯源 | 可替换 |
-| 风险 | 框架快速演进、Workflow 语义可能不匹配批流动 | 无外部编排锁 | 降低演示风险 |
-
-因此本仓库把"可直接复用 Mastra"的部分限定为：模型调用/重试、结构化输出 schema、检索工具封装；编排与验证机制保持自研。这是**有意识的取舍**，不是遗漏：`config/agents.json` 的 preset 结构与 Mastra Agent 定义可一一映射，`runStructuredTask` 与 `flowBatches` 是清晰的替换点。若决赛需要 Playground 演示，可在不改动机制层的前提下加一个只读的 Mastra/HTTP 面板。
-
-## 10. 可观测性与审计
-
-- Web UI（`pnpm web`，默认 `127.0.0.1:8787`）把任务列表、发起运行、实时事件、HITL、候选人审计、合规/成本、续跑与维护工具包装成可交互页面；它不维护第二份状态，也不绕过编排层。单用户、无认证，禁止直接暴露公网。
-- `events` 表 append-only（数据库触发器禁止 UPDATE/DELETE），字段：`seq/ts/job_id/actor/type/payload_json`。CLI `status`、Web UI 与 `audit` 都只读事件与台账重建视图。
-- 任务台账记录 `worker_id/attempt/result_path/stop_reason/committed_ts`，可回答"谁做的、试了几次、产物在哪、为什么停"。
-- `decisions` 表记录每次 HITL：问题、选项、回答、操作者（区分 `HR(console)` 与 `HR(auto-demo)`）、时间。
-- `usage` 表按 agent/model/tier 记账；`cost-report.md` 输出按阶段、按模型、缓存对齐三张表。
-- 报告中的"核查否决率"与"失败明细"直接来自台账，不由模型撰写。
-
-## 11. 错误处理矩阵
-
-| 故障 | 处理 | 台账表现 |
-|---|---|---|
-| schema 不符 | 同轮回喂错误重试（≤2） | `attempt` 递增；仍失败 → `failed` |
-| 单份解析失败 | 该份 `failed`，批次继续 | `resumes.status=failed`，失败明细进报告 |
-| 模型超时/限流 | 提供方指数退避（≤3）；路由层记录 | `stop_reason=error`，任务 `failed` |
-| 核查驳回 | Self-Loop ≤2，续用原 Worker | `worker_id` 不变，`revision_of` 指向上一版评估 |
-| Self-Loop 超限 | 转人工 | `review_tasks.verdict=escalate_human`，简历 `quarantine` |
-| 证据缺失 | 一票否决该结论 | `evidence.verified=0`，`missing_evidence` |
-| MCP 故障 | 拉取失败如实上报，不伪造简历 | `manifest.failed` + `fetch.failed` 事件 |
-| 进程中断 | P0 批次粒度重跑：未提交任务 `aborted`，简历重置 | `recovery.*` 事件；已提交产物复用 |
-| 全部简历不可用 | 终止流水线并给出失败明细 | CLI 非零退出，错误信息含原因 |
-
-## 12. 代码地图
-
-| 关注点 | 文件 |
+| 故障 | 行为 |
 |---|---|
-| preset 注册表与校验 | `src/core/registry.ts`、`config/agents.json` |
-| 事件与台账 | `src/core/events.ts`、`src/core/ledger.ts`、`src/core/db.ts` |
-| 状态机/结算 | `src/core/state.ts` |
-| 容量池/批流动 | `src/core/pool.ts`、`src/core/pipeline.ts` |
-| 两阶段提交 | `src/core/structured.ts` |
-| 模型路由/成本/缓存 | `src/llm/router.ts`、`src/llm/mock.ts`、`src/llm/deepseek.ts` |
-| MCP | `src/mcp/server.ts`、`src/mcp/client.ts` |
-| 归一化/去重/PII | `src/ingest/*` |
-| 评分卡/公平性/RAG | `src/tools/*` |
-| 各 Agent | `src/agents/*.ts` + `config/prompts/*.md` |
+| 单个上传不支持/OCR 失败 | 该简历 `failed`，批次继续；报告列失败原因 |
+| 全部上传失败 | 运行失败，返回可读错误与失败明细 |
+| schema 违规 | 同轮重试（≤2），错误回喂；仍失败任务 `failed` |
+| 模型 429/5xx | 指数退避重试；已推送 token 后不重试，避免重复内容 |
+| 核查不通过 | 自环重评 ≤2 轮；仍不足转人工 |
+| 运行中断 | 批次检查点续跑；committed 不重跑 |
+| 未配置 Key | `bootstrap` 立即失败；无 mock 回退 |
+
+## 9. 安全与边界
+
+- 默认只监听 `127.0.0.1`；无登录/多租户，公网需反向代理 + 鉴权。
+- Key 只存浏览器 localStorage，随运行请求发送；不写台账、不写报告。
+- 报告/事件/日志做 PII 掩码；台账保存哈希与路径；原始简历在 `runs/` 与 `data/uploads/` 中为明文，依赖文件系统权限。
+- 图片 OCR 准确率有限；扫描版 PDF 需转图片；这些边界在 UI 与 `docs/LIMITATIONS.md` 中明示。
+
+## 10. 关键文件
+
+| 主题 | 文件 |
+|---|---|
 | 编排 | `src/agents/coordinator.ts` |
-| Web UI | `src/web/server.ts`（单文件 HTTP + 内嵌前端） |
-| 报告 | `src/report/builder.ts`、`src/report/render.ts` |
-| 演示与 CLI | `src/cli/index.ts`、`src/cli/demo-data.ts` |
+| 接入 | `src/agents/fetcher.ts`、`src/ingest/{uploads,normalize,ocr,dedup,pii}.ts` |
+| 解析/评估/核查 | `src/agents/{parser,assessor,auditor}.ts` |
+| 结构化提交 | `src/core/structured.ts`、`src/core/state.ts` |
+| 容量池/批流动 | `src/core/{pool,pipeline}.ts` |
+| 台账/事件 | `src/core/{ledger,events}.ts` |
+| 模型 | `src/llm/{deepseek,router,cost}.ts` |
+| 报告 | `src/report/{builder,render}.ts` |
+| Web/SSE | `src/web/{server,data,ops}.ts`、`src/web/public/*` |
+| 测试 | `tests/unit/*`、`tests/integration/*`、`tests/fixtures/*` |

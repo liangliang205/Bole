@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>伯乐 BoLe · 可验证招聘筛选控制台</title>
+<title>伯乐 BoLe · 对话式招聘筛选</title>
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -13,15 +13,16 @@
       <div class="brand-mark">伯乐<span>BoLe</span></div>
       <div class="brand-sub">可验证的多 Agent 招聘筛选</div>
     </div>
-    <button class="btn primary block" id="new-run-btn">＋ 新建筛选任务</button>
+    <button class="btn primary block" id="new-run-btn">＋ 新建筛选会话</button>
     <div class="search">
       <span class="search-icon">⌕</span>
-      <input id="job-search" placeholder="搜索任务 / 岗位（/）" autocomplete="off">
+      <input id="job-search" placeholder="搜索会话（/）" autocomplete="off">
     </div>
-    <div class="side-title">任务 <span id="job-count" class="muted"></span></div>
+    <div class="side-title">会话 <span id="job-count" class="muted"></span></div>
     <div id="job-list" class="job-list"></div>
     <div class="side-footer">
       <button class="btn ghost block" id="open-settings">⚙ 设置与模型</button>
+      <button class="btn ghost block" id="open-tools">⌘ 工具与环境</button>
       <div id="env-line" class="env-line">正在检查环境…</div>
     </div>
   </aside>
@@ -29,115 +30,78 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar-title">
-        <div id="job-title" class="job-title">BoLe 控制台</div>
-        <div id="job-sub" class="job-sub">新建任务，或从左侧选择历史任务</div>
+        <div id="job-title" class="job-title">伯乐 BoLe</div>
+        <div id="job-sub" class="job-sub">上传简历，开始一次可验证的筛选</div>
       </div>
       <div class="topbar-actions">
         <span id="status-pill" class="pill idle">idle</span>
+        <button class="btn ghost" id="panel-btn" title="任务面板">▤ 任务面板</button>
+        <a class="btn ghost" id="download-md" href="#" target="_blank" rel="noreferrer">↓ Markdown</a>
+        <a class="btn ghost" id="download-json" href="#" target="_blank" rel="noreferrer">↓ JSON</a>
         <button class="btn ghost" id="resume-btn" title="从批次检查点续跑">▶ 续跑</button>
-        <button class="btn ghost" id="report-btn" title="打开完整报告">↗ 报告</button>
-        <button class="btn ghost" id="refresh-btn" title="刷新">刷新</button>
+        <button class="btn ghost" id="refresh-btn">刷新</button>
       </div>
     </header>
 
     <section id="empty-view" class="empty-view">
       <div class="hero">
         <div class="eyebrow">Agent Orchestration · Evidence First</div>
-        <h1>让每一个招聘结论，<br>都能回到简历原文。</h1>
+        <h1>和伯乐聊一句招聘需求，<br>拿到一份有出处的推荐。</h1>
         <p class="hero-copy">
-          伯乐把 HR 的一句话需求变成可核查的筛选流水线：JD 结构化 → 简历接入 → 并发解析 →
-          匹配评估 → 证据核查 → 合规报告。关键节点由你确认，平台只给建议、不做决定。
+          上传真实简历（PDF / DOCX / 图片 / 文本），描述岗位需求。伯乐会完成 JD 结构化、并发解析、
+          匹配评估、证据核查与合规检查；关键节点会在对话里请你确认，平台只给建议、不做决定。
         </p>
         <div class="composer">
-          <textarea id="new-requirements" rows="4" placeholder="描述岗位需求，例如：急招 Java 后端工程师，3-5 年经验，熟悉 Spring Boot、MySQL、Redis……"></textarea>
+          <textarea id="new-requirements" rows="4" placeholder="例如：急招 Java 后端工程师，3-5 年经验，熟悉 Spring Boot、MySQL、Redis，有微服务与高并发经验，base 上海……"></textarea>
+          <div id="new-attachments" class="attachments"></div>
           <div class="composer-bar">
             <div class="composer-controls">
-              <select id="new-llm" class="select">
-                <option value="mock">mock · 离线可复现</option>
-                <option value="deepseek">DeepSeek · 需 API Key</option>
-              </select>
-              <span class="muted">⌘/Ctrl + Enter 开始</span>
+              <button class="btn ghost" id="attach-btn" type="button">＋ 上传简历</button>
+              <span class="muted" id="upload-hint">支持 PDF / DOCX / 图片 / TXT / HTML，单文件 ≤25MB</span>
             </div>
             <button class="btn primary" id="new-start">开始筛选 →</button>
           </div>
         </div>
         <div id="new-hint" class="hint"></div>
         <div class="hero-points">
-          <div><b>7</b><span>职责独立的 Agent</span></div>
+          <div><b>真实模型</b><span>DeepSeek pro / flash 分档</span></div>
           <div><b>100%</b><span>结论挂原文 span</span></div>
           <div><b>≤2</b><span>验真环自动打回</span></div>
           <div><b>HITL</b><span>关键节点人工确认</span></div>
         </div>
       </div>
       <div class="recent">
-        <div class="section-row"><h2>最近任务</h2><span class="muted">点击继续查看</span></div>
+        <div class="section-row"><h2>最近会话</h2><span class="muted">点击继续查看</span></div>
         <div id="recent-jobs" class="recent-grid"></div>
       </div>
     </section>
 
-    <section id="run-view" class="run-view hidden">
-      <div id="kpis" class="kpis"></div>
-      <div id="pipeline" class="pipeline"></div>
-      <div id="hitl-host"></div>
-      <nav class="tabs" id="tabs">
-        <button class="tab active" data-tab="timeline">事件流</button>
-        <button class="tab" data-tab="candidates">候选人</button>
-        <button class="tab" data-tab="compliance">合规</button>
-        <button class="tab" data-tab="cost">成本</button>
-        <button class="tab" data-tab="tools">工具箱</button>
-      </nav>
-      <div class="panels">
-        <section id="tab-timeline" class="panel">
-          <div class="panel-toolbar">
-            <span class="panel-title">实时事件 <span class="live-dot" id="live-dot"></span></span>
-            <div class="panel-tools">
-              <input id="event-filter" class="input small" placeholder="过滤事件 / Agent / 候选人">
-              <label class="check"><input id="autoscroll" type="checkbox" checked> 自动滚动</label>
-            </div>
+    <section id="chat-view" class="chat-view hidden">
+      <div id="chat-scroll" class="chat-scroll"></div>
+      <div id="stream-host" class="stream-host"></div>
+      <div id="hitl-host" class="hitl-host"></div>
+      <div class="composer-wrap">
+        <div class="composer reply-composer">
+          <textarea id="reply-input" rows="2" placeholder="回答 HITL 问题，或点击上方选项…"></textarea>
+          <div class="composer-bar">
+            <span class="muted" id="reply-hint">当前没有待回答的问题</span>
+            <button class="btn primary" id="reply-send" disabled>发送</button>
           </div>
-          <div id="events" class="events"></div>
-        </section>
-        <section id="tab-candidates" class="panel hidden">
-          <div class="panel-toolbar">
-            <span class="panel-title">候选人清单</span>
-            <div class="panel-tools">
-              <select id="candidate-filter" class="select small">
-                <option value="all">全部状态</option>
-                <option value="reported">已通过</option>
-                <option value="quarantine">转人工</option>
-                <option value="duplicate">重复</option>
-                <option value="failed">失败</option>
-              </select>
-              <span class="muted">点击行查看证据链</span>
-            </div>
-          </div>
-          <div id="candidate-table"></div>
-        </section>
-        <section id="tab-compliance" class="panel hidden"><div id="compliance"></div></section>
-        <section id="tab-cost" class="panel hidden"><div id="cost"></div></section>
-        <section id="tab-tools" class="panel hidden">
-          <div class="tools-grid">
-            <div class="tool-card"><h3>Agent 注册表</h3><p>查看 7 个 preset 的档位、工具与深度预算。</p><button class="btn ghost" data-tool="agents">查看</button></div>
-            <div class="tool-card"><h3>环境自检</h3><p>Node、配置、邮箱、知识库、台账与 API Key。</p><button class="btn ghost" data-tool="doctor">运行自检</button></div>
-            <div class="tool-card"><h3>黄金简历集</h3><p>重建 20 份 .eml（固定内容，幂等）。</p><button class="btn ghost" data-tool="seed">重新生成</button></div>
-            <div class="tool-card"><h3>调度微基准</h3><p>并发 1/4/8 的吞吐与 P50/P95（模拟时延）。</p><button class="btn ghost" data-tool="bench">运行基准</button></div>
-            <div class="tool-card danger"><h3>清空台账</h3><p>删除 SQLite 台账与全部 runs 产物，不可恢复。</p><button class="btn danger" data-tool="reset">清空</button></div>
-          </div>
-          <div id="tool-output" class="tool-output"></div>
-        </section>
+        </div>
       </div>
     </section>
   </main>
 
-  <aside id="inspector" class="inspector hidden">
-    <div class="inspector-head">
-      <div>
-        <div class="inspector-eyebrow">候选人审计</div>
-        <div id="inspector-title" class="inspector-title">—</div>
+  <aside id="drawer" class="drawer hidden">
+    <div class="drawer-head">
+      <div class="drawer-tabs" id="drawer-tabs">
+        <button class="tab active" data-drawer-tab="candidates">候选人</button>
+        <button class="tab" data-drawer-tab="compliance">合规</button>
+        <button class="tab" data-drawer-tab="cost">成本</button>
       </div>
-      <button class="btn ghost" id="inspector-close">✕</button>
+      <button class="btn ghost" id="drawer-close">✕</button>
     </div>
-    <div id="inspector-body" class="inspector-body"></div>
+    <div id="drawer-body" class="drawer-body"></div>
   </aside>
 </div>
 
@@ -145,41 +109,33 @@
   <div class="modal-card">
     <div class="modal-head"><h2>设置与模型</h2><button class="btn ghost" id="settings-close">✕</button></div>
     <div class="form-grid">
-      <label>模型提供方
-        <select id="set-llm" class="select">
-          <option value="mock">mock · 离线可复现</option>
-          <option value="deepseek">DeepSeek · 需 Key</option>
-        </select>
-      </label>
-      <label>随机种子
-        <input id="set-seed" class="input">
-      </label>
-      <label>MCP 方式
-        <select id="set-mcp" class="select">
-          <option value="in-process">in-process（默认）</option>
-          <option value="stdio">stdio（受限沙箱可能被拒绝）</option>
-        </select>
-      </label>
-      <label>故障注入
-        <select id="set-faults" class="select">
-          <option value="on">开启（R17 幻觉 / R20 偏见）</option>
-          <option value="off">关闭</option>
-        </select>
-      </label>
-      <label class="span-2">DeepSeek API Key（保存在浏览器 localStorage，仅随 run 请求发送）
+      <label class="span-2">DeepSeek API Key（保存在浏览器 localStorage，仅随请求发送）
         <input id="set-key" class="input" type="password" placeholder="sk-...">
       </label>
+      <div class="span-2 muted" id="settings-hint"></div>
     </div>
-    <div id="settings-hint" class="hint"></div>
     <div class="modal-actions">
       <button class="btn ghost" id="settings-clear">清除 Key</button>
       <span class="spacer"></span>
       <button class="btn ghost" id="settings-cancel">取消</button>
-      <button class="btn primary" id="settings-save">保存设置</button>
+      <button class="btn primary" id="settings-save">保存</button>
     </div>
   </div>
 </div>
 
+<div id="tools-modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h2>工具与环境</h2><button class="btn ghost" id="tools-close">✕</button></div>
+    <div class="tools-grid">
+      <div class="tool-card"><h3>Agent 注册表</h3><p>查看 7 个 preset 的档位、工具与深度预算。</p><button class="btn ghost" data-tool="agents">查看</button></div>
+      <div class="tool-card"><h3>环境自检</h3><p>Node、配置、知识库、台账、Key 与 OCR。</p><button class="btn ghost" data-tool="doctor">运行自检</button></div>
+      <div class="tool-card danger"><h3>清空台账</h3><p>删除台账、运行产物与上传缓存，不可恢复。</p><button class="btn danger" data-tool="reset">清空</button></div>
+    </div>
+    <div id="tool-output" class="tool-output"></div>
+  </div>
+</div>
+
+<input id="file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" hidden>
 <div id="toast" class="toast hidden"></div>
 <script src="/app.js"></script>
 </body>
