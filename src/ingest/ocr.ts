@@ -16,6 +16,18 @@ type TesseractWorker = {
 
 let workerPromise: Promise<TesseractWorker> | null = null;
 let queue: Promise<unknown> = Promise.resolve();
+let activeUsers = 0;
+
+/** 每个使用 OCR 的批次/运行登记一次，最后一个释放时再终止 worker，避免并发运行互相踩踏。 */
+export function acquireOcr(): void {
+  activeUsers += 1;
+}
+
+export async function releaseOcr(): Promise<void> {
+  activeUsers = Math.max(0, activeUsers - 1);
+  if (activeUsers > 0) return;
+  await closeOcr();
+}
 
 function langList(): string[] {
   const raw = process.env.BOLE_OCR_LANG || 'chi_sim+eng';
@@ -86,7 +98,7 @@ export async function ocrImage(buffer: Buffer, filename = 'resume.png'): Promise
   return run;
 }
 
-/** 结束本地 Tesseract worker，释放子进程/定时器；CLI 与每批 OCR 完成后必须调用。 */
+/** 结束本地 Tesseract worker，释放子进程/定时器；直接调用方（测试/脚本）使用。 */
 export async function closeOcr(): Promise<void> {
   await queue.catch(() => {});
   const current = workerPromise;

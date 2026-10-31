@@ -4,7 +4,7 @@ import { ensureDir } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
 import { attachmentFingerprint, dedupKeyFromText } from '../ingest/dedup.ts';
 import { detectFormat, normalizeDocument } from '../ingest/normalize.ts';
-import { closeOcr } from '../ingest/ocr.ts';
+import { acquireOcr, releaseOcr } from '../ingest/ocr.ts';
 import type { FetchManifest, ResumeRow, UploadedFile } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
 
@@ -24,14 +24,14 @@ export interface FetcherResult {
 export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<FetcherResult> {
   const manifest: FetchManifest = { pulled: 0, duplicates: [], failed: [], resumes: [] };
   const created: ResumeRow[] = [];
-  let usedOcr = false;
+  const hasImage = input.files.some((file) => detectFormat(file.filename, file.contentType) === 'image');
+  if (hasImage) acquireOcr();
   deps.events.emit(deps.jobId, 'fetcher', 'fetch.started', { files: input.files.length });
 
   for (let i = 0; i < input.files.length; i += 1) {
     const file = input.files[i];
     const label = `R${String(i + 1).padStart(2, '0')}`;
     const resumeId = newId('res');
-    if (detectFormat(file.filename, file.contentType) === 'image') usedOcr = true;
     try {
       const buffer = await readFile(file.path);
       const normalized = await normalizeDocument(buffer, file.filename, file.contentType);
@@ -126,7 +126,7 @@ export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<
     }
   }
 
-  if (usedOcr) await closeOcr();
+  if (hasImage) await releaseOcr();
   deps.events.emit(deps.jobId, 'fetcher', 'fetch.completed', {
     files: input.files.length,
     pulled: manifest.pulled,
