@@ -1,0 +1,166 @@
+{
+  "generatedTs": "2026-10-20T09:00:00.000Z",
+  "count": 20,
+  "candidates": [
+    {
+      "label": "R01",
+      "format": "docx",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R01.docx",
+      "chars": 438
+    },
+    {
+      "label": "R02",
+      "format": "txt",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R02.txt",
+      "chars": 402
+    },
+    {
+      "label": "R03",
+      "format": "md",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R03.md",
+      "chars": 345
+    },
+    {
+      "label": "R04",
+      "format": "html",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R04.html",
+      "chars": 376
+    },
+    {
+      "label": "R05",
+      "format": "txt",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R05.txt",
+      "chars": 393
+    },
+    {
+      "label": "R06",
+      "format": "docx",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R06.docx",
+      "chars": 265
+    },
+    {
+      "label": "R07",
+      "format": "html",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R07.html",
+      "chars": 388
+    },
+    {
+      "label": "R08",
+      "format": "txt",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R08.txt",
+      "chars": 242
+    },
+    {
+      "label": "R09",
+      "format": "md",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R09.md",
+      "chars": 303
+    },
+    {
+      "label": "R10",
+      "format": "docx",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R10.docx",
+      "chars": 249
+    },
+    {
+      "label": "R11",
+      "format": "txt",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R11.txt",
+      "chars": 411
+    },
+    {
+      "label": "R12",
+      "format": "html",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R12.html",
+      "chars": 263
+    },
+    {
+      "label": "R13",
+      "format": "docx",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R13.docx",
+      "chars": 285
+    },
+    {
+      "label": "R14",
+      "format": "txt",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R14.txt",
+      "chars": 354
+    },
+    {
+      "label": "R15",
+      "format": "md",
+      "trap": null,
+      "duplicateOf": null,
+      "attachment": "resume-R15.md",
+      "chars": 291
+    },
+    {
+      "label": "R16",
+      "format": "txt",
+      "trap": "sparse",
+      "duplicateOf": null,
+      "attachment": "resume-R16.txt",
+      "chars": 190
+    },
+    {
+      "label": "R17",
+      "format": "docx",
+      "trap": "fabricated",
+      "duplicateOf": null,
+      "attachment": "resume-R17.docx",
+      "chars": 319
+    },
+    {
+      "label": "R18",
+      "format": "txt",
+      "trap": "duplicate",
+      "duplicateOf": "R05",
+      "attachment": "resume-R18.txt",
+      "chars": 393
+    },
+    {
+      "label": "R19",
+      "format": "doc",
+      "trap": "malformed",
+      "duplicateOf": null,
+      "attachment": "resume-R19.doc",
+      "chars": 137
+    },
+    {
+      "label": "R20",
+      "format": "html",
+      "trap": "bias",
+      "duplicateOf": null,
+      "attachment": "resume-R20.html",
+      "chars": 305
+    }
+  ]
+}

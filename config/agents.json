@@ -1,0 +1,89 @@
+{
+  "version": "1.0.0",
+  "agents": {
+    "coordinator": {
+      "id": "coordinator",
+      "nameZh": "伯乐",
+      "role": "唯一编排者：结构化需求 → 扇出调度 → 汇总报告 → HITL 门控",
+      "tier": "pro",
+      "tools": ["dispatch", "send_message", "stop", "query_workspace", "hitl"],
+      "maxDepth": 1,
+      "canDelegate": true,
+      "outputSchema": "coordinator_plan",
+      "prompt": "prompts/coordinator.md",
+      "version": "1.0.0"
+    },
+    "profiler": {
+      "id": "profiler",
+      "nameZh": "需求画像师",
+      "role": "把自然语言招聘需求结构化为 JD、岗位画像与评分卡，并生成疑点反问清单",
+      "tier": "pro",
+      "tools": ["rag_search", "fairness_scan", "scorecard_validate"],
+      "maxDepth": 0,
+      "canDelegate": false,
+      "outputSchema": "jd_analysis",
+      "prompt": "prompts/profiler.md",
+      "version": "1.0.0"
+    },
+    "fetcher": {
+      "id": "fetcher",
+      "nameZh": "探马",
+      "role": "经 MCP 拉取邮箱简历、去重、格式归一（全流程唯一简历输入入口）",
+      "tier": "flash",
+      "tools": ["mcp:hirebox", "dedup", "normalize"],
+      "maxDepth": 0,
+      "canDelegate": false,
+      "outputSchema": "fetch_manifest",
+      "prompt": "prompts/fetcher.md",
+      "version": "1.0.0"
+    },
+    "parser": {
+      "id": "parser",
+      "nameZh": "录事",
+      "role": "把单份简历结构化为字段 + 证据 span",
+      "tier": "flash",
+      "tools": ["read_resume", "span_locate"],
+      "maxDepth": 0,
+      "canDelegate": false,
+      "outputSchema": "parse_resume",
+      "prompt": "prompts/parser.md",
+      "version": "1.0.0"
+    },
+    "assessor": {
+      "id": "assessor",
+      "nameZh": "相马官",
+      "role": "按评分卡与 RAG 岗位知识评估人岗匹配，输出分维度评分与证据引用",
+      "tier": "pro",
+      "tools": ["rag_search", "scorecard_compute", "span_locate"],
+      "maxDepth": 0,
+      "canDelegate": false,
+      "outputSchema": "evaluate_resume",
+      "prompt": "prompts/assessor.md",
+      "version": "1.0.0"
+    },
+    "auditor": {
+      "id": "auditor",
+      "nameZh": "监军",
+      "role": "独立核查：逐条证据举证 + 反歧视合规裁决；拥有否决与打回权",
+      "tier": "pro",
+      "tools": ["span_verify", "fairness_scan", "ledger_query"],
+      "maxDepth": 0,
+      "canDelegate": false,
+      "outputSchema": "review_eval",
+      "prompt": "prompts/auditor.md",
+      "version": "1.0.0"
+    },
+    "advisor": {
+      "id": "advisor",
+      "nameZh": "谋士",
+      "role": "为核查通过的候选人生成面试问题、风险提示与用人建议",
+      "tier": "pro",
+      "tools": ["rag_search", "scorecard_compute"],
+      "maxDepth": 0,
+      "canDelegate": false,
+      "outputSchema": "interview_plan",
+      "prompt": "prompts/advisor.md",
+      "version": "1.0.0"
+    }
+  }
+}

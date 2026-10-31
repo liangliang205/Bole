@@ -1,0 +1,35 @@
+{
+  "name": "bole",
+  "version": "0.1.0",
+  "private": true,
+  "description": "伯乐 BoLe —— 可验证的多 Agent 招聘筛选编排平台（MVP）",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "bin": {
+    "bole": "./src/cli/index.ts"
+  },
+  "scripts": {
+    "bole": "node src/cli/index.ts",
+    "demo": "node src/cli/index.ts demo --seed demo-2026",
+    "demo:auto": "node src/cli/index.ts demo --yes --seed demo-2026",
+    "dev": "node --watch src/cli/index.ts",
+    "test": "node --test --test-isolation=none tests/unit/*.test.ts tests/integration/*.test.ts",
+    "test:golden": "node --test --test-isolation=none tests/golden/*.test.ts",
+    "test:all": "node --test --test-isolation=none tests/unit/*.test.ts tests/integration/*.test.ts tests/golden/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "bench": "node src/cli/index.ts bench",
+    "report:cost": "node src/cli/index.ts cost",
+    "seed": "node scripts/generate-golden.ts",
+    "setup": "pnpm install && node scripts/generate-golden.ts",
+    "reset": "node src/cli/index.ts reset"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "version": "1.0.0",
+  "batchSize": 8,
+  "maxBatchesInFlight": 2,
+  "pools": {
+    "parse": 4,
+    "assess": 2,
+    "review": 1
+  },
+  "admission": {
+    "maxRefusalRetries": 200,
+    "baseBackoffMs": 4,
+    "maxBackoffMs": 60
+  },
+  "selfLoop": {
+    "maxLoops": 2
+  },
+  "structuredOutput": {
+    "maxAttempts": 2
+  },
+  "topN": 5,
+  "conclusionScale": {
+    "strong_yes": 85,
+    "yes": 72,
+    "maybe": 60,
+    "no": 45
+  },
+  "pricing": {
+    "deepseek-chat": { "inputPerMTok": 0.27, "outputPerMTok": 1.1, "cacheHitPerMTok": 0.07 },
+    "deepseek-reasoner": { "inputPerMTok": 0.55, "outputPerMTok": 2.19, "cacheHitPerMTok": 0.14 }
+  },
+  "models": {
+    "flash": "deepseek-chat",
+    "pro": "deepseek-reasoner"
+  },
+  "bench": {
+    "concurrency": [1, 4, 8],
+    "itemsPerRun": 60,
+    "simulatedLatencyMs": 8
+  },
+  "fairness": {
+    "protectedCategories": ["gender", "age", "marital", "childbearing", "hometown", "ethnicity", "zodiac", "disability", "religion"]
+  }
+}

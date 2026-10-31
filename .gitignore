@@ -1,0 +1,10 @@
+node_modules/
+runs/
+data/ledger.db
+data/ledger.db-journal
+data/ledger.db-wal
+data/ledger.db-shm
+data/index/
+*.log
+.DS_Store
+coverage/
