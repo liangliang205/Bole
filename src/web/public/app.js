@@ -605,7 +605,7 @@
     if (!state.jobId || state.run?.status === 'running') return;
     if (!state.config?.key?.bound) { toast('请先绑定 DeepSeek API Key', 'error'); openSettings(true); return; }
     try {
-      await api(`/api/run/${encodeURIComponent(state.jobId)}/resume`, { method: 'POST', body: JSON.stringify({}) });
+      await api(`/api/run/${encodeURIComponent(state.jobId)}/resume`, { method: 'POST' });
       state.events = [];
       state.seen.clear();
       state.lastSeq = 0;
