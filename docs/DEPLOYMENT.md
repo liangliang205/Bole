@@ -32,7 +32,7 @@ pnpm web
 1. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF，单文件 ≤25MB）。
 2. 填写招聘需求 → 开始筛选。
 3. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
-4. 完成后在最终消息中下载 Markdown / JSON，或打开右侧「任务面板」查看候选人证据链、合规与成本。
+4. 完成后在对话中查看 Top 推荐与合规摘要；点「查看证据链」或右侧「任务面板」查看候选人证据链、合规与成本。不提供 Markdown/JSON 下载。
 5. 中断后可点「续跑」从批次检查点恢复；不会重复上传。
 
 ## 4. CLI
@@ -92,7 +92,7 @@ curl -s http://127.0.0.1:8787/api/doctor
 手工冒烟：
 1. 上传一份 TXT + 一份 DOCX + 一张图片简历，确认均进入批次；
 2. 观察 SSE `/api/run/:id/stream` 的 `token` 事件；
-3. 完成报告后确认 `runs/<runId>/report.md` 与 `report.json` 存在，且**没有** `report.html`；
+3. 完成后确认对话内出现 Top 推荐与合规摘要；内部的 `report.json` 存在但不再对外提供下载；没有 `report.html`；
 4. 打开候选人详情，确认每个维度都有原文 quote 与字符区间。
 
 ## 8. 常见问题

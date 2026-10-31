@@ -72,7 +72,7 @@
 ## 11. 报告（`src/report/*`）
 
 - `builder.ts`：装配 `ReportData`（job/run/top/escalations/others/compliance/hitl/cost/pools/convergence）。
-- `render.ts`：`report.md`、`report.json`、`cost-report.md`、`convergence.svg`；**没有 HTML**。
+- `render.ts`：内部生成 `report.md`、`report.json`、`cost-report.md`、`convergence.svg`；HTTP 不暴露下载，对话内只汇总 JSON；**没有 HTML**。
 - 报告中 PII 掩码；证据链带 quote 与字符区间。
 
 ## 12. Web（`src/web/*`）

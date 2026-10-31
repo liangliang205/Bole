@@ -459,29 +459,16 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
-      const reportMatch = /^\/api\/run\/([^/]+)\/report(\.md|\.json)?$/.exec(pathname);
+      const reportMatch = /^\/api\/run\/([^/]+)\/report$/.exec(pathname);
       if (method === 'GET' && reportMatch) {
         const jobId = decodeURIComponent(reportMatch[1]);
-        const format = reportMatch[2] ?? '';
-        const dir = findReportDir(jobId);
-        if (!dir) {
-          text(res, 404, '报告尚未生成');
-          return;
-        }
-        if (format === '.md') {
-          text(res, 200, readFileSync(path.join(dir, 'report.md'), 'utf8'), 'text/markdown; charset=utf-8', {
-            'Content-Disposition': `attachment; filename="bole-report-${jobId}.md"`,
-          });
-          return;
-        }
         const report = readReport(jobId);
         if (!report) {
-          text(res, 404, '报告尚未生成');
+          json(res, 404, { ok: false, error: '报告尚未生成' });
           return;
         }
-        text(res, 200, JSON.stringify(report, null, 2), 'application/json; charset=utf-8', {
-          'Content-Disposition': `attachment; filename="bole-report-${jobId}.json"`,
-        });
+        // 仅供对话内汇总与后续 MCP 使用；不提供 Markdown/JSON 下载。
+        json(res, 200, report);
         return;
       }
 
@@ -593,5 +580,5 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   });
 
   process.stdout.write(`BoLe Web 已启动: http://${host}:${port}\n`);
-  process.stdout.write('对话式控制台：上传简历 → 开始筛选 → 实时事件/流式生成 → 证据审计 → 下载 Markdown/JSON。\n');
+  process.stdout.write('对话式控制台：上传简历 → 开始筛选 → 实时事件/流式生成 → 证据审计 → 对话内报告。\n');
 }

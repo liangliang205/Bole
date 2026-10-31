@@ -91,7 +91,7 @@
   - `token`：原始生成 token；
   - `done`：结束。
 - 前端不构建、无框架：`index.html + app.js + styles.css`；对话区渲染里程碑与工具轨迹，底部显示实时 token 卡片，HITL 卡片固定在输入框上方。
-- 报告通过 `/report`（JSON）与 `/report.md` 下载；没有 HTML 报告路由。
+- 报告通过 `/report`（JSON）在对话内汇总，并供后续 MCP 使用；不提供 Markdown/JSON 下载，也没有 HTML 报告路由。
 
 ## 8. 失败处理
 

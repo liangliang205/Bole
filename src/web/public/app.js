@@ -182,18 +182,6 @@
     const run = state.run;
     document.title = `${jobTitle(job)} · 伯乐 BoLe`;
     setStatus(run.status);
-    const md = $('#download-md');
-    const json = $('#download-json');
-    if (run.reportAvailable) {
-      md.href = `/api/run/${encodeURIComponent(run.jobId)}/report.md`;
-      json.href = `/api/run/${encodeURIComponent(run.jobId)}/report.json`;
-      md.style.opacity = '1'; json.style.opacity = '1';
-      md.style.pointerEvents = 'auto'; json.style.pointerEvents = 'auto';
-    } else {
-      md.href = '#'; json.href = '#';
-      md.style.opacity = '.4'; json.style.opacity = '.4';
-      md.style.pointerEvents = 'none'; json.style.pointerEvents = 'none';
-    }
     $('#resume-btn').disabled = run.status === 'running';
     $('#reply-send').disabled = !run.pendingHitl || state.sending;
     $('#reply-hint').textContent = run.pendingHitl
@@ -443,8 +431,6 @@
           <div><b>${((stats.vetoRate || 0) * 100).toFixed(0)}%</b><span>核查否决率</span></div>
         </div>
         <div class="report-actions">
-          <a class="btn ghost" href="/api/run/${encodeURIComponent(state.jobId)}/report.md" target="_blank" rel="noreferrer">下载 Markdown</a>
-          <a class="btn ghost" href="/api/run/${encodeURIComponent(state.jobId)}/report.json" target="_blank" rel="noreferrer">下载 JSON</a>
           <button class="btn ghost" id="open-evidence">查看证据链</button>
           <button class="btn ghost" id="open-cost">查看成本</button>
         </div>
@@ -949,12 +935,6 @@
       if (event.target.closest('#open-cost')) openDrawer('cost');
       const row = event.target.closest('tr[data-candidate]');
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
-    });
-    $('#download-md').addEventListener('click', (event) => {
-      if (!state.run?.reportAvailable) { event.preventDefault(); toast('报告尚未生成', 'error'); }
-    });
-    $('#download-json').addEventListener('click', (event) => {
-      if (!state.run?.reportAvailable) { event.preventDefault(); toast('报告尚未生成', 'error'); }
     });
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { closeSettings(); closeTools(); closeDrawer(); }

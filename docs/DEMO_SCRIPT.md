@@ -86,8 +86,8 @@ pnpm web
 
 ## 6. 报告与续跑（8:00–9:00）
 
-- 顶栏「↓ Markdown」「↓ JSON」下载报告；
-- 报告目录包含 `report.md`、`report.json`、`cost-report.md`、`convergence.svg`，**没有 report.html**；
+- 运行完成后，最后一条助手消息直接给出 Top 候选人、合规摘要与核查否决率；报告不再提供 Markdown/JSON 下载。
+- 需要细节时点「查看证据链」/「查看成本」；后续可通过 MCP 让 Agent 以对话方式输出报告。
 - 如果演示中断，点「续跑」：不重新上传，从批次检查点继续；已 committed 的任务不会重跑。
 
 ## 7. 常见问题

@@ -21,7 +21,7 @@ pnpm web                   # http://127.0.0.1:8787
 - HITL：JD 有歧义、预算/地点冲突、证据不足、核查打回时，在对话内选择推荐项或输入自定义回答。
 - 证据审计：每位候选人的解析字段、评估维度、逐条核查 verdict、原文 span 与区间。
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
-- 报告：下载 **Markdown** 与 **JSON**；不再生成 HTML 报告。
+- 报告：完成后直接在对话里汇总 Top 候选人、合规与成本摘要；不提供 Markdown/JSON 下载，后续可通过 MCP 由 Agent 输出。
 - 续跑：从批次检查点恢复未完成任务，不重新上传。
 
 ## 流水线
@@ -85,8 +85,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | GET | `/api/run/:jobId/candidates` | 候选人列表 |
 | GET | `/api/run/:jobId/candidates/:id` | 证据详情 |
 | GET | `/api/run/:jobId/cost` | 成本与缓存 |
-| GET | `/api/run/:jobId/report` | JSON 报告 |
-| GET | `/api/run/:jobId/report.md` | Markdown 报告 |
+| GET | `/api/run/:jobId/report` | 报告 JSON（仅对话内汇总/后续 MCP 使用，不提供下载） |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |
 | GET | `/api/agents` / `/api/doctor` | 注册表 / 自检 |
 | POST | `/api/reset` | `{confirm:"RESET"}` |
@@ -144,6 +143,6 @@ pnpm test:all
 - 图片 OCR 使用本地 Tesseract `chi_sim+eng`，手写体/低分辨率扫描件准确率有限；可设置 `BOLE_OCR_URL` 接更强的 OCR 服务。
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
 - 仅支持单附件简历，不做 IMAP/Exchange 邮箱接入。
-- 不生成 HTML 报告；Markdown/JSON 是唯一报告格式。
+- 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。
 - 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。DeepSeek Key 由服务端加密持久化在 `data/keyring.*`，请保护数据目录权限。
 - 真实模型质量取决于 DeepSeek；温度=0 仍可能有 ±1 分波动。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。

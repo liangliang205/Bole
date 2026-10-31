@@ -14,7 +14,7 @@
 | 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
 | 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
 | 模型接口 | schema 违规同轮重试；流式回调；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/integration/pipeline.test.ts` |
-| 报告 | Markdown/JSON 生成；不生成 HTML | `tests/integration/pipeline.test.ts` |
+| 报告 | 对话内汇总；内部 JSON；不生成 HTML、不提供下载 | `tests/integration/pipeline.test.ts` |
 | 真实上传端到端 | 4 份 TXT（含重复）+ 伪造结论触发验真环 + 报告 | `tests/integration/pipeline.test.ts` |
 | 失败隔离 | `.doc` 旧格式失败但批次继续；全失败给出可读错误 | `tests/integration/errors.test.ts` |
 
@@ -38,7 +38,7 @@ pnpm web
 
 1. `/api/run/:id/events` 中 `resume.fetched` 的 `format` 与 `chars` 是否符合预期；
 2. `token` 事件是否连续（SSE 未被代理缓冲）；
-3. 最终 `report.md` / `report.json` 中每位候选人的 `evidenceChain` 是否都有 `quote` 与 `charStart/charEnd`；
+3. 最终对话消息中 Top 候选人的 `evidenceChain` 是否都有 `quote` 与 `charStart/charEnd`；
 4. 被核查打回的候选人是否留下 `review.verdict=re_eval` 与第二轮 `eval` 记录；
 5. 成本报表的 `promptTokens/completionTokens` 是否来自 DeepSeek `usage`（流式缺少 usage 时为估算，报告中会体现模型与计价）。
 
@@ -70,6 +70,6 @@ pnpm web
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件
-- [ ] 报告目录只有 `report.md` / `report.json` / `cost-report.md` / `convergence.svg`，无 `report.html`
+- [ ] 对话内出现 Top 推荐与合规摘要；不提供 Markdown/JSON 下载，报告目录无 `report.html`
 - [ ] `pnpm ocr:download` 或 `BOLE_OCR_URL` 已就绪（图片简历）
 - [ ] 未配置 Key 时请求返回明确错误，不产生模拟报告
