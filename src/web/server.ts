@@ -314,7 +314,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           requirements,
           deepseekApiKey: deepseekApiKey || undefined,
           stream: (chunk) => {
-            for (const listener of listeners) listener(chunk);
+            for (const listener of listeners) {
+              try {
+                listener(chunk);
+              } catch {
+                // 前端断开不应中断流水线
+              }
+            }
           },
         });
         const hitl = new WebHitlResponder();
@@ -503,7 +509,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           seed: job.seed ?? 'resume',
           deepseekApiKey: deepseekApiKey || undefined,
           stream: (chunk) => {
-            for (const listener of listeners) listener(chunk);
+            for (const listener of listeners) {
+              try {
+                listener(chunk);
+              } catch {
+                // 前端断开不应中断流水线
+              }
+            }
           },
         });
         const hitl = new WebHitlResponder();
