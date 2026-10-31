@@ -204,6 +204,7 @@
       : run.status === 'running' ? '伯乐正在执行流水线…' : '当前没有待回答的问题';
     renderChat();
     renderHitl(run.pendingHitl);
+    if (run.status !== 'running') state.streams.clear();
     renderStreams();
     if (!$('#drawer').classList.contains('hidden')) {
       if (state.drawerTab === 'candidates') renderCandidates();
