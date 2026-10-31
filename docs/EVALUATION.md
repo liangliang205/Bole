@@ -14,6 +14,7 @@
 | 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
 | 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
 | 模型接口 | schema 违规同轮重试；流式回调；flash/pro 模型名与 thinking 参数；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
+| Vision OCR | 图片以 `image_url` 发送；OCR usage 计入 fetcher；本地回退可配置 | `tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
 | 成本 | 官方 peak/off-peak 价格与缓存命中 | `tests/unit/cost.test.ts` |
 | 流式预览 | 未完成 JSON → 人类可读字段/分数/裁决；不泄露原始 JSON | `tests/unit/stream-preview.test.ts` |
 | 报告 | 对话内汇总；内部 JSON；不生成 HTML、不提供下载 | `tests/integration/pipeline.test.ts` |
@@ -27,7 +28,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前结果：**60 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析与档位参数；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**62 个测试通过，0 失败**（2026-10，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek streaming 解析、档位参数与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -68,10 +69,10 @@ pnpm web
 ## 6. 验收清单（提交前）
 
 - [ ] `pnpm typecheck` 通过
-- [ ] `pnpm test:all` 60/60 通过
+- [ ] `pnpm test:all` 62/62 通过
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件
 - [ ] 对话内出现 Top 推荐与合规摘要；不提供 Markdown/JSON 下载，报告目录无 `report.html`
-- [ ] `pnpm ocr:download` 或 `BOLE_OCR_URL` 已就绪（图片简历）
+- [ ] 图片简历默认走 DeepSeek Vision（`resume.ocr` 事件），失败时可回退本地
 - [ ] 未配置 Key 时请求返回明确错误，不产生模拟报告

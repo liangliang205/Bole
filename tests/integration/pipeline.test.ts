@@ -58,7 +58,7 @@ const RESUME_C = `姓名：王强
 期望薪资：45-55K
 `;
 
-async function makeUpload(dir: string, name: string, content: string): Promise<UploadedFile> {
+async function makeUpload(dir: string, name: string, content: string, contentType = 'text/plain; charset=utf-8'): Promise<UploadedFile> {
   const filePath = path.join(dir, name);
   await writeFile(filePath, content, 'utf8');
   return {
@@ -66,7 +66,7 @@ async function makeUpload(dir: string, name: string, content: string): Promise<U
     filename: name,
     path: filePath,
     size: Buffer.byteLength(content),
-    contentType: 'text/plain; charset=utf-8',
+    contentType,
   };
 }
 
@@ -126,8 +126,37 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
   }
 });
 
-test('接入失败不阻塞批次：.doc 旧格式进入 failed 明细', async () => {
+test('图片简历默认走 DeepSeek Vision OCR（测试替身），成本记入 fetcher', async () => {
   const env = await setupTempEnv();
+  const uploadDir = path.join(env.dir, 'uploads');
+  await mkdir(uploadDir, { recursive: true });
+  const image = await makeUpload(uploadDir, '李娜.png', 'fake-png-bytes', 'image/png');
+  const boot = await bootstrap({
+    requirements: '招 Java 后端，3 年以上经验。',
+    provider: new FakeProvider(),
+  });
+  try {
+    const summary = await runPipeline(boot.deps, {
+      requirements: boot.job.requirements,
+      hitl: new AutoHitlResponder(),
+      uploadFiles: [image],
+    });
+    assert.equal(summary.status, 'final');
+    const resumes = boot.deps.ledger.listResumes(boot.job.id);
+    assert.equal(resumes.length, 1);
+    assert.equal(resumes[0].format, 'image');
+    assert.notEqual(resumes[0].status, 'failed');
+    const events = boot.deps.ledger.listEvents({ jobId: boot.job.id, limit: 500 });
+    assert.ok(events.some((event) => event.type === 'resume.ocr' && event.payload_json.includes('deepseek-vision')));
+    const calls = boot.deps.ledger.usageSummary(boot.job.id);
+    assert.ok(calls.some((call) => call.agent === 'fetcher' && call.calls >= 1));
+  } finally {
+    boot.close();
+    await env.restore();
+  }
+});
+
+test('接入失败不阻塞批次：.doc 旧格式进入 failed 明细', async () => {  const env = await setupTempEnv();
   const uploadDir = path.join(env.dir, 'uploads');
   await mkdir(uploadDir, { recursive: true });
   const files = [

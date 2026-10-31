@@ -6,8 +6,8 @@
 |---|---|
 | Node.js | **≥ 22.6**（推荐 24；项目直接运行 `.ts`，依赖 type stripping） |
 | 包管理 | pnpm 10 |
-| 网络 | 真实 DeepSeek API；本地 OCR 首次需下载语言数据 |
-| 磁盘 | 运行产物 + 上传缓存；OCR 语言数据约 31MB |
+| 网络 | 真实 DeepSeek API；默认图片 OCR 也走 DeepSeek Vision |
+| 磁盘 | 运行产物 + 上传缓存；本地回退 OCR 语言数据约 31MB |
 | 浏览器 | Chromium / Edge / Firefox 现代版本（EventSource、FileReader） |
 
 ## 2. 本机启动
@@ -23,9 +23,11 @@ pnpm web
 
 ### OCR 说明
 
-- 本地 OCR 需要 `data/ocr/eng.traineddata.gz` 与 `data/ocr/chi_sim.traineddata.gz`；`pnpm ocr:download` 会下载。
-- 若使用外部 OCR 服务，设置 `BOLE_OCR_URL`（POST JSON `{filename, imageBase64}`，返回 `{text}` 或 `{result:{text}}`），可加 `BOLE_OCR_KEY`。
-- 扫描版 PDF 不走 OCR：请把页面导出为图片后上传；平台会明确提示"pdf 无文本层"。
+- **默认 `BOLE_OCR_MODE=deepseek`**：图片以 `image_url` + base64 发给 `deepseek-flash`，逐字转写为文本；图片 token（每张最多约 1024）计入成本。
+- Vision 支持 JPEG/PNG/GIF/WebP；BMP/TIFF 或 Vision 失败时，默认回退本地 Tesseract（`BOLE_OCR_FALLBACK=true`）。
+- `BOLE_OCR_MODE=local` 强制 Tesseract；`url` 使用外部 `BOLE_OCR_URL`。
+- 本地 Tesseract 需要 `data/ocr/eng.traineddata.gz` 与 `data/ocr/chi_sim.traineddata.gz`；`pnpm ocr:download` 会下载。
+- 扫描版 PDF 仍不渲染页面 OCR：请导出为 PNG/JPG 上传。
 
 ## 3. 页面操作
 
@@ -74,7 +76,10 @@ docker compose up
 | `BOLE_DB` | `data/ledger.db` | SQLite |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
 | `BOLE_RUNS` | `runs` | 运行产物 |
-| `BOLE_OCR_DIR` | `data/ocr` | OCR 语言数据 |
+| `BOLE_OCR_MODE` | `deepseek` | `deepseek`（Vision）/ `local` / `url` |
+| `BOLE_OCR_MODEL` | `deepseek-flash` | Vision OCR 模型 |
+| `BOLE_OCR_FALLBACK` | `true` | Vision 失败/不支持格式时回退本地 |
+| `BOLE_OCR_DIR` | `data/ocr` | 本地回退 OCR 语言数据 |
 | `BOLE_OCR_URL` / `BOLE_OCR_KEY` | 空 | 外部 OCR |
 | `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
 | `BOLE_BATCH_SIZE` | 8 | 批大小 |
@@ -85,7 +90,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 60 个测试
+pnpm test:all          # 62 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 
@@ -102,7 +107,7 @@ curl -s http://127.0.0.1:8787/api/doctor
 | 页面提示未绑定 Key | 在弹窗中输入并绑定；绑定会持久化到 `data/keyring.*` |
 | 绑定失败 401/403 | Key 无效或已撤销；重新生成后绑定 |
 | 绑定提示网络 warning | Key 已保存，但 `/models` 校验未成功；检查网络/`BOLE_BASE_URL` 后运行 |
-| 图片简历失败，提示缺 OCR 语言数据 | `pnpm ocr:download`，或配置 `BOLE_OCR_URL` |
+| 图片简历失败，提示缺 OCR 语言数据 | 仅本地回退需要：`pnpm ocr:download`；或设置 `BOLE_OCR_MODE=deepseek` 使用 Vision |
 | PDF 失败，提示无文本层 | 扫描件导出为 PNG/JPG 后上传 |
 | SSE 不显示 token | 检查反向代理是否缓冲 SSE（关闭 `proxy_buffering`）；本机直连正常 |
 | 端口被占用 | `pnpm bole web --port 8788` |

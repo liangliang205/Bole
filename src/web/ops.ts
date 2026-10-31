@@ -79,18 +79,33 @@ export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
     status: keyStatus.bound ? 'ok' : 'warn',
     detail: keyStatus.bound ? `已绑定 ${keyStatus.masked ?? ''}（服务端持久化）` : '未绑定；进入 Web 会提示绑定',
   });
-  const ocrReady = Boolean(process.env.BOLE_OCR_URL)
-    || ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) => existsSync(path.join(paths.ocrDir, name)));
-  checks.push({
-    name: 'OCR',
-    status: ocrReady ? 'ok' : 'warn',
-    detail: process.env.BOLE_OCR_URL
-      ? '使用外部 OCR 服务'
-      : ocrReady
-        ? '本地 OCR 语言数据已就绪'
-        : '未下载 OCR 语言数据；图片简历会失败，请运行 pnpm ocr:download',
-  });
   const config = loadPipelineConfig();
+  const ocrMode = (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase();
+  const ocrModel = process.env.BOLE_OCR_MODEL ?? config.models.flash;
+  const ocrLocal = Boolean(process.env.BOLE_OCR_URL)
+    || ['chi_sim.traineddata.gz', 'eng.traineddata.gz'].every((name) => existsSync(path.join(paths.ocrDir, name)));
+  const fallback = process.env.BOLE_OCR_FALLBACK !== 'false';
+  if (ocrMode === 'deepseek' || ocrMode === 'auto') {
+    checks.push({
+      name: 'OCR',
+      status: keyStatus.bound ? 'ok' : 'warn',
+      detail: `DeepSeek Vision（${ocrModel}）${fallback ? ocrLocal ? ' + 本地回退就绪' : ' + 本地回退未就绪' : ''}`,
+    });
+  } else if (ocrMode === 'local') {
+    checks.push({
+      name: 'OCR',
+      status: ocrLocal ? 'ok' : 'warn',
+      detail: ocrLocal ? '本地 Tesseract 语言数据已就绪' : '未下载 OCR 语言数据；请运行 pnpm ocr:download',
+    });
+  } else if (ocrMode === 'url') {
+    checks.push({
+      name: 'OCR',
+      status: process.env.BOLE_OCR_URL ? 'ok' : 'warn',
+      detail: process.env.BOLE_OCR_URL ? '外部 OCR 服务' : 'BOLE_OCR_MODE=url 但未配置 BOLE_OCR_URL',
+    });
+  } else {
+    checks.push({ name: 'OCR', status: 'warn', detail: `未知 BOLE_OCR_MODE=${ocrMode}` });
+  }
   checks.push({
     name: '模型档位',
     status: 'ok',

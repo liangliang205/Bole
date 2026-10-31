@@ -284,12 +284,21 @@ export interface LlmUsage {
   costUsd: number;
 }
 
+export interface ChatImage {
+  mimeType: string;
+  base64: string;
+  /** DeepSeek Vision: low 会先缩到 512×512；简历文字建议 high/original。 */
+  detail?: 'low' | 'high' | 'original' | 'auto';
+}
+
 export interface ChatRequest {
   agent: string;
   tier: ModelTier;
   model?: string;
   system: string;
   user: string;
+  /** 图片输入（仅 user 消息支持；当前用于 DeepSeek Vision OCR）。 */
+  images?: ChatImage[];
   schemaName?: string;
   jsonSchema?: unknown;
   temperature?: number;

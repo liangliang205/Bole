@@ -8,6 +8,11 @@ export interface NormalizedDoc {
   warnings: string[];
 }
 
+export interface NormalizeOptions {
+  /** 自定义 OCR（模型/外部服务）；缺省使用本地 Tesseract。 */
+  ocr?: (buffer: Buffer, filename: string, mimeType: string) => Promise<string>;
+}
+
 export class UnsupportedFormatError extends Error {
   constructor(format: string) {
     super(`不支持该格式：${format}`);
@@ -22,7 +27,23 @@ export class EmptyDocumentError extends Error {
   }
 }
 
-const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff']);
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tif', 'tiff']);
+
+const MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+};
+
+export function imageMimeType(filename: string, contentType = ''): string {
+  const ext = path.extname(filename).toLowerCase().replace('.', '');
+  return MIME_BY_EXT[ext] ?? (/^image\//i.test(contentType) ? contentType.split(';')[0] : 'image/png');
+}
 
 export function detectFormat(filename: string, contentType = ''): string {
   const ext = path.extname(filename).toLowerCase().replace('.', '');
@@ -166,7 +187,7 @@ export async function pdfToText(buffer: Buffer): Promise<string> {
   return text;
 }
 
-export async function normalizeDocument(buffer: Buffer, filename: string, contentType = ''): Promise<NormalizedDoc> {
+export async function normalizeDocument(buffer: Buffer, filename: string, contentType = '', options: NormalizeOptions = {}): Promise<NormalizedDoc> {
   const format = detectFormat(filename, contentType);
   const warnings: string[] = [];
   let text = '';
@@ -183,7 +204,9 @@ export async function normalizeDocument(buffer: Buffer, filename: string, conten
     text = await pdfToText(buffer);
     warnings.push('PDF 文本层提取；扫描件请上传图片走 OCR');
   } else if (format === 'image') {
-    text = await ocrImage(buffer, filename);
+    text = options.ocr
+      ? await options.ocr(buffer, filename, imageMimeType(filename, contentType))
+      : await ocrImage(buffer, filename);
     warnings.push('图片 OCR 提取，可能存在识别误差');
   } else if (format === 'doc') {
     throw new UnsupportedFormatError('doc（旧版 Word，请另存为 docx）');

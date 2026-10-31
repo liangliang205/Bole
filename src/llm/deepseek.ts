@@ -62,6 +62,18 @@ export class DeepSeekProvider implements LlmProvider {
     }
     const model = req.model ?? (req.tier === 'pro' ? 'deepseek-v4-pro' : 'deepseek-flash');
     const thinking = req.tier === 'pro';
+    const userContent: unknown = req.images?.length
+      ? [
+          { type: 'text', text: req.user },
+          ...req.images.map((image) => ({
+            type: 'image_url',
+            image_url: {
+              url: `data:${image.mimeType};base64,${image.base64}`,
+              detail: image.detail ?? 'high',
+            },
+          })),
+        ]
+      : req.user;
     const started = performance.now();
     let lastError: Error | null = null;
     let emitted = false;
@@ -79,7 +91,7 @@ export class DeepSeekProvider implements LlmProvider {
             model,
             messages: [
               { role: 'system', content: req.system },
-              { role: 'user', content: req.user },
+              { role: 'user', content: userContent },
             ],
             // V4 默认开启 thinking；flash 显式关闭以保持扇出速度，pro 开启 high。
             thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },

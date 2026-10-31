@@ -16,6 +16,7 @@
 - `uploads.ts`：保存/读取上传，白名单扩展名，单文件 ≤25MB，ID 校验，meta.json。
 - `normalize.ts`：PDF.js、DOCX 解压、HTML 去标签、TXT/MD 解码；图片走 OCR；旧版 `.doc` 明确拒绝。
 - `ocr.ts`：本地 Tesseract（`chi_sim+eng`）串行队列；或 `BOLE_OCR_URL` 外部服务。
+- `vision-ocr.ts`：DeepSeek V4 Flash Vision OCR；通过 `LlmRouter` 记录 token/成本；默认用于 JPEG/PNG/GIF/WebP，失败可回退本地。
 - `dedup.ts`：sha256 + 身份指纹。
 - `pii.ts`：报告/日志掩码工具。
 - 事件：`fetch.started` / `resume.fetched` / `resume.duplicate` / `resume.fetch_failed` / `fetch.completed`。

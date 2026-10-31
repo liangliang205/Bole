@@ -715,6 +715,31 @@ export class FakeProvider implements LlmProvider {
     if (this.latencyMs > 0) await sleep(this.latencyMs);
     const meta: Meta = { ...(req.meta ?? {}) };
     meta.faults = this.faults;
+    if (req.images?.length && !req.schemaName) {
+      const text = `姓名：李娜
+手机：13800000002
+邮箱：lina@example.com
+求职意向：Java 后端工程师
+工作年限：6 年
+技能标签：Java、Spring Boot、MySQL、Redis
+工作经历：
+2020.07-2024.06 某某支付公司 后端工程师
+负责清结算服务。
+项目经历：
+1. 清结算平台重构：日处理 300 万笔。`;
+      if (req.onToken) {
+        for (let offset = 0; offset < text.length; offset += 32) req.onToken(text.slice(offset, offset + 32));
+      }
+      const promptTokens = estimateTokens(`${req.system}\n${req.user}`) + req.images.length * 1024;
+      return {
+        text,
+        usage: { promptTokens, completionTokens: estimateTokens(text), cachedPromptTokens: 0 },
+        stopReason: 'completed',
+        model: req.model ?? 'mock-vision',
+        latencyMs: Math.round(performance.now() - started),
+        cacheHit: false,
+      };
+    }
     const handler = handlerFor(req.schemaName);
     let json: unknown = handler ? handler(meta) : { ok: true };
 

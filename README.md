@@ -8,7 +8,7 @@
 
 ```bash
 pnpm install
-pnpm ocr:download          # 下载 Tesseract 中英文语言数据（图片简历需要）
+pnpm ocr:download          # 本地 Tesseract 回退语言数据（模型 OCR 失败时使用）
 pnpm web                   # http://127.0.0.1:8787
 ```
 
@@ -102,8 +102,11 @@ pnpm bole web --port 8787     # 对话式控制台
 | `BOLE_DB` | `data/ledger.db` | SQLite 台账 |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
 | `BOLE_RUNS` | `runs` | 运行产物 |
+| `BOLE_OCR_MODE` | `deepseek` | `deepseek`（Vision）/ `local`（Tesseract）/ `url`（外部服务） |
+| `BOLE_OCR_MODEL` | `deepseek-flash` | Vision OCR 模型（仅 Flash 支持图片） |
+| `BOLE_OCR_FALLBACK` | `true` | Vision 失败/格式不支持时回退本地 Tesseract |
 | `BOLE_OCR_DIR` | `data/ocr` | Tesseract `.traineddata.gz` 目录 |
-| `BOLE_OCR_URL` | 空 | 外部 OCR HTTP 服务（优先于本地 OCR） |
+| `BOLE_OCR_URL` | 空 | 外部 OCR HTTP 服务（`url` 模式或本地回退时） |
 | `BOLE_OCR_KEY` | 空 | 外部 OCR Bearer token |
 | `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
 | `BOLE_BATCH_SIZE` | 8 | 批大小 |
@@ -117,7 +120,7 @@ bole/
 ├─ src/
 │  ├─ agents/            # coordinator + profiler/fetcher/parser/assessor/auditor/advisor
 │  ├─ core/              # 台账、状态机、容量池、批流动、结构化两阶段提交
-│  ├─ ingest/            # 上传、PDF.js/DOCX/HTML 归一化、Tesseract OCR、去重、PII
+│  ├─ ingest/            # 上传、PDF.js/DOCX/HTML 归一化、DeepSeek Vision/Tesseract OCR、去重、PII
 │  ├─ llm/               # DeepSeek 提供方（含 streaming）、路由、成本
 │  ├─ report/            # Markdown / JSON / cost / convergence 渲染
 │  ├─ settings/          # DeepSeek Key 加密持久化（服务端）
@@ -137,11 +140,11 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **60 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、峰谷成本、流式 JSON 人类可读预览、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **62 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、Vision OCR 与本地回退、峰谷成本、流式 JSON 人类可读预览、Key 加密持久化、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 
-- 图片 OCR 使用本地 Tesseract `chi_sim+eng`，手写体/低分辨率扫描件准确率有限；可设置 `BOLE_OCR_URL` 接更强的 OCR 服务。
+- 图片 OCR 默认使用 **DeepSeek V4 Flash Vision**（JPEG/PNG/GIF/WebP，逐字转写，token 计入成本；图片会以 base64 发送给 DeepSeek API）；失败或 BMP/TIFF 自动回退本地 Tesseract。手写体/低分辨率仍可能识别错误，可通过 `BOLE_OCR_MODE=local` 完全避免外发。
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
 - 仅支持单附件简历，不做 IMAP/Exchange 邮箱接入。
 - 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。

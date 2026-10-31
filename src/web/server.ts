@@ -263,7 +263,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         json(res, 200, {
           ok: true,
           key,
-          ocr: { external: Boolean(process.env.BOLE_OCR_URL), local: ocrLocal },
+          ocr: {
+            mode: (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase(),
+            model: process.env.BOLE_OCR_MODEL ?? config.models.flash,
+            fallback: process.env.BOLE_OCR_FALLBACK !== 'false',
+            external: Boolean(process.env.BOLE_OCR_URL),
+            local: ocrLocal,
+          },
           pipeline: {
             batchSize: config.batchSize,
             maxBatchesInFlight: config.maxBatchesInFlight,

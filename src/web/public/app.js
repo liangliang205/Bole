@@ -334,6 +334,8 @@
       case 'hitl.answered': return { title: '你的回答', detail: String(payload.answer || ''), agent };
       case 'fetch.started': return { title: `开始接入 ${payload.files} 份简历`, detail: '', agent };
       case 'resume.fetched': return { title: `${label}接入成功`, detail: `${payload.filename} · ${payload.format} · ${payload.chars} 字符`, agent };
+      case 'resume.ocr': return { title: `${label}Vision OCR 完成`, detail: `${payload.model} · ${payload.chars} 字符`, agent };
+      case 'resume.ocr_failed': return { title: `${label}Vision OCR 失败`, detail: `已回退本地：${String(payload.error || '').slice(0, 80)}`, agent };
       case 'resume.duplicate': return { title: `${label}重复投递`, detail: `与 ${payload.duplicateOf} 一致`, agent };
       case 'resume.fetch_failed': return { title: `${label}接入失败`, detail: String(payload.reason || ''), agent };
       case 'fetch.completed': return { title: '简历接入完成', detail: `成功 ${payload.pulled} · 重复 ${payload.duplicates} · 失败 ${payload.failed}`, agent };
@@ -800,8 +802,14 @@
     try {
       state.config = await api('/api/config');
       const pipeline = state.config.pipeline;
+      const ocr = state.config.ocr || {};
+      const ocrLabel = ocr.mode === 'deepseek' || ocr.mode === 'auto'
+        ? `DeepSeek Vision（${ocr.model}）${ocr.fallback ? ' + 本地回退' : ''}`
+        : ocr.mode === 'local'
+          ? '本地 Tesseract'
+          : ocr.external ? '外部 OCR' : '未配置';
       $('#settings-hint').textContent = pipeline
-        ? `流水线：batch=${pipeline.batchSize} · 池=${pipeline.pools.parse}/${pipeline.pools.assess}/${pipeline.pools.review} · 深评 ${pipeline.deepEval.percent}%→${pipeline.deepEval.tier} · OCR ${state.config.ocr.external ? '外部服务' : state.config.ocr.local ? '本地就绪' : '未下载'}`
+        ? `流水线：batch=${pipeline.batchSize} · 池=${pipeline.pools.parse}/${pipeline.pools.assess}/${pipeline.pools.review} · 深评 ${pipeline.deepEval.percent}%→${pipeline.deepEval.tier} · OCR ${ocrLabel}`
         : '';
       if (!state.config.key?.bound && !state.settingsForced) openSettings(true);
     } catch (error) {

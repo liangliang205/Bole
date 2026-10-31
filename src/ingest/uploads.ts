@@ -6,7 +6,7 @@ import type { UploadedFile } from '../types.ts';
 
 const ALLOWED_EXT = new Set([
   'pdf', 'docx', 'doc', 'txt', 'md', 'markdown', 'html', 'htm',
-  'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff',
+  'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tif', 'tiff',
 ]);
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -22,6 +22,7 @@ const CONTENT_TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
+  gif: 'image/gif',
   bmp: 'image/bmp',
   tif: 'image/tiff',
   tiff: 'image/tiff',
@@ -65,7 +66,7 @@ export async function saveUpload(
 ): Promise<UploadedFile> {
   const filename = sanitizeFilename(input.filename);
   if (!isSupportedUpload(filename)) {
-    throw new UploadError(`不支持的文件类型：${path.extname(filename) || filename}（支持 pdf/docx/txt/md/html/png/jpg/webp/bmp/tiff）`);
+    throw new UploadError(`不支持的文件类型：${path.extname(filename) || filename}（支持 pdf/docx/txt/md/html/png/jpg/webp/gif/bmp/tiff）`);
   }
   const encoded = String(input.contentBase64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!encoded) throw new UploadError('文件内容为空');

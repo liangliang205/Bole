@@ -9,7 +9,7 @@
 | 来源 | 仅用户上传（API/UI/CLI `--files`） | 不做 IMAP/Exchange 邮箱拉取；没有 mock 邮箱 |
 | 格式 | PDF（文本层）、DOCX、TXT、MD、HTML、PNG/JPG/WebP/BMP/TIFF | 旧版 `.doc` 明确拒绝，提示另存 docx |
 | PDF 扫描件 | 文本层为空时直接报错，提示上传图片 | 未做 PDF 页面渲染后 OCR（需要 canvas；P1） |
-| 图片 OCR | 本地 Tesseract `chi_sim+eng`，或 `BOLE_OCR_URL` 外部服务 | 手写体、低分辨率、复杂版式准确率有限；OCR 文本会进入后续解析，错误会向下游传播 |
+| 图片 OCR | 默认 DeepSeek V4 Flash Vision；失败或 BMP/TIFF 回退本地 Tesseract | Vision 仅支持 JPEG/PNG/GIF/WebP；手写体、低分辨率、复杂版式仍可能出错；图片 token 计入成本；图片会以 base64 发送给 DeepSeek API，不能外发时用 `BOLE_OCR_MODE=local` |
 | 语言数据 | `pnpm ocr:download` 下载到 `data/ocr`，已 gitignore | 未下载时图片简历失败并给出提示；Docker 镜像构建时下载 |
 | 单文件大小 | ≤25MB | 大文件 base64 传输会占用内存 |
 | 附件数量 | 支持多文件上传 | 每份文件独立成一份简历；不做一封邮件多附件聚合 |

@@ -46,7 +46,7 @@
 2. **探马（flash）**：读取 `data/uploads/<uploadId>/`，按扩展名归一化：
    - PDF → PDF.js 文本层；
    - DOCX → 解压 `word/document.xml`；
-   - 图片 → Tesseract OCR（或外部 `BOLE_OCR_URL`）；
+   - 图片 → DeepSeek V4 Flash Vision（JPEG/PNG/GIF/WebP；失败或 BMP/TIFF 回退 Tesseract）；
    - TXT/MD/HTML → 解码/去标签。
    去重：文件 sha256 + 身份指纹；命中标记 `duplicate`，不进入解析。
 3. **批流动**：`batch=8`，`maxBatchesInFlight=2`；每批：

@@ -134,6 +134,10 @@ function summarizeEvent(event: EventRow): string {
       return `开始接入 ${payload.files} 份上传简历`;
     case 'resume.fetched':
       return green(`${label} 接入成功（${payload.filename} · ${payload.format} · ${payload.chars} 字符）`);
+    case 'resume.ocr':
+      return green(`${label} DeepSeek Vision OCR 完成（${payload.model} · ${payload.chars} 字符）`);
+    case 'resume.ocr_failed':
+      return red(`${label} DeepSeek Vision OCR 失败，回退本地：${String(payload.error ?? '').slice(0, 70)}`);
     case 'resume.duplicate':
       return `${label} 重复投递（与 ${payload.duplicateOf} 一致）`;
     case 'resume.fetch_failed':

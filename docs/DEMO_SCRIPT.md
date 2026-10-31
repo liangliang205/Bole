@@ -94,7 +94,7 @@ pnpm web
 
 | 现象 | 处理 |
 |---|---|
-| 图片简历失败 | `pnpm ocr:download`，或设置 `BOLE_OCR_URL` |
+| 图片简历失败 | 检查 Vision Key/网络；或设置 `BOLE_OCR_MODE=local` 回退 Tesseract |
 | PDF 提示无文本层 | 扫描件导出为 PNG/JPG 再上传 |
 | 没有 token 流 | 检查反向代理是否缓冲 SSE；本机直连应正常 |
 | Key 无效/余额不足 | 页面设置处更新 Key；查看错误消息中的 DeepSeek 状态码 |

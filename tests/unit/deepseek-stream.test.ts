@@ -53,6 +53,49 @@ test('DeepSeek 无 Key 时明确报错', async () => {
   );
 });
 
+test('DeepSeek Vision：图片以 user content image_url 发送，detail=high', async () => {
+  let captured: Record<string, unknown> = {};
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    captured = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      choices: [{ message: { content: '姓名：李娜' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1200, completion_tokens: 5 },
+    }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  try {
+    const provider = new DeepSeekProvider({
+      apiKey: 'test-key',
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      maxRetries: 0,
+    });
+    const result = await provider.chat({
+      agent: 'fetcher',
+      tier: 'flash',
+      system: 'ocr',
+      user: '转写',
+      images: [{ mimeType: 'image/png', base64: 'aGVsbG8=', detail: 'high' }],
+      maxTokens: 8192,
+    });
+    assert.equal(result.text, '姓名：李娜');
+    assert.equal(captured.model, 'deepseek-flash');
+    const messages = captured.messages as { role: string; content: unknown }[];
+    assert.equal(messages[1].role, 'user');
+    const content = messages[1].content as { type: string; image_url?: { url: string; detail: string } }[];
+    assert.equal(content[0].type, 'text');
+    assert.equal(content[1].type, 'image_url');
+    assert.match(content[1].image_url?.url ?? '', /^data:image\/png;base64,aGVsbG8=/);
+    assert.equal(content[1].image_url?.detail, 'high');
+    assert.equal(captured.response_format, undefined);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
 test('DeepSeek 档位映射：flash→deepseek-flash，pro→deepseek-v4-pro + thinking high', async () => {
   const bodies: Record<string, unknown>[] = [];
   const server = createServer(async (req, res) => {
