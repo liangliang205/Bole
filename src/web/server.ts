@@ -143,7 +143,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const providers = new ProviderStore(paths.dataDir);
 
   const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => ({
-    id: existing?.id,
+    id: existing?.id ?? (typeof body.id === 'string' ? body.id.trim() : undefined),
     name: String(body.name ?? existing?.name ?? ''),
     baseUrl: String(body.baseUrl ?? existing?.baseUrl ?? ''),
     api: ((body.api ?? existing?.api) === 'openai' ? 'openai' : 'deepseek') as ProviderApi,
@@ -329,9 +329,13 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           return;
         }
         if (method === 'DELETE') {
-          await providers.remove(providerId);
-          const next = await providers.list();
-          json(res, 200, { ok: true, ...next });
+          try {
+            await providers.remove(providerId);
+            const next = await providers.list();
+            json(res, 200, { ok: true, ...next });
+          } catch (error) {
+            json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+          }
           return;
         }
         const body = await readJsonBody(req);

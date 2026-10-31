@@ -13,6 +13,7 @@ test('ProviderStore：默认 DeepSeek 提供商，保存 Key 后加密且可读�
     const initial = await store.list();
     assert.equal(initial.providers.length, 1);
     assert.equal(initial.providers[0].id, 'deepseek');
+    assert.equal(initial.providers[0].builtin, true);
     assert.equal(initial.providers[0].hasKey, false);
 
     await store.save({
@@ -52,6 +53,7 @@ test('ProviderStore：新增、切换、删除提供商', async () => {
     assert.equal((await store.list()).activeId, 'deepseek');
     await store.remove(xiaomi.id);
     assert.equal((await store.list()).providers.length, 1);
+    await assert.rejects(() => store.remove('deepseek'), /不能删除/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

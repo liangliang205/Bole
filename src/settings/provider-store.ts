@@ -22,6 +22,7 @@ interface ProviderRecord {
   proModel: string;
   maskedKey: string | null;
   updatedAt: string;
+  builtin?: boolean;
   key: EncryptedKey | null;
 }
 
@@ -42,6 +43,7 @@ export interface ProviderPublic {
   hasKey: boolean;
   updatedAt: string;
   active: boolean;
+  builtin: boolean;
 }
 
 export interface ProviderWithKey extends ProviderPublic {
@@ -65,6 +67,7 @@ const DEFAULT_PROVIDER = {
   api: 'deepseek' as ProviderApi,
   flashModel: 'deepseek-flash',
   proModel: 'deepseek-v4-pro',
+  builtin: true,
 };
 
 function maskKey(key: string): string {
@@ -147,7 +150,29 @@ export class ProviderStore {
       try {
         const parsed = JSON.parse(await readFile(this.file, 'utf8')) as ProviderFile;
         if (parsed?.version === 1 && Array.isArray(parsed.providers)) {
+          let changed = false;
+          for (const provider of parsed.providers) {
+            const builtin = provider.id === DEFAULT_PROVIDER.id;
+            if (provider.builtin !== builtin) {
+              provider.builtin = builtin;
+              changed = true;
+            }
+          }
+          if (!parsed.providers.some((provider) => provider.id === DEFAULT_PROVIDER.id)) {
+            parsed.providers.unshift({
+              ...DEFAULT_PROVIDER,
+              maskedKey: null,
+              updatedAt: new Date().toISOString(),
+              key: null,
+            });
+            changed = true;
+          }
+          if (!parsed.activeId) {
+            parsed.activeId = parsed.providers[0]?.id ?? DEFAULT_PROVIDER.id;
+            changed = true;
+          }
           this.cache = parsed;
+          if (changed) await this.persist(parsed);
           return parsed;
         }
       } catch {
@@ -187,6 +212,7 @@ export class ProviderStore {
       hasKey: Boolean(provider.key),
       updatedAt: provider.updatedAt,
       active: provider.id === activeId,
+      builtin: provider.id === DEFAULT_PROVIDER.id || Boolean(provider.builtin),
     };
   }
 
@@ -219,22 +245,33 @@ export class ProviderStore {
     const proModel = validateModel(input.proModel, 'Pro 模型');
     if (input.api !== 'deepseek' && input.api !== 'openai') throw new Error(`不支持的 API 类型：${input.api}`);
     const id = input.id?.trim() || newId('prov');
+    if (!/^[a-z0-9][a-z0-9_-]{0,49}$/.test(id)) throw new Error('Provider ID 只能使用小写字母、数字、- 或 _，且以字母/数字开头');
     const index = store.providers.findIndex((provider) => provider.id === id);
     const existing = index >= 0 ? store.providers[index] : null;
+    const builtin = existing?.builtin ?? id === DEFAULT_PROVIDER.id;
     const newKey = input.apiKey?.trim() ?? '';
     const encrypted = newKey ? await this.encrypt(newKey) : existing?.key ?? null;
     if (!encrypted) throw new Error('API Key 不能为空');
-    const record: ProviderRecord = {
-      id,
-      name,
-      baseUrl,
-      api: input.api,
-      flashModel,
-      proModel,
-      maskedKey: newKey ? maskKey(newKey) : existing?.maskedKey ?? null,
-      updatedAt: new Date().toISOString(),
-      key: encrypted,
-    };
+    const record: ProviderRecord = builtin
+      ? {
+          ...DEFAULT_PROVIDER,
+          id: DEFAULT_PROVIDER.id,
+          maskedKey: newKey ? maskKey(newKey) : existing?.maskedKey ?? null,
+          updatedAt: new Date().toISOString(),
+          key: encrypted,
+        }
+      : {
+          id,
+          name,
+          baseUrl,
+          api: input.api,
+          flashModel,
+          proModel,
+          maskedKey: newKey ? maskKey(newKey) : existing?.maskedKey ?? null,
+          updatedAt: new Date().toISOString(),
+          builtin: false,
+          key: encrypted,
+        };
     if (index >= 0) store.providers[index] = record;
     else store.providers.push(record);
     const active = store.providers.find((provider) => provider.id === store.activeId);
@@ -256,6 +293,9 @@ export class ProviderStore {
     const store = await this.load();
     const index = store.providers.findIndex((provider) => provider.id === id);
     if (index < 0) throw new Error(`提供商不存在：${id}`);
+    if (store.providers[index].builtin || id === DEFAULT_PROVIDER.id) {
+      throw new Error('DeepSeek 是内置提供商，不能删除');
+    }
     store.providers.splice(index, 1);
     if (store.activeId === id) store.activeId = store.providers.find((provider) => provider.key)?.id ?? store.providers[0]?.id ?? null;
     await this.persist(store);

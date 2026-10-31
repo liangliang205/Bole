@@ -16,7 +16,7 @@ pnpm web                   # http://127.0.0.1:8787
 
 ### 页面里能做什么
 
-- 设置：DSH 风格的「模型」页，展示提供商列表、Key 状态、当前使用项；支持添加、编辑、测试、切换、删除，兼容 DeepSeek 与 OpenAI 兼容网关。
+- 设置：DSH 风格的「模型」页；DeepSeek 为内置提供商（不可删除），自定义模型 API 使用 OpenAI Chat Completions 协议，填写 Provider ID、显示名称、API 地址、密钥与 Flash/Pro 模型，可添加、编辑、测试、切换、删除。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
@@ -76,7 +76,7 @@ pnpm bole web --port 8787     # 对话式控制台
 |---|---|---|
 | GET | `/api/config` | 模型提供商、当前选择、档位模型、OCR 状态 |
 | GET | `/api/providers` | 提供商列表（Key 仅 masked） |
-| POST | `/api/providers` | 添加提供商；`{name,baseUrl,api,flashModel,proModel,apiKey}` |
+| POST | `/api/providers` | 添加提供商；`{id,name,baseUrl,api,flashModel,proModel,apiKey}` |
 | PATCH | `/api/providers/:id` | 编辑提供商（apiKey 留空保留） |
 | DELETE | `/api/providers/:id` | 删除提供商 |
 | POST | `/api/providers/:id/activate` | 设为当前提供商 |

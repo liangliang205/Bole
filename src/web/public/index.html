@@ -118,25 +118,37 @@
         <div id="provider-list" class="provider-list"></div>
         <div id="provider-editor" class="provider-editor hidden">
           <h3 id="provider-editor-title">添加模型提供商</h3>
-          <div class="form-grid">
-            <label>名称<input id="provider-name" class="input" placeholder="例如 DeepSeek、xiaomi"></label>
-            <label>API 类型
+          <div id="provider-builtin-head" class="provider-builtin-head hidden">
+            <div><b id="provider-builtin-name">DeepSeek</b><span id="provider-builtin-id">deepseek</span></div>
+            <span class="tag ok">内置</span>
+          </div>
+          <div id="provider-custom-fields" class="form-grid">
+            <label>Provider ID<input id="provider-id" class="input" placeholder="acme-gateway"></label>
+            <label>显示名称<input id="provider-name" class="input" placeholder="例如 acme-gateway"></label>
+            <label class="span-2">API 地址<input id="provider-base" class="input" placeholder="https://gateway.example/v1"></label>
+            <label>API 协议
               <select id="provider-api" class="input">
+                <option value="openai">OpenAI Chat Completions</option>
                 <option value="deepseek">DeepSeek</option>
-                <option value="openai">OpenAI 兼容</option>
               </select>
             </label>
-            <label class="span-2">Base URL<input id="provider-base" class="input" placeholder="https://api.deepseek.com"></label>
-            <label class="span-2">API Key<input id="provider-key" class="input" type="password" placeholder="留空则保留原 Key"></label>
-            <label>Flash 模型<input id="provider-flash" class="input" placeholder="deepseek-flash"></label>
-            <label>Pro 模型<input id="provider-pro" class="input" placeholder="deepseek-v4-pro"></label>
+          </div>
+          <div class="form-grid">
+            <label class="span-2">API 密钥<input id="provider-key" class="input" type="password" placeholder="输入 API 密钥"></label>
+          </div>
+          <div id="provider-model-section" class="model-directory">
+            <div class="directory-head"><span>模型目录</span><span class="muted">流水线按 Flash / Pro 两个档位调用</span></div>
+            <div class="form-grid">
+              <label>Flash 模型<input id="provider-flash" class="input" placeholder="deepseek-flash"></label>
+              <label>Pro 模型<input id="provider-pro" class="input" placeholder="deepseek-v4-pro"></label>
+            </div>
           </div>
           <div class="settings-status" id="provider-status"></div>
           <div class="modal-actions">
             <button class="btn ghost" id="provider-test">测试连接</button>
             <span class="spacer"></span>
             <button class="btn ghost" id="provider-cancel">取消</button>
-            <button class="btn primary" id="provider-save">保存</button>
+            <button class="btn primary" id="provider-save">创建提供商</button>
           </div>
         </div>
       </section>

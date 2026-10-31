@@ -850,9 +850,10 @@
           <span class="dot ${provider.hasKey ? 'completed' : 'idle'}"></span>
           <span>${esc(provider.name)}</span>
           ${provider.active ? '<span class="tag ok">当前使用</span>' : ''}
+          ${provider.builtin ? '<span class="tag">内置</span>' : ''}
           ${!provider.hasKey ? '<span class="tag warn">未绑定 Key</span>' : ''}
         </div>
-        <div class="provider-meta">${esc(provider.api === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容')} · ${esc(provider.baseUrl)}</div>
+        <div class="provider-meta">${esc(provider.id)} · ${esc(provider.api === 'deepseek' ? 'DeepSeek' : 'OpenAI Chat Completions')} · ${esc(provider.baseUrl)}</div>
         <div class="provider-models"><span>Flash</span>${esc(provider.flashModel)}<span>Pro</span>${esc(provider.proModel)}</div>
         <div class="provider-key">${provider.maskedKey ? `Key ${esc(provider.maskedKey)}` : '未绑定 API Key'}</div>
       </div>
@@ -860,7 +861,7 @@
         ${!provider.active && provider.hasKey ? `<button class="btn ghost" data-provider-action="activate" data-provider-id="${esc(provider.id)}">设为当前</button>` : ''}
         <button class="btn ghost" data-provider-action="test" data-provider-id="${esc(provider.id)}">测试</button>
         <button class="btn ghost" data-provider-action="edit" data-provider-id="${esc(provider.id)}">编辑</button>
-        <button class="btn ghost danger-text" data-provider-action="delete" data-provider-id="${esc(provider.id)}">删除</button>
+        ${provider.builtin ? '' : `<button class="btn ghost danger-text" data-provider-action="delete" data-provider-id="${esc(provider.id)}">删除</button>`}
       </div>
     </article>`).join('');
     list.querySelectorAll('[data-provider-action]').forEach((button) => {
@@ -884,16 +885,28 @@
 
   function openProviderEditor(provider = null) {
     state.editingProvider = provider;
+    const builtin = Boolean(provider?.builtin);
     $('#provider-editor').classList.remove('hidden');
-    $('#provider-editor-title').textContent = provider ? `编辑 ${provider.name}` : '添加模型提供商';
-    $('#provider-name').value = provider?.name ?? 'DeepSeek';
-    $('#provider-api').value = provider?.api ?? 'deepseek';
-    $('#provider-base').value = provider?.baseUrl ?? 'https://api.deepseek.com';
+    $('#provider-editor-title').textContent = provider ? (builtin ? '编辑 DeepSeek' : `编辑 ${provider.name}`) : '自定义模型 API';
+    $('#provider-builtin-head').classList.toggle('hidden', !builtin);
+    $('#provider-builtin-name').textContent = provider?.name ?? 'DeepSeek';
+    $('#provider-builtin-id').textContent = provider?.id ?? 'deepseek';
+    $('#provider-custom-fields').classList.toggle('hidden', builtin);
+    $('#provider-model-section').classList.toggle('hidden', builtin);
+    $('#provider-id').value = provider?.id ?? '';
+    $('#provider-id').disabled = Boolean(provider);
+    $('#provider-name').value = provider?.name ?? '';
+    $('#provider-api').value = provider?.api ?? 'openai';
+    $('#provider-base').value = provider?.baseUrl ?? '';
     $('#provider-key').value = '';
-    $('#provider-key').placeholder = provider?.hasKey ? '留空则保留当前 Key' : 'sk-...';
-    $('#provider-flash').value = provider?.flashModel ?? 'deepseek-flash';
-    $('#provider-pro').value = provider?.proModel ?? 'deepseek-v4-pro';
-    setProviderStatus(provider?.hasKey ? '已保存 Key；只修改展示信息时可留空。' : '填写 API Key 后保存，会加密存储在本机服务端。', provider?.hasKey ? 'ok' : 'warn');
+    $('#provider-key').placeholder = provider?.hasKey ? '留空使用已保存凭据' : '输入 API 密钥';
+    $('#provider-flash').value = provider?.flashModel ?? '';
+    $('#provider-pro').value = provider?.proModel ?? '';
+    $('#provider-save').textContent = provider ? '保存' : '创建提供商';
+    setProviderStatus(
+      builtin ? 'DeepSeek 是内置提供商，只需维护 API 密钥。' : provider ? '修改后保存；Key 留空则保留原密钥。' : '自定义模型 API 使用 OpenAI Chat Completions 协议；填写 Provider ID、地址、密钥和模型。',
+      builtin || provider?.hasKey ? 'ok' : 'warn',
+    );
     $('#provider-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -928,14 +941,24 @@
 
   async function saveProvider() {
     const editing = state.editingProvider;
+    const providerId = $('#provider-id').value.trim().toLowerCase();
     const apiKey = $('#provider-key').value.trim();
-    if (!editing && !apiKey) { setProviderStatus('新提供商必须填写 API Key', 'error'); return; }
+    const name = $('#provider-name').value.trim();
+    const baseUrl = $('#provider-base').value.trim();
+    const flashModel = $('#provider-flash').value.trim();
+    const proModel = $('#provider-pro').value.trim();
+    if (!editing) {
+      if (!/^[a-z0-9][a-z0-9_-]{0,49}$/.test(providerId)) { setProviderStatus('Provider ID 只能使用小写字母、数字、- 或 _', 'error'); return; }
+      if (!name || !baseUrl || !flashModel || !proModel) { setProviderStatus('请填写显示名称、API 地址与 Flash/Pro 模型', 'error'); return; }
+      if (!apiKey) { setProviderStatus('新提供商必须填写 API Key', 'error'); return; }
+    }
     const body = {
-      name: $('#provider-name').value.trim(),
-      baseUrl: $('#provider-base').value.trim(),
+      ...(editing ? {} : { id: providerId }),
+      name,
+      baseUrl,
       api: $('#provider-api').value,
-      flashModel: $('#provider-flash').value.trim(),
-      proModel: $('#provider-pro').value.trim(),
+      flashModel,
+      proModel,
       ...(apiKey ? { apiKey } : {}),
     };
     const button = $('#provider-save');
@@ -950,7 +973,7 @@
       $('#provider-editor').classList.add('hidden');
       state.editingProvider = null;
       if (data.warning) toast(data.warning, 'error');
-      else toast(editing ? '提供商已更新' : '提供商已添加', 'ok');
+      else toast(editing ? '提供商已更新' : '提供商已创建', 'ok');
     } catch (error) {
       setProviderStatus(`保存失败：${error.message}`, 'error');
       toast(`保存失败：${error.message}`, 'error');
@@ -1050,6 +1073,9 @@
       state.editingProvider = null;
     });
     $('#provider-test').addEventListener('click', testEditingProvider);
+    $('#provider-id').addEventListener('input', (event) => {
+      event.target.value = event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    });
     $('#provider-api').addEventListener('change', () => {
       const api = $('#provider-api').value;
       const base = $('#provider-base').value;
