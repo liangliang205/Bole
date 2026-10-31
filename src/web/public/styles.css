@@ -146,7 +146,6 @@ b, strong { color: var(--text); }
 .dot.failed { background: var(--danger); }
 .dot.idle { background: var(--dim); }
 .side-footer { border-top: 1px solid var(--line-soft); padding-top: 10px; display: grid; gap: 7px; }
-.env-line { font-size: 11px; color: var(--dim); padding: 0 4px; line-height: 1.5; }
 
 /* buttons */
 .btn {

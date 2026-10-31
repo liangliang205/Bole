@@ -790,13 +790,6 @@
 
   // ---------------------------------------------------------------- settings / tools
 
-  function updateEnvLine() {
-    const key = state.config?.key;
-    const keyState = key?.bound ? `Key 已绑定 ${key.masked || ''}` : 'Key 未绑定';
-    const ocr = state.config?.ocr?.external ? '外部 OCR' : state.config?.ocr?.local ? '本地 OCR 就绪' : 'OCR 未就绪';
-    $('#env-line').textContent = `DeepSeek · ${keyState} · ${ocr}`;
-  }
-
   function setSettingsStatus(text, tone = '') {
     const el = $('#settings-status');
     el.textContent = text;
@@ -806,7 +799,6 @@
   async function loadConfig() {
     try {
       state.config = await api('/api/config');
-      updateEnvLine();
       const pipeline = state.config.pipeline;
       $('#settings-hint').textContent = pipeline
         ? `流水线：batch=${pipeline.batchSize} · 池=${pipeline.pools.parse}/${pipeline.pools.assess}/${pipeline.pools.review} · 深评 ${pipeline.deepEval.percent}%→${pipeline.deepEval.tier} · OCR ${state.config.ocr.external ? '外部服务' : state.config.ocr.local ? '本地就绪' : '未下载'}`
@@ -849,7 +841,6 @@
     try {
       const data = await api('/api/key', { method: 'POST', body: JSON.stringify({ apiKey }) });
       state.config = { ...(state.config || {}), key: data.key };
-      updateEnvLine();
       state.settingsForced = false;
       $('#settings-modal').classList.add('hidden');
       if (data.warning) toast(data.warning, 'error');
@@ -868,7 +859,6 @@
     try {
       const data = await api('/api/key', { method: 'DELETE' });
       state.config = { ...(state.config || {}), key: data.key };
-      updateEnvLine();
       state.settingsForced = false;
       openSettings(true);
       toast('已清除 DeepSeek Key 绑定', 'ok');
