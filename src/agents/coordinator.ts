@@ -236,6 +236,12 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         size,
       });
     },
+    onBatchError: (index, error) => {
+      deps.events.emit(deps.jobId, 'coordinator', 'batch.failed', {
+        batchId: index + 1,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    },
     run: async (batch, index) => {
       const batchId = index + 1;
       deps.ledger.assignBatch(batch.map((item) => item.resumeId), batchId);

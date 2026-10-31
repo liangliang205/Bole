@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import path from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 import { readFileSync, readdirSync } from 'node:fs';

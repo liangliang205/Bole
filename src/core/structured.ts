@@ -71,7 +71,7 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
         user: `${opts.user}${retryContext}`,
         sharedPrefix: opts.sharedPrefix,
         temperature: opts.temperature ?? 0,
-        maxTokens: opts.maxTokens,
+        maxTokens: opts.maxTokens ?? 4096,
         meta: { ...(opts.meta ?? {}), key: opts.taskId, taskId: opts.taskId, jobId: opts.jobId, resumeId: opts.resumeId, batchId: opts.batchId },
       });
     } catch (error) {

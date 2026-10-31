@@ -39,6 +39,7 @@ export async function callAgentJson<T>(
         user: `${opts.user}${retry}`,
         sharedPrefix: opts.sharedPrefix,
         temperature: 0,
+        maxTokens: 4096,
         meta: opts.meta,
       });
     } catch (error) {

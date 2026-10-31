@@ -4,6 +4,7 @@
   "private": true,
   "description": "伯乐 BoLe —— 可验证的多 Agent 招聘筛选编排平台（MVP）",
   "type": "module",
+  "packageManager": "pnpm@10.25.0",
   "engines": {
     "node": ">=22.6.0"
   },

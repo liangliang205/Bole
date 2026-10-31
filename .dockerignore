@@ -1,0 +1,10 @@
+node_modules
+runs
+.git
+data/ledger.db
+data/ledger.db-wal
+data/ledger.db-shm
+data/ledger.db-journal
+data/index
+data/inbox
+*.log

@@ -64,8 +64,10 @@ export class DeepSeekProvider implements LlmProvider {
               { role: 'user', content: req.user },
             ],
             temperature: req.temperature ?? 0,
-            max_tokens: req.maxTokens ?? 2048,
-            response_format: req.schemaName ? { type: 'json_object' } : undefined,
+            max_tokens: req.maxTokens ?? 4096,
+            // deepseek-reasoner 不一定支持 response_format，交给提示词 + 路由层 JSON 提取
+            response_format:
+              req.schemaName && !/reasoner/i.test(model) ? { type: 'json_object' } : undefined,
             stream: false,
           }),
           signal: AbortSignal.timeout(this.timeoutMs),

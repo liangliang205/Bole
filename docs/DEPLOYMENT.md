@@ -102,6 +102,8 @@ DEEPSEEK_API_KEY=sk-... BOLE_LLM=deepseek docker compose up --build
 
 > 入口镜像不包含 Chroma/Qdrant：P0 的 RAG 是零依赖 TF-IDF 索引（见 `src/tools/rag.ts`），数据在 `data/knowledge/`。P1 换向量库时只需替换 `RagIndex` 的实现。
 
+> 注意：在受限沙箱/容器内运行时，Docker CLI 可能无法访问 daemon 的命名管道（`docker build` 被拒绝）。`docker compose config` 可通过；实际构建请在普通开发机或 CI 上执行，并据此调整基础镜像与代理设置。
+
 ## 7. 数据与产物
 
 ```
