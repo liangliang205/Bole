@@ -142,3 +142,20 @@ export async function verifyDeepSeekKey(apiKey: string, baseUrl = 'https://api.d
     return { verified: false, warning: '无法连接 DeepSeek 校验 Key，已保存；请确认网络/网关后使用。' };
   }
 }
+
+/** 读取 OpenAI 兼容 /models 的模型 ID，用于没有模型目录的自定义提供商自动选型。 */
+export async function fetchModelIds(apiKey: string, baseUrl: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return [];
+    const parsed = (await response.json()) as { data?: { id?: unknown }[] };
+    return (parsed.data ?? [])
+      .map((item) => (typeof item.id === 'string' ? item.id.trim() : ''))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}

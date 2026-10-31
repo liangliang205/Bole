@@ -892,7 +892,6 @@
     $('#provider-builtin-name').textContent = provider?.name ?? 'DeepSeek';
     $('#provider-builtin-id').textContent = provider?.id ?? 'deepseek';
     $('#provider-custom-fields').classList.toggle('hidden', builtin);
-    $('#provider-model-section').classList.toggle('hidden', builtin);
     $('#provider-id').value = provider?.id ?? '';
     $('#provider-id').disabled = Boolean(provider);
     $('#provider-name').value = provider?.name ?? '';
@@ -900,11 +899,9 @@
     $('#provider-base').value = provider?.baseUrl ?? '';
     $('#provider-key').value = '';
     $('#provider-key').placeholder = provider?.hasKey ? '留空使用已保存凭据' : '输入 API 密钥';
-    $('#provider-flash').value = provider?.flashModel ?? '';
-    $('#provider-pro').value = provider?.proModel ?? '';
     $('#provider-save').textContent = provider ? '保存' : '创建提供商';
     setProviderStatus(
-      builtin ? 'DeepSeek 是内置提供商，只需维护 API 密钥。' : provider ? '修改后保存；Key 留空则保留原密钥。' : '自定义模型 API 使用 OpenAI Chat Completions 协议；填写 Provider ID、地址、密钥和模型。',
+      builtin ? 'DeepSeek 是内置提供商，只需维护 API 密钥。' : provider ? '修改后保存；Key 留空则保留原密钥。' : '自定义模型 API 使用 OpenAI Chat Completions 协议；模型会从网关 /models 自动发现。',
       builtin || provider?.hasKey ? 'ok' : 'warn',
     );
     $('#provider-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -945,20 +942,16 @@
     const apiKey = $('#provider-key').value.trim();
     const name = $('#provider-name').value.trim();
     const baseUrl = $('#provider-base').value.trim();
-    const flashModel = $('#provider-flash').value.trim();
-    const proModel = $('#provider-pro').value.trim();
     if (!editing) {
       if (!/^[a-z0-9][a-z0-9_-]{0,49}$/.test(providerId)) { setProviderStatus('Provider ID 只能使用小写字母、数字、- 或 _', 'error'); return; }
-      if (!name || !baseUrl || !flashModel || !proModel) { setProviderStatus('请填写显示名称、API 地址与 Flash/Pro 模型', 'error'); return; }
-      if (!apiKey) { setProviderStatus('新提供商必须填写 API Key', 'error'); return; }
+      if (!name || !baseUrl) { setProviderStatus('请填写显示名称与 API 地址', 'error'); return; }
+      if (!apiKey) { setProviderStatus('新提供商必须填写 API 密钥', 'error'); return; }
     }
     const body = {
       ...(editing ? {} : { id: providerId }),
       name,
       baseUrl,
       api: $('#provider-api').value,
-      flashModel,
-      proModel,
       ...(apiKey ? { apiKey } : {}),
     };
     const button = $('#provider-save');
@@ -1081,14 +1074,6 @@
       const base = $('#provider-base').value;
       if (!base || base === 'https://api.deepseek.com' || base === 'https://api.openai.com/v1') {
         $('#provider-base').value = api === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.openai.com/v1';
-      }
-      if (api === 'openai' && $('#provider-flash').value === 'deepseek-flash') {
-        $('#provider-flash').value = '';
-        $('#provider-pro').value = '';
-      }
-      if (api === 'deepseek' && !$('#provider-flash').value) {
-        $('#provider-flash').value = 'deepseek-flash';
-        $('#provider-pro').value = 'deepseek-v4-pro';
       }
     });
     $('#open-tools').addEventListener('click', openTools);

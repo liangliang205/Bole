@@ -333,9 +333,6 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .provider-builtin-head > div { display: flex; align-items: baseline; gap: 8px; }
 .provider-builtin-head b { font-size: 14px; }
 .provider-builtin-head span { font-size: 11px; color: var(--dim); font-family: var(--mono); }
-.model-directory { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
-.directory-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px; font-size: 12px; font-weight: 600; }
-.directory-head .muted { font-weight: 400; }
 .danger-text { color: var(--danger); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .modal-head h2 { font-size: 16px; margin: 0; }

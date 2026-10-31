@@ -6,7 +6,7 @@ import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
-import { verifyDeepSeekKey } from '../settings/key-store.ts';
+import { fetchModelIds, verifyDeepSeekKey } from '../settings/key-store.ts';
 import { ProviderStore, type ProviderApi, type ProviderInput, type ProviderPublic } from '../settings/provider-store.ts';
 import { StreamPreviewer } from './stream-preview.ts';
 import type { StreamToken, UploadedFile } from '../types.ts';
@@ -151,6 +151,29 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     proModel: String(body.proModel ?? existing?.proModel ?? ''),
     apiKey: typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined,
   });
+
+  const resolveProviderModels = async (input: ProviderInput, existing: ProviderPublic | undefined, apiKey: string | undefined): Promise<void> => {
+    if (input.api === 'deepseek') {
+      input.flashModel ||= 'deepseek-flash';
+      input.proModel ||= 'deepseek-v4-pro';
+      return;
+    }
+    if (existing?.flashModel && existing?.proModel) {
+      input.flashModel ||= existing.flashModel;
+      input.proModel ||= existing.proModel;
+    }
+    if (input.flashModel && input.proModel) return;
+    const key = input.apiKey || apiKey;
+    if (!key) throw new Error('需要 API Key 才能自动发现模型');
+    const ids = await fetchModelIds(key, input.baseUrl);
+    if (ids.length === 0) {
+      throw new Error('无法从该网关的 /models 发现模型；请确认网关支持 /models，或使用内置 DeepSeek');
+    }
+    const flash = ids.find((id) => /flash|mini|small|turbo|lite|haiku/i.test(id)) ?? ids[0];
+    const pro = ids.find((id) => /pro|max|large|opus|sonnet|gpt-4|reason/i.test(id)) ?? ids[ids.length - 1] ?? flash;
+    input.flashModel ||= flash;
+    input.proModel ||= pro;
+  };
 
   const buildRunInfo = (jobId: string) => {
     const snapshot = getSnapshot(jobId);
@@ -309,6 +332,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl);
             warning = verification.warning;
           }
+          await resolveProviderModels(input, undefined, input.apiKey);
           const saved = await providers.save(input);
           if (body.activate === true) await providers.activate(saved.id);
           const list = await providers.list();
@@ -346,6 +370,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl);
             warning = verification.warning;
           }
+          const existingKey = input.apiKey || (await providers.getKey(existing.id));
+          await resolveProviderModels(input, existing, existingKey ?? undefined);
           const saved = await providers.save(input);
           const next = await providers.list();
           json(res, 200, { ok: true, saved, ...next, warning });
