@@ -3,6 +3,7 @@
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const THEME_KEY = 'bole.theme';
   const AGENT_NAMES = {
     coordinator: '伯乐', profiler: '画像师', fetcher: '探马', parser: '录事',
     assessor: '相马官', auditor: '监军', advisor: '谋士',
@@ -59,6 +60,28 @@
     el.className = `toast ${tone}`;
     clearTimeout(el._timer);
     el._timer = setTimeout(() => el.classList.add('hidden'), 3600);
+  }
+
+  function currentTheme() {
+    return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  }
+
+  function applyTheme(theme, persist = true) {
+    const next = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
+    if (persist) {
+      try { localStorage.setItem(THEME_KEY, next); } catch { /* 隐私模式 */ }
+    }
+    const button = $('#theme-toggle');
+    if (button) {
+      button.textContent = next === 'dark' ? '☀ 日间' : '☾ 暗夜';
+      button.title = next === 'dark' ? '切换日间模式' : '切换暗夜模式';
+      button.setAttribute('aria-pressed', String(next === 'dark'));
+    }
+  }
+
+  function toggleTheme() {
+    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
   }
   async function api(path, options = {}) {
     const response = await fetch(path, {
@@ -925,6 +948,7 @@
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply(); }
     });
     $('#open-settings').addEventListener('click', () => openSettings(false));
+    $('#theme-toggle').addEventListener('click', toggleTheme);
     $('#settings-close').addEventListener('click', closeSettings);
     $('#settings-cancel').addEventListener('click', closeSettings);
     $('#settings-save').addEventListener('click', saveSettings);
@@ -956,6 +980,7 @@
 
   async function init() {
     bind();
+    applyTheme(currentTheme(), false);
     await loadConfig();
     const jobs = await loadJobs();
     const match = /^#job=(.+)$/.exec(window.location.hash);

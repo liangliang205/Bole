@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>伯乐 BoLe · 对话式招聘筛选</title>
+<script>
+(() => {
+  try {
+    document.documentElement.dataset.theme = localStorage.getItem('bole.theme') === 'dark' ? 'dark' : 'light';
+  } catch {
+    document.documentElement.dataset.theme = 'light';
+  }
+})();
+</script>
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -32,6 +41,7 @@
       <div class="topbar-actions">
         <span id="status-pill" class="pill idle">idle</span>
         <button class="btn ghost" id="panel-btn" title="任务面板">▤ 任务面板</button>
+        <button class="btn ghost" id="theme-toggle" type="button" title="切换暗夜模式" aria-pressed="false">☾ 暗夜</button>
         <button class="btn ghost" id="resume-btn" title="从批次检查点续跑">▶ 续跑</button>
         <button class="btn ghost" id="refresh-btn">刷新</button>
       </div>
