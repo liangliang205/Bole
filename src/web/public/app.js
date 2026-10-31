@@ -115,8 +115,7 @@
     $('#empty-view').classList.remove('hidden');
     $('#chat-view').classList.add('hidden');
     closeDrawer();
-    $('#job-title').textContent = '伯乐 BoLe';
-    $('#job-sub').textContent = '上传简历，开始一次可验证的筛选';
+    document.title = '伯乐 BoLe · 对话式招聘筛选';
     setStatus('idle');
     renderJobs();
     setTimeout(() => $('#new-requirements')?.focus(), 30);
@@ -181,8 +180,7 @@
     if (!state.run || !state.snapshot) return;
     const job = state.snapshot.job || {};
     const run = state.run;
-    $('#job-title').textContent = jobTitle(job);
-    $('#job-sub').textContent = [`job=${run.jobId}`, run.runId ? `run=${run.runId}` : '', job.requirements ? String(job.requirements).slice(0, 70) : '', run.error ? `错误：${run.error}` : ''].filter(Boolean).join(' · ');
+    document.title = `${jobTitle(job)} · 伯乐 BoLe`;
     setStatus(run.status);
     const md = $('#download-md');
     const json = $('#download-json');
