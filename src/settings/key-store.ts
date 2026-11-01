@@ -116,19 +116,74 @@ export function maskKey(apiKey: string): string {
   return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
 }
 
+export function openAiCompatibleBase(baseUrl: string): string {
+  const base = baseUrl.replace(/\/$/, '');
+  return /\/v1$/i.test(base) ? base : `${base}/v1`;
+}
+
+function modelsEndpoint(
+  baseUrl: string,
+  protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages',
+  deepseekStyle = false,
+): string {
+  const base = baseUrl.replace(/\/$/, '');
+  if (protocol === 'anthropic-messages') {
+    return base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`;
+  }
+  if (deepseekStyle) return `${base}/models`;
+  try {
+    if (/maas\.aliyuncs\.com/i.test(base)) return `${new URL(base).origin}/api/v1/models`;
+  } catch {
+    // ignore
+  }
+  return `${openAiCompatibleBase(base)}/models`;
+}
+
+/** 兼容网关常见写法：OpenAI /v1/models、根路径 /models、阿里云 MaaS /api/v1/models。 */
+function modelEndpoints(
+  baseUrl: string,
+  protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages',
+  deepseekStyle = false,
+): string[] {
+  const base = baseUrl.replace(/\/$/, '');
+  const candidates: string[] = [];
+  if (protocol === 'anthropic-messages') {
+    candidates.push(base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`, `${base}/models`);
+  } else if (deepseekStyle) {
+    candidates.push(`${base}/models`, `${base}/v1/models`);
+  } else {
+    candidates.push(`${openAiCompatibleBase(base)}/models`, `${base}/models`);
+    try {
+      const origin = new URL(base).origin;
+      // 阿里云百炼 MaaS 的模型目录接口不在 compatible-mode 下。
+      const maasEndpoint = `${origin}/api/v1/models?page_no=1&page_size=100`;
+      if (/maas\.aliyuncs\.com/i.test(base)) candidates.unshift(maasEndpoint);
+      else candidates.push(maasEndpoint);
+    } catch {
+      // 非绝对 URL 由上层校验；这里只跳过额外候选。
+    }
+  }
+  return [...new Set(candidates)];
+}
+
 /**
  * 用 /models 做一次轻量校验。只把 401/403 判为 Key 无效；
  * 网络/网关不支持时仍允许绑定，但返回 warning，避免离线时无法保存。
  */
-export async function verifyDeepSeekKey(apiKey: string, baseUrl = 'https://api.deepseek.com'): Promise<{ verified: boolean; warning?: string }> {
-  const endpoint = `${baseUrl.replace(/\/$/, '')}/models`;
+export async function verifyDeepSeekKey(
+  apiKey: string,
+  baseUrl = 'https://api.deepseek.com',
+  protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages' = 'openai-chat',
+  deepseekStyle = false,
+): Promise<{ verified: boolean; warning?: string }> {
+  const endpoint = modelsEndpoint(baseUrl, protocol, deepseekStyle);
   try {
-    const response = await fetch(endpoint, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const headers: Record<string, string> = protocol === 'anthropic-messages'
+      ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+      : { Authorization: `Bearer ${apiKey}` };
+    const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(10_000) });
     if (response.status === 401 || response.status === 403) {
-      throw new Error('DeepSeek 拒绝了该 API Key（401/403），请检查后重试');
+      throw new Error('网关拒绝了该 API Key（401/403），请检查后重试');
     }
     if (response.status === 404 || response.status === 405) {
       return { verified: false, warning: '网关不支持 /models 校验，已保存 Key；如调用失败请检查网关配置。' };
@@ -139,27 +194,72 @@ export async function verifyDeepSeekKey(apiKey: string, baseUrl = 'https://api.d
     return { verified: true };
   } catch (error) {
     if (error instanceof Error && /401|403|拒绝/.test(error.message)) throw error;
-    return { verified: false, warning: '无法连接 DeepSeek 校验 Key，已保存；请确认网络/网关后使用。' };
+    return { verified: false, warning: '无法连接网关校验 Key，已保存；请确认网络/网关后使用。' };
   }
 }
 
-/** 读取 OpenAI/Anthropic 兼容 /models 的模型 ID，用于没有模型目录的自定义提供商自动选型。 */
-export async function fetchModelIds(apiKey: string, baseUrl: string, protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages' = 'openai-chat'): Promise<string[]> {
-  try {
-    const base = baseUrl.replace(/\/$/, '');
-    const endpoint = protocol === 'anthropic-messages'
-      ? (base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`)
-      : `${base}/models`;
-    const headers: Record<string, string> = protocol === 'anthropic-messages'
-      ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
-      : { Authorization: `Bearer ${apiKey}` };
-    const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return [];
-    const parsed = (await response.json()) as { data?: { id?: unknown }[]; models?: { id?: unknown }[] };
-    return [...(parsed.data ?? []), ...(parsed.models ?? [])]
-      .map((item) => (typeof item.id === 'string' ? item.id.trim() : ''))
-      .filter(Boolean);
-  } catch {
-    return [];
+export interface ModelListResult {
+  ids: string[];
+  endpoint: string;
+  status: number;
+  error?: string;
+}
+
+/** 读取 OpenAI/Anthropic 兼容 /models，并保留可诊断的 HTTP 错误。 */
+export async function fetchModelList(
+  apiKey: string,
+  baseUrl: string,
+  protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages' = 'openai-chat',
+  deepseekStyle = false,
+): Promise<ModelListResult> {
+  const endpoints = modelEndpoints(baseUrl, protocol, deepseekStyle);
+  const headers: Record<string, string> = protocol === 'anthropic-messages'
+    ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+    : { Authorization: `Bearer ${apiKey}` };
+  let last: ModelListResult | null = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(20_000) });
+      if (response.status === 401 || response.status === 403) {
+        const body = (await response.text()).slice(0, 240);
+        return { ids: [], endpoint, status: response.status, error: `HTTP ${response.status}：${body || '密钥被拒绝'}` };
+      }
+      if (!response.ok) {
+        const body = (await response.text()).slice(0, 240);
+        last = { ids: [], endpoint, status: response.status, error: `HTTP ${response.status}：${body || '空响应'}` };
+        continue;
+      }
+      const parsed = (await response.json()) as {
+        data?: { id?: unknown }[];
+        models?: { id?: unknown; model?: unknown }[];
+        output?: { models?: { id?: unknown; model?: unknown }[] };
+      };
+      const rawModels: { id?: unknown; model?: unknown }[] = [
+        ...(parsed.data ?? []),
+        ...(parsed.models ?? []),
+        ...(parsed.output?.models ?? []),
+      ];
+      const ids = rawModels
+        .map((item) => {
+          const id = item.id ?? item.model;
+          return typeof id === 'string' ? id.trim() : '';
+        })
+        .filter(Boolean);
+      if (ids.length > 0) return { ids, endpoint, status: response.status };
+      last = { ids: [], endpoint, status: response.status, error: `网关返回了空模型列表（${endpoint}）` };
+    } catch (error) {
+      last = {
+        ids: [],
+        endpoint,
+        status: 0,
+        error: `请求 ${endpoint} 失败：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
+  return last ?? { ids: [], endpoint: endpoints[0], status: 0, error: '没有可用的模型列表端点' };
+}
+
+/** 读取模型 ID；兼容旧调用。 */
+export async function fetchModelIds(apiKey: string, baseUrl: string, protocol: 'openai-chat' | 'openai-responses' | 'anthropic-messages' = 'openai-chat', deepseekStyle = false): Promise<string[]> {
+  return (await fetchModelList(apiKey, baseUrl, protocol, deepseekStyle)).ids;
 }

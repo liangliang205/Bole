@@ -22,7 +22,7 @@
 - **流式 structured 输出**：token 先进入前端"实时生成"，最终仍以完整 JSON 的 schema 校验 + 两阶段提交为准；无效输出会重试，前端可能看到一段被丢弃的 token。
 - **流式 usage**：DeepSeek 通常返回最终 usage；若网关不返回，成本按 `estimateTokens` 估算，不是账单精确值。
 - **成本**：成本表按模型名查价；自定义提供商的模型若未在 `config/pipeline.json#pricing` 配置，会使用 DeepSeek Flash 费率兜底，成本仅供参考。
-- **自定义提供商模型目录**：可通过「获取可用模型」从网关拉取；不支持 `/models` 的网关可手动添加模型 ID。
+- **自定义提供商模型目录**：可通过「获取可用模型」从网关拉取；OpenAI 使用 `/v1/models`，阿里云百炼 MaaS 使用 `/api/v1/models`，不支持这些接口的网关可手动添加模型 ID。
 - **质量未做真实 A/B**：flash/pro 的分层是工程策略（扇出用 flash、判断/否决用 pro），没有"分档一定更好"的量化结论；需真实 Key + 人工标注重复实验。
 - **未接入 LLM-as-judge**：没有五维 LLM 评分、P/R/F1、NDCG、kappa。
 

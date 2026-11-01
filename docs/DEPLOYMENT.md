@@ -90,7 +90,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 67 个测试
+pnpm test:all          # 69 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 

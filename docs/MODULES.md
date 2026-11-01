@@ -94,7 +94,7 @@
 
 ## 14. 测试（`tests/*`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、cost、stream-preview、key-store、provider-store。
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、cost、stream-preview、key-store、provider-store。
 - `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商标失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
 - `fixtures/documents.ts`：生成 DOCX/PDF 测试文件。

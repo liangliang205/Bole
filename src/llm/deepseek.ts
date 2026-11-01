@@ -149,11 +149,14 @@ export class DeepSeekProvider implements LlmProvider {
   }
 
   private endpoint(): string {
-    if (this.protocol === 'openai-responses') return `${this.baseUrl}/responses`;
+    const base = this.deepseekStyle
+      ? this.baseUrl
+      : (/\/v1$/i.test(this.baseUrl) ? this.baseUrl : `${this.baseUrl}/v1`);
+    if (this.protocol === 'openai-responses') return `${base}/responses`;
     if (this.protocol === 'anthropic-messages') {
       return this.baseUrl.endsWith('/v1') ? `${this.baseUrl}/messages` : `${this.baseUrl}/v1/messages`;
     }
-    return `${this.baseUrl}/chat/completions`;
+    return `${base}/chat/completions`;
   }
 
   private buildRequest(req: ChatRequest, model: string, streaming: boolean): RequestSpec {

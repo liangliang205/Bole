@@ -6,7 +6,7 @@ import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
-import { fetchModelIds, verifyDeepSeekKey } from '../settings/key-store.ts';
+import { fetchModelList, verifyDeepSeekKey } from '../settings/key-store.ts';
 import { ProviderStore, type ProviderApi, type ProviderInput, type ProviderPublic } from '../settings/provider-store.ts';
 import { StreamPreviewer } from './stream-preview.ts';
 import type { StreamToken, UploadedFile } from '../types.ts';
@@ -184,10 +184,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     if (input.flashModel && input.proModel) return;
     const key = input.apiKey || apiKey;
     if (!key) throw new Error('需要 API Key 才能自动发现模型');
-    const ids = await fetchModelIds(key, input.baseUrl, input.api);
-    if (ids.length === 0) {
-      throw new Error('无法从该网关的 /models 发现模型；请确认网关支持 /models，或使用内置 DeepSeek');
+    const result = await fetchModelList(key, input.baseUrl, input.api);
+    if (result.ids.length === 0) {
+      throw new Error(result.error ?? `无法从 ${result.endpoint} 发现模型；请手动添加模型 ID`);
     }
+    const ids = result.ids;
     const flash = ids.find((id) => /flash|mini|small|turbo|lite|haiku/i.test(id)) ?? ids[0];
     const pro = ids.find((id) => /pro|max|large|opus|sonnet|gpt-4|reason/i.test(id)) ?? ids[ids.length - 1] ?? flash;
     input.flashModel ||= flash;
@@ -348,7 +349,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         let warning: string | undefined;
         try {
           if (input.apiKey) {
-            const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl);
+            const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl, input.api, input.id === 'deepseek');
             warning = verification.warning;
           }
           await resolveProviderModels(input, undefined, input.apiKey);
@@ -380,11 +381,19 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 400, { ok: false, error: '请先填写 API 密钥，或先保存提供商' });
           return;
         }
-        const ids = await fetchModelIds(apiKey, baseUrl, api);
+        const result = await fetchModelList(apiKey, baseUrl, api, false);
+        if (result.ids.length === 0) {
+          json(res, 400, {
+            ok: false,
+            error: result.error ?? `网关没有返回模型列表（${result.endpoint}）`,
+            endpoint: result.endpoint,
+          });
+          return;
+        }
         json(res, 200, {
           ok: true,
-          models: ids.map((id) => ({ id, name: id })),
-          warning: ids.length === 0 ? '网关没有返回模型列表；可手动添加模型 ID' : undefined,
+          endpoint: result.endpoint,
+          models: result.ids.map((id) => ({ id, name: id })),
         });
         return;
       }
@@ -413,7 +422,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         let warning: string | undefined;
         try {
           if (input.apiKey) {
-            const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl);
+            const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl, input.api, Boolean(existing.builtin));
             warning = verification.warning;
           }
           const existingKey = input.apiKey || (await providers.getKey(existing.id));
@@ -454,7 +463,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           return;
         }
         try {
-          const verification = await verifyDeepSeekKey(apiKey, provider.baseUrl);
+          const verification = await verifyDeepSeekKey(apiKey, provider.baseUrl, provider.api, provider.builtin);
           json(res, 200, { ok: true, verified: verification.verified, warning: verification.warning });
         } catch (error) {
           json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
