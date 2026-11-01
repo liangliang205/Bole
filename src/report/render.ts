@@ -117,12 +117,13 @@ export function renderMarkdown(data: ReportData): string {
   if (data.top.length > 0) {
     lines.push(
       table(
-        ['排名', '候选人', '总分', '结论', '审核'],
+        ['排名', '候选人', '总分', '结论', '推荐理由', '审核'],
         data.top.map((candidate, index) => [
           String(index + 1),
           candidate.label,
           fmtScore(candidate.totalScore),
           candidate.conclusion,
+          candidate.reason.replace(/\|/g, '\\|'),
           candidate.review ? `${candidate.review.verdict}（${candidate.review.loopCount} 轮）` : '—',
         ]),
       ),

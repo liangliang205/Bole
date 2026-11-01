@@ -126,7 +126,25 @@ function readReport(jobId: string): Record<string, unknown> | null {
   const dir = findReportDir(jobId);
   if (!dir) return null;
   try {
-    return JSON.parse(readFileSync(path.join(dir, 'report.json'), 'utf8')) as Record<string, unknown>;
+    const report = JSON.parse(readFileSync(path.join(dir, 'report.json'), 'utf8')) as Record<string, unknown>;
+    // 旧报告没有 reason 字段：从已保存的维度 rationale 补出理由，避免旧会话看起来“没有理由”。
+    if (Array.isArray(report.top)) {
+      report.top = report.top.map((item) => {
+        if (!item || typeof item !== 'object') return item;
+        const candidate = item as Record<string, unknown>;
+        if (typeof candidate.reason === 'string' && candidate.reason.trim()) return candidate;
+        const dimensions = Array.isArray(candidate.dimensions) ? candidate.dimensions : [];
+        const reason = dimensions
+          .filter((dimension): dimension is Record<string, unknown> => Boolean(dimension) && typeof dimension === 'object')
+          .sort((a, b) => Number(b.weight ?? 0) - Number(a.weight ?? 0))
+          .slice(0, 2)
+          .map((dimension) => `${String(dimension.name ?? dimension.key ?? '评估维度')}：${String(dimension.rationale ?? '')}`)
+          .filter((line) => !line.endsWith('：'))
+          .join('；');
+        return { ...candidate, reason: reason || `结论 ${String(candidate.conclusion ?? '')}` };
+      });
+    }
+    return report;
   } catch {
     return null;
   }

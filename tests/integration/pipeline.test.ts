@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { bootstrap } from '../../src/bootstrap.ts';
@@ -105,6 +105,9 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     }
     assert.equal(Object.prototype.hasOwnProperty.call(summary.reports, 'html'), false);
     assert.equal(existsSync(path.join(summary.runDir, 'report.html')), false);
+    const reportJson = JSON.parse(readFileSync(reports.json, 'utf8')) as { top: { reason?: string }[] };
+    assert.ok(reportJson.top.length > 0);
+    assert.ok(reportJson.top.every((candidate) => (candidate.reason ?? '').trim().length > 0), '推荐候选人应带理由说明');
 
     const resumes = boot.deps.ledger.listResumes(boot.job.id);
     assert.equal(resumes.length, 4);

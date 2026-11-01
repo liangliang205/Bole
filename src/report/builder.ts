@@ -20,6 +20,8 @@ export interface RankedCandidate {
   label: string;
   totalScore: number;
   conclusion: string;
+  /** 面向 HR 的推荐理由/不推荐说明，来自整体 rationale，缺失时由维度理由兜底。 */
+  reason: string;
   batchId: number | null;
   dimensions: { key: string; name: string; weight: number; score: number; rationale: string }[];
 }
@@ -103,9 +105,20 @@ export interface ReportData {
   limitations: string[];
 }
 
+function reasonFromEvaluation(evaluation: EvalResult): string {
+  const overall = evaluation.rationale.map((item) => item.trim()).filter(Boolean).join('；');
+  if (overall) return overall;
+  const dimensions = [...evaluation.dimensions]
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 3)
+    .map((dimension) => `${dimension.name}：${dimension.rationale}`)
+    .filter((item) => !/：\s*$/.test(item));
+  return dimensions.join('；') || `综合评分 ${evaluation.totalScore.toFixed(1)}，结论 ${evaluation.conclusion}`;
+}
+
 export function selectTopCandidates(ledger: Ledger, jobId: string, topN: number): RankedCandidate[] {
   const resumes = ledger.listResumes(jobId).filter((r) => r.status === 'verified' || r.status === 'reported');
-  const ranked: (RankedCandidate & { dimensions: RankedCandidate['dimensions'] })[] = [];
+  const ranked: RankedCandidate[] = [];
   for (const resume of resumes) {
     const latest = loadLatestEval(ledger, resume.id);
     if (!latest) continue;
@@ -114,6 +127,7 @@ export function selectTopCandidates(ledger: Ledger, jobId: string, topN: number)
       label: resume.label,
       totalScore: latest.evaluation.totalScore,
       conclusion: latest.evaluation.conclusion,
+      reason: reasonFromEvaluation(latest.evaluation),
       batchId: resume.batch_id,
       dimensions: latest.evaluation.dimensions.map((dim) => ({
         key: dim.key,
@@ -131,6 +145,7 @@ export function selectTopCandidates(ledger: Ledger, jobId: string, topN: number)
       label: candidate.label,
       totalScore: candidate.totalScore,
       conclusion: candidate.conclusion,
+      reason: candidate.reason,
       batchId: candidate.batchId,
       dimensions: candidate.dimensions,
     }));
@@ -178,6 +193,7 @@ function viewForCandidate(
 
   return {
     ...ranked,
+    reason: maskPII(ranked.reason),
     dimensions: ranked.dimensions.map((dim) => ({ ...dim, rationale: maskPII(dim.rationale) })),
     evidenceChain,
     uncertainties: (evaluation?.uncertainties ?? []).map(maskPII),

@@ -538,6 +538,19 @@
     scroll.scrollTop = scroll.scrollHeight;
   }
 
+  function candidateReason(candidate) {
+    const direct = String(candidate?.reason || '').trim();
+    if (direct) return direct;
+    const dimensions = Array.isArray(candidate?.dimensions) ? [...candidate.dimensions] : [];
+    const derived = dimensions
+      .sort((a, b) => Number(b.weight || 0) - Number(a.weight || 0))
+      .slice(0, 2)
+      .map((dimension) => `${dimension.name || dimension.key || '评估维度'}：${dimension.rationale || ''}`)
+      .filter((line) => !line.endsWith('：'))
+      .join('；');
+    return derived || '暂无理由说明';
+  }
+
   function finalReportHtml() {
     const report = state.report;
     const top = Array.isArray(report.top) ? report.top : [];
@@ -545,13 +558,14 @@
       <td>${index + 1}</td><td><b>${esc(candidate.label)}</b></td><td>${esc(fmtScore(candidate.totalScore))}</td>
       <td><span class="tag ${candidate.evalTier === 'pro' ? 'deep' : ''}">${esc(candidate.evalTier || '—')}/${esc(candidate.evalPhase || '—')}</span></td>
       <td>${esc(candidate.conclusion || '')}</td>
+      <td class="reason-cell">${esc(candidateReason(candidate))}</td>
     </tr>`).join('');
     const compliance = report.compliance || {};
     const stats = compliance.reviewStats || {};
     return messageHtml('assistant', '伯乐', '', `<div class="msg-text">筛选完成。以下是 Top${top.length} 推荐与合规摘要，全部结论都能回到简历原文。</div>
       <div class="msg-card">
         <h3>推荐候选人</h3>
-        ${top.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>候选人</th><th>总分</th><th>评估档位</th><th>结论</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-note">没有候选人通过证据核查</div>'}
+        ${top.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>候选人</th><th>总分</th><th>评估档位</th><th>结论</th><th>推荐理由</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-note">没有候选人通过证据核查</div>'}
         <div class="summary-grid" style="margin-top:10px">
           <div><b>${top.length}</b><span>推荐</span></div>
           <div><b>${(report.escalations || []).length}</b><span>转人工</span></div>

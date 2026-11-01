@@ -304,6 +304,7 @@ th, td { text-align: left; padding: 8px 9px; border-bottom: 1px solid var(--line
 th { color: var(--dim); font-weight: 600; font-size: 11px; background: var(--surface-2); position: sticky; top: 0; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--surface-2); }
+.reason-cell { min-width: 260px; max-width: 420px; line-height: 1.55; color: var(--muted); }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; border: 1px solid var(--tag-line); background: var(--tag-bg); color: var(--tag-text); white-space: nowrap; }
 .tag.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
 .tag.warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
