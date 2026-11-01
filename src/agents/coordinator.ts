@@ -21,6 +21,7 @@ import { ParserWorker } from './parser.ts';
 import { AssessorWorker, type AssessorContext } from './assessor.ts';
 import { AuditorWorker } from './auditor.ts';
 import { runAdvisor } from './advisor.ts';
+import { runExporter } from './exporter.ts';
 import { loadJobAnalysis, loadLatestEval, loadParseResult } from './data.ts';
 import type { HitlResponder } from './hitl.ts';
 import { buildReport, selectTopCandidates } from '../report/builder.ts';
@@ -530,6 +531,8 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     status: finalStatus,
   });
   const reports = await writeReports(reportData, deps.runDir);
+  // 伯乐终稿：由模型自主决定导出 Word/PDF 并调用注册工具；失败不阻塞报告落盘。
+  const exporterOutcome = await runExporter(deps, reportData, opts.requirements);
   // 报告成功落盘后才把 job/简历推进到终态，避免"状态完成但报告缺失"
   deps.ledger.setJobStatus(deps.jobId, jobStatus);
   if (finalStatus === 'final') {
@@ -539,6 +542,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     status: finalStatus,
     top: reportData.top.map((c) => `${c.label}:${c.totalScore}`),
     reports,
+    exports: exporterOutcome.files,
   });
 
   // 汇总阶段的排序把已核查候选人与转人工/失败分开；这里按分数重排一次用于返回摘要

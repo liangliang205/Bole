@@ -48,6 +48,9 @@ HR 上传文件 + 招聘需求
    │
    ▼
 报告（Markdown + JSON）+ 成本/收敛数据 + 面试建议（pro）
+   │
+   ▼
+伯乐终稿工具（flash）── 大模型自主决定导出 Word/PDF，调用 export_word / office_export_pdf ── 对话内附件下载
 ```
 
 档位在 `config/agents.json` 与 `config/pipeline.json` 中配置：
@@ -133,6 +136,8 @@ bole/
 │  ├─ ingest/            # 上传、PDF.js/DOCX/HTML 归一化、DeepSeek Vision/Tesseract OCR、去重、PII
 │  ├─ llm/               # DeepSeek 提供方（含 streaming）、路由、成本
 │  ├─ report/            # Markdown / JSON / cost / convergence 渲染
+│  ├─ export/            # Word 报告生成（docx 库）
+│  ├─ tools/             # Tools Call 注册表（OpenAI Function Calling）+ 导出/Python 工具
 │  ├─ settings/          # 模型提供商、Key 加密持久化（服务端）
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
