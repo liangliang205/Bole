@@ -27,7 +27,10 @@
       <span class="search-icon">⌕</span>
       <input id="job-search" placeholder="搜索会话（/）" autocomplete="off">
     </div>
-    <div class="side-title">会话 <span id="job-count" class="muted"></span></div>
+    <div class="side-title">
+      <span>会话 <span id="job-count" class="muted"></span></span>
+      <button class="link-btn" id="archived-toggle" type="button" title="显示/隐藏归档会话">归档</button>
+    </div>
     <div id="job-list" class="job-list"></div>
     <div class="side-footer">
       <button class="btn ghost block" id="open-settings">⚙ 设置与模型</button>
@@ -179,6 +182,7 @@
 </div>
 
 <input id="file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
+<div id="session-menu" class="session-menu hidden" role="menu"></div>
 <div id="toast" class="toast hidden"></div>
 <script src="/app.js"></script>
 </body>

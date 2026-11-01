@@ -26,6 +26,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 报告：完成后直接在对话里汇总 Top 候选人、合规与成本摘要；不提供 Markdown/JSON 下载，后续可通过 MCP 由 Agent 输出。
 - 续跑：从批次检查点恢复未完成任务，不重新上传。
 - 暂停：运行中点击右上角「⏸ 暂停」，在当前批次/阶段边界安全退出并保留已提交结果；状态变为「已暂停」后可「▶ 续跑」。
+- 会话管理：右键会话或点「⋯」打开 DSH 风格菜单；支持置顶、重命名、归档/取消归档、复制会话 ID、删除（删除不可恢复）。「归档」按钮可切换查看归档会话。
 
 ## 流水线
 
@@ -84,6 +85,8 @@ pnpm bole web --port 8787     # 对话式控制台
 | POST | `/api/providers/:id/activate` | 设为当前提供商 |
 | POST | `/api/providers/:id/test` | 测试 `/models` 连接 |
 | GET | `/api/jobs` | 会话列表与计数 |
+| PATCH | `/api/jobs/:id` | `{title?,pinned?,archived?}` 重命名/置顶/归档 |
+| DELETE | `/api/jobs/:id` | 删除会话及其台账/运行产物 |
 | POST | `/api/uploads` | `{filename, contentBase64}` → `uploadId` |
 | POST | `/api/run` | `{requirements, uploadIds[]}` 使用当前提供商创建并启动 |
 | GET | `/api/run/:jobId` | run 状态 + 快照 |

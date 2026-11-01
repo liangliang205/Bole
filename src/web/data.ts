@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../config.ts';
 import { Ledger } from '../core/ledger.ts';
@@ -17,6 +17,8 @@ export interface JobListItem {
   quarantine: number;
   failed: number;
   duplicate: number;
+  archived: boolean;
+  pinned: boolean;
 }
 
 export interface JobSnapshot {
@@ -157,9 +159,44 @@ export function listJobs(limit = 50): JobListItem[] {
         quarantine: counts.quarantine ?? 0,
         failed: counts.failed ?? 0,
         duplicate: counts.duplicate ?? 0,
+        archived: job.archived === 1,
+        pinned: job.pinned === 1,
       };
     });
   });
+}
+
+export function updateJobMeta(
+  jobId: string,
+  patch: { title?: string; archived?: boolean; pinned?: boolean },
+): boolean {
+  return withLedger((ledger) => ledger.updateJobMeta(jobId, patch));
+}
+
+function removeJobRunDirs(jobId: string): void {
+  const paths = resolvePaths();
+  if (!existsSync(paths.runsDir)) return;
+  for (const entry of readdirSync(paths.runsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(paths.runsDir, entry.name);
+    try {
+      const meta = JSON.parse(readFileSync(path.join(dir, 'run.json'), 'utf8')) as { jobId?: string };
+      if (meta.jobId === jobId) rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // 没有 run.json / 损坏目录不阻塞删除
+    }
+  }
+  const reportDir = findReportDir(jobId);
+  if (reportDir) rmSync(reportDir, { recursive: true, force: true });
+}
+
+export function deleteJob(jobId: string): boolean {
+  let removed = false;
+  withLedger((ledger) => {
+    removed = ledger.deleteJob(jobId);
+  });
+  if (removed) removeJobRunDirs(jobId);
+  return removed;
 }
 
 export function getSnapshot(jobId: string): JobSnapshot {

@@ -190,6 +190,8 @@ export interface JobRow {
   fairness_json: string | null;
   status: string;
   seed: string | null;
+  archived?: number;
+  pinned?: number;
   created_ts: string;
   updated_ts: string;
 }

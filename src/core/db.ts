@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   fairness_json TEXT,
   status TEXT NOT NULL,
   seed TEXT,
+  archived INTEGER NOT NULL DEFAULT 0,
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_ts TEXT NOT NULL,
   updated_ts TEXT NOT NULL
 );
@@ -190,6 +192,11 @@ export function openDatabase(dbPath: string): DatabaseSync {
 
 /** 轻量向前迁移：老台账缺列时自动补齐，避免升级后必须清库。 */
 function migrate(db: DatabaseSync): void {
+  const jobColumns = db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[];
+  const jobExisting = new Set(jobColumns.map((column) => column.name));
+  if (!jobExisting.has('archived')) db.exec('ALTER TABLE jobs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+  if (!jobExisting.has('pinned')) db.exec('ALTER TABLE jobs ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+
   const columns = db.prepare('PRAGMA table_info(eval_tasks)').all() as { name: string }[];
   const existing = new Set(columns.map((column) => column.name));
   if (!existing.has('tier')) db.exec('ALTER TABLE eval_tasks ADD COLUMN tier TEXT');

@@ -127,7 +127,7 @@ export class Ledger {
   }
 
   listJobs(): JobRow[] {
-    return this.all<JobRow>('SELECT * FROM jobs ORDER BY created_ts DESC');
+    return this.all<JobRow>('SELECT * FROM jobs ORDER BY pinned DESC, created_ts DESC');
   }
 
   saveJobAnalysis(jobId: string, jd: Jd, scorecard: Scorecard, title: string, fairness?: unknown): void {
@@ -144,6 +144,45 @@ export class Ledger {
 
   setJobStatus(jobId: string, status: string): void {
     this.run('UPDATE jobs SET status=?, updated_ts=? WHERE id=?', status, nowIso(), jobId);
+  }
+
+  updateJobMeta(jobId: string, patch: { title?: string; archived?: boolean; pinned?: boolean }): boolean {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (patch.title !== undefined) {
+      sets.push('title=?');
+      params.push(patch.title);
+    }
+    if (patch.archived !== undefined) {
+      sets.push('archived=?');
+      params.push(patch.archived ? 1 : 0);
+    }
+    if (patch.pinned !== undefined) {
+      sets.push('pinned=?');
+      params.push(patch.pinned ? 1 : 0);
+    }
+    if (sets.length === 0) return Boolean(this.getJob(jobId));
+    sets.push('updated_ts=?');
+    params.push(nowIso(), jobId);
+    this.run(`UPDATE jobs SET ${sets.join(', ')} WHERE id=?`, ...params);
+    return Boolean(this.getJob(jobId));
+  }
+
+  /** 删除会话的业务数据；events 是 append-only 审计流，保留不删。 */
+  deleteJob(jobId: string): boolean {
+    if (!this.getJob(jobId)) return false;
+    this.db.exec('BEGIN');
+    try {
+      for (const table of ['usage', 'decisions', 'evidence', 'review_tasks', 'eval_tasks', 'parse_tasks', 'resumes']) {
+        this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
+      }
+      this.run('DELETE FROM jobs WHERE id=?', jobId);
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // -------------------------------------------------------------- resumes

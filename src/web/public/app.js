@@ -26,6 +26,7 @@
   const state = {
     jobId: '', jobs: [], run: null, snapshot: null, report: null, config: null,
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
+    showArchived: false, menuJobId: '',
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
@@ -107,16 +108,22 @@
 
   function renderJobs() {
     const keyword = $('#job-search').value.trim().toLowerCase();
-    const jobs = state.jobs.filter((job) => !keyword || `${jobTitle(job)} ${job.requirements}`.toLowerCase().includes(keyword));
+    const source = state.jobs.filter((job) => state.showArchived ? job.archived : !job.archived);
+    const jobs = source.filter((job) => !keyword || `${jobTitle(job)} ${job.requirements}`.toLowerCase().includes(keyword));
     $('#job-list').innerHTML = jobs.length ? jobs.map((job) => {
       const status = job.activeStatus || 'idle';
-      return `<button class="job-item ${job.id === state.jobId ? 'active' : ''}" data-job="${esc(job.id)}">
-        <div class="job-line"><span class="dot ${esc(status)}"></span><span class="job-name">${esc(jobTitle(job))}</span><span class="job-time">${esc(fmtDateTime(job.createdTs))}</span></div>
-        <div class="job-meta"><span>${job.verified} 通过</span><span>${job.quarantine} 转人工</span>${job.failed ? `<span>${job.failed} 失败</span>` : ''}</div>
-      </button>`;
-    }).join('') : `<div class="empty-note">${state.jobs.length ? '没有匹配的会话' : '还没有会话，点击上方新建'}</div>`;
-    $('#job-count').textContent = state.jobs.length ? `${state.jobs.length} 个` : '';
-    $('#recent-jobs').innerHTML = state.jobs.length ? state.jobs.slice(0, 8).map((job) => {
+      return `<div class="job-item ${job.id === state.jobId ? 'active' : ''} ${job.archived ? 'archived' : ''}" data-job="${esc(job.id)}" role="button" tabindex="0">
+        <div class="job-line"><span class="dot ${esc(status)}"></span><span class="job-name">${esc(jobTitle(job))}</span><span class="job-time">${esc(fmtDateTime(job.createdTs))}</span><button class="job-more" type="button" data-job-menu="${esc(job.id)}" title="会话操作">⋯</button></div>
+        <div class="job-meta"><span>${job.verified} 通过</span><span>${job.quarantine} 转人工</span>${job.failed ? `<span>${job.failed} 失败</span>` : ''}${job.pinned ? '<span class="job-flag">置顶</span>' : ''}${job.archived ? '<span class="job-flag">归档</span>' : ''}</div>
+      </div>`;
+    }).join('') : `<div class="empty-note">${state.showArchived ? '还没有归档会话' : state.jobs.length ? '没有匹配的会话' : '还没有会话，点击上方新建'}</div>`;
+    $('#job-count').textContent = jobs.length ? `${jobs.length} 个` : '';
+    const archivedToggle = $('#archived-toggle');
+    archivedToggle.textContent = state.showArchived ? '返回' : '归档';
+    archivedToggle.classList.toggle('active', state.showArchived);
+    archivedToggle.title = state.showArchived ? '返回正常会话' : '显示归档会话';
+    const recent = state.jobs.filter((job) => !job.archived);
+    $('#recent-jobs').innerHTML = recent.length ? recent.slice(0, 8).map((job) => {
       const status = job.activeStatus || 'idle';
       return `<button class="recent-card" data-job="${esc(job.id)}">
         <div class="rc-title">${esc(jobTitle(job))}</div>
@@ -134,6 +141,86 @@
     } catch (error) {
       toast(`读取会话失败：${error.message}`, 'error');
       return [];
+    }
+  }
+
+  function closeJobMenu() {
+    const menu = $('#session-menu');
+    if (menu) menu.classList.add('hidden');
+    state.menuJobId = '';
+  }
+
+  function openJobMenu(jobId, x, y) {
+    const job = state.jobs.find((item) => item.id === jobId);
+    if (!job) return;
+    state.menuJobId = jobId;
+    const menu = $('#session-menu');
+    menu.innerHTML = `
+      <button type="button" class="session-menu-item" data-session-action="pin"><span>${job.pinned ? '取消置顶' : '置顶会话'}</span><span class="menu-hint">${job.pinned ? '' : '置顶'}</span></button>
+      <button type="button" class="session-menu-item" data-session-action="rename"><span>重命名</span><span class="menu-hint">Ctrl+Alt+G</span></button>
+      <button type="button" class="session-menu-item" data-session-action="archive"><span>${job.archived ? '取消归档' : '归档会话'}</span><span class="menu-hint">Ctrl+Shift+A</span></button>
+      <div class="session-menu-sep"></div>
+      <button type="button" class="session-menu-item" data-session-action="copy"><span>复制会话 ID</span><span class="menu-hint">${esc(job.id.slice(0, 8))}…</span></button>
+      <button type="button" class="session-menu-item danger" data-session-action="delete"><span>删除会话</span><span class="menu-hint">不可恢复</span></button>`;
+    menu.classList.remove('hidden');
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+  }
+
+  async function handleJobAction(action) {
+    const job = state.jobs.find((item) => item.id === state.menuJobId);
+    closeJobMenu();
+    if (!job) return;
+    try {
+      if (action === 'pin') {
+        await api(`/api/jobs/${encodeURIComponent(job.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ pinned: !job.pinned }),
+        });
+        await loadJobs();
+        toast(job.pinned ? '已取消置顶' : '已置顶会话', 'ok');
+        return;
+      }
+      if (action === 'rename') {
+        const title = window.prompt('重命名会话', jobTitle(job));
+        if (title === null) return;
+        const next = title.trim();
+        if (!next) { toast('会话标题不能为空', 'error'); return; }
+        await api(`/api/jobs/${encodeURIComponent(job.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: next }),
+        });
+        await loadJobs();
+        if (state.jobId === job.id) await loadRun(false);
+        toast('会话已重命名', 'ok');
+        return;
+      }
+      if (action === 'archive') {
+        const archived = !job.archived;
+        await api(`/api/jobs/${encodeURIComponent(job.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ archived }),
+        });
+        if (archived && state.jobId === job.id) showNewView();
+        await loadJobs();
+        toast(archived ? '会话已归档' : '会话已取消归档', 'ok');
+        return;
+      }
+      if (action === 'copy') {
+        await navigator.clipboard.writeText(job.id);
+        toast('会话 ID 已复制', 'ok');
+        return;
+      }
+      if (action === 'delete') {
+        if (!window.confirm(`确定删除会话「${jobTitle(job)}」？该操作不可恢复。`)) return;
+        await api(`/api/jobs/${encodeURIComponent(job.id)}`, { method: 'DELETE' });
+        if (state.jobId === job.id) showNewView();
+        await loadJobs();
+        toast('会话已删除', 'ok');
+      }
+    } catch (error) {
+      toast(`操作失败：${error.message}`, 'error');
     }
   }
 
@@ -1191,8 +1278,47 @@
     });
     $('#job-search').addEventListener('input', renderJobs);
     $('#job-list').addEventListener('click', (event) => {
-      const button = event.target.closest('[data-job]');
-      if (button) selectJob(button.getAttribute('data-job'));
+      const menuButton = event.target.closest('[data-job-menu]');
+      if (menuButton) {
+        event.stopPropagation();
+        const rect = menuButton.getBoundingClientRect();
+        openJobMenu(menuButton.getAttribute('data-job-menu'), rect.right - 8, rect.bottom + 6);
+        return;
+      }
+      const item = event.target.closest('[data-job]');
+      if (item) selectJob(item.getAttribute('data-job'));
+    });
+    $('#job-list').addEventListener('contextmenu', (event) => {
+      const item = event.target.closest('[data-job]');
+      if (!item) return;
+      event.preventDefault();
+      openJobMenu(item.getAttribute('data-job'), event.clientX, event.clientY);
+    });
+    $('#archived-toggle').addEventListener('click', () => {
+      state.showArchived = !state.showArchived;
+      closeJobMenu();
+      renderJobs();
+    });
+    $('#session-menu').addEventListener('click', (event) => {
+      const item = event.target.closest('[data-session-action]');
+      if (item) handleJobAction(item.getAttribute('data-session-action'));
+    });
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('#session-menu') && !event.target.closest('[data-job-menu]')) closeJobMenu();
+    });
+    document.addEventListener('scroll', closeJobMenu, true);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeJobMenu();
+      if ((event.metaKey || event.ctrlKey) && event.altKey && event.key.toLowerCase() === 'g' && state.jobId) {
+        event.preventDefault();
+        state.menuJobId = state.jobId;
+        handleJobAction('rename');
+      }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'a' && state.jobId) {
+        event.preventDefault();
+        state.menuJobId = state.jobId;
+        handleJobAction('archive');
+      }
     });
     $('#recent-jobs').addEventListener('click', (event) => {
       const button = event.target.closest('[data-job]');

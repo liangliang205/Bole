@@ -11,6 +11,7 @@ import { ProviderStore, type ProviderApi, type ProviderInput, type ProviderPubli
 import { StreamPreviewer } from './stream-preview.ts';
 import type { StreamToken, UploadedFile } from '../types.ts';
 import {
+  deleteJob,
   findReportDir,
   getCandidateDetail,
   getCost,
@@ -19,6 +20,7 @@ import {
   listCandidates,
   listEvents,
   listJobs,
+  updateJobMeta,
 } from './data.ts';
 import { getAgents, getDoctor, resetAll } from './ops.ts';
 
@@ -492,11 +494,56 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       }
 
       if (method === 'GET' && pathname === '/api/jobs') {
-        const jobs = listJobs(100).map((job) => ({
+        const jobs = listJobs(200).map((job) => ({
           ...job,
           activeStatus: runs.get(job.id)?.status ?? inferStatus(job.status),
         }));
         json(res, 200, { ok: true, jobs });
+        return;
+      }
+
+      const jobMatch = /^\/api\/jobs\/([^/]+)$/.exec(pathname);
+      if (jobMatch && (method === 'PATCH' || method === 'DELETE')) {
+        const jobId = decodeURIComponent(jobMatch[1]);
+        const job = getJob(jobId);
+        if (!job) {
+          json(res, 404, { ok: false, error: `会话不存在: ${jobId}` });
+          return;
+        }
+        const runtime = runs.get(jobId);
+        const active = runtime?.status === 'running' || runtime?.status === 'pausing';
+        if (method === 'DELETE') {
+          if (active) {
+            json(res, 409, { ok: false, error: '会话正在运行，请先暂停或等待结束再删除' });
+            return;
+          }
+          const removed = deleteJob(jobId);
+          runs.delete(jobId);
+          json(res, 200, { ok: true, removed });
+          return;
+        }
+        const body = await readJsonBody(req);
+        const patch: { title?: string; archived?: boolean; pinned?: boolean } = {};
+        if (body.title !== undefined) {
+          const title = String(body.title).trim();
+          if (title.length < 1 || title.length > 120) {
+            json(res, 400, { ok: false, error: '会话标题需为 1-120 个字符' });
+            return;
+          }
+          patch.title = title;
+        }
+        if (typeof body.archived === 'boolean') patch.archived = body.archived;
+        if (typeof body.pinned === 'boolean') patch.pinned = body.pinned;
+        if (patch.archived === true && active) {
+          json(res, 409, { ok: false, error: '会话正在运行，请先暂停或等待结束再归档' });
+          return;
+        }
+        if (Object.keys(patch).length === 0) {
+          json(res, 400, { ok: false, error: '没有可更新的字段' });
+          return;
+        }
+        updateJobMeta(jobId, patch);
+        json(res, 200, { ok: true, jobId, ...patch });
         return;
       }
 
