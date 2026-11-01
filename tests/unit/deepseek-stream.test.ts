@@ -214,3 +214,40 @@ test('Anthropic Messages：请求 /v1/messages，x-api-key 与 content 解析', 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('Qwen Responses：关闭默认 thinking，避免推理 token 吃满输出预算', async () => {
+  let captured: Record<string, unknown> = {};
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    captured = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      output_text: '{"ok":true}',
+      usage: { input_tokens: 20, output_tokens: 5, input_tokens_details: { cached_tokens: 0 } },
+      status: 'completed',
+    }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  try {
+    const provider = new DeepSeekProvider({
+      apiKey: 'test-key',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      protocol: 'openai-responses',
+      deepseekStyle: false,
+      maxRetries: 0,
+    });
+    const result = await provider.chat({
+      agent: 'parser', tier: 'flash', model: 'qwen3.8-flash',
+      system: 'sys', user: 'user', schemaName: 'parse_resume', maxTokens: 8192,
+    });
+    assert.equal(captured.model, 'qwen3.8-flash');
+    assert.equal(captured.enable_thinking, false);
+    assert.equal(captured.max_output_tokens, 8192);
+    assert.equal(result.text, '{"ok":true}');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

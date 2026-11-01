@@ -161,6 +161,7 @@ export class DeepSeekProvider implements LlmProvider {
 
   private buildRequest(req: ChatRequest, model: string, streaming: boolean): RequestSpec {
     const thinking = this.deepseekStyle && req.tier === 'pro';
+    const qwen = /^qwen|^antdigital\//i.test(model) || /maas\.aliyuncs\.com|dashscope/i.test(this.baseUrl);
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.protocol === 'anthropic-messages') {
       headers['x-api-key'] = this.apiKey;
@@ -194,6 +195,7 @@ export class DeepSeekProvider implements LlmProvider {
           input,
           max_output_tokens: req.maxTokens ?? 4096,
           ...(this.deepseekStyle ? { reasoning: { effort: thinking ? 'high' : 'none' } } : {}),
+          ...(qwen ? { enable_thinking: false } : {}),
           ...(thinking ? {} : { temperature: req.temperature ?? 0 }),
           ...(req.schemaName ? { text: { format: { type: 'json_object' } } } : {}),
           stream: streaming,
@@ -253,6 +255,7 @@ export class DeepSeekProvider implements LlmProvider {
           : { temperature: req.temperature ?? 0 }),
         max_tokens: req.maxTokens ?? 4096,
         ...(req.schemaName && this.deepseekStyle ? { response_format: { type: 'json_object' } } : {}),
+        ...(qwen ? { enable_thinking: false } : {}),
         stream: streaming,
         ...(streaming && this.deepseekStyle ? { stream_options: { include_usage: true } } : {}),
       },

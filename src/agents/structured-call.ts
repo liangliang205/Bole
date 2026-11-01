@@ -30,6 +30,7 @@ export async function callAgentJson<T>(
   const maxAttempts = opts.maxAttempts ?? deps.config.structuredOutput.maxAttempts;
   const stream = opts.stream ?? deps.stream;
   let errors: string[] = [];
+  let maxTokens = 8192;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const retry = errors.length
       ? `\n\n【上一次输出未通过校验，请修正】\n${errors.join('\n')}\n只输出修正后的完整 JSON。`
@@ -44,7 +45,7 @@ export async function callAgentJson<T>(
         user: `${opts.user}${retry}`,
         sharedPrefix: opts.sharedPrefix,
         temperature: 0,
-        maxTokens: 4096,
+        maxTokens,
         onToken: stream
           ? (delta: string) =>
               stream({
@@ -65,7 +66,12 @@ export async function callAgentJson<T>(
       continue;
     }
     if (chat.stopReason !== 'completed') {
-      return { ok: false, errors: [`模型结算原因=${chat.stopReason}`] };
+      errors = [`模型结算原因=${chat.stopReason}（maxTokens=${maxTokens}）`];
+      if (chat.stopReason === 'max-tokens' && attempt < maxAttempts && maxTokens < 32768) {
+        maxTokens = Math.min(32768, maxTokens * 2);
+        continue;
+      }
+      return { ok: false, errors };
     }
     if (chat.json === undefined) {
       errors = ['输出不是合法 JSON'];

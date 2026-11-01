@@ -51,6 +51,7 @@ function formatIssues(error: { issues: { path: PropertyKey[]; message: string }[
  */
 export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Promise<StructuredOutcome<T>> {
   const maxAttempts = opts.maxAttempts ?? 2;
+  let maxTokens = opts.maxTokens ?? 8192;
   let errors: string[] = [];
   let attempts = 0;
 
@@ -74,7 +75,7 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
         user: `${opts.user}${retryContext}`,
         sharedPrefix: opts.sharedPrefix,
         temperature: opts.temperature ?? 0,
-        maxTokens: opts.maxTokens ?? 4096,
+        maxTokens,
         onToken: opts.stream
           ? (delta: string) =>
               opts.stream?.({
@@ -101,7 +102,13 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
     }
 
     if (chat.stopReason !== 'completed') {
-      errors = [`模型结算原因=${chat.stopReason}`];
+      errors = [`模型结算原因=${chat.stopReason}（maxTokens=${maxTokens}）`];
+      if (chat.stopReason === 'max-tokens' && attempts < maxAttempts && maxTokens < 32768) {
+        // 截断不是业务失败：提高输出预算后再试一次，避免 qwen 等推理模型把预算耗在思考上。
+        maxTokens = Math.min(32768, maxTokens * 2);
+        opts.ledger.updateTask(opts.kind, opts.taskId, { attempt: attempts });
+        continue;
+      }
       opts.ledger.failTask(opts.kind, opts.taskId, chat.stopReason, errors);
       return { ok: false, stopReason: chat.stopReason, errors, attempts };
     }
