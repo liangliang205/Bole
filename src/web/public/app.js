@@ -590,7 +590,8 @@
         <h3>候选人结论</h3>
         ${top.length ? `<div class="recommendation-list">${items}</div>` : '<div class="empty-note">没有候选人通过证据核查</div>'}
         <div class="summary-grid" style="margin-top:10px">
-          <div><b>${recommended}</b><span>推荐</span></div>
+          <div><b>${top.length}</b><span>候选人</span></div>
+          ${recommended > 0 ? `<div><b>${recommended}</b><span>推荐</span></div>` : ''}
           <div><b>${(report.escalations || []).length}</b><span>转人工</span></div>
           <div><b>${(compliance.duplicates || []).length}</b><span>重复</span></div>
           <div><b>${(compliance.failed || []).length}</b><span>失败</span></div>
