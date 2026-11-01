@@ -304,7 +304,26 @@ th, td { text-align: left; padding: 8px 9px; border-bottom: 1px solid var(--line
 th { color: var(--dim); font-weight: 600; font-size: 11px; background: var(--surface-2); position: sticky; top: 0; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--surface-2); }
-.reason-cell { min-width: 260px; max-width: 420px; line-height: 1.55; color: var(--muted); }
+.recommendation-list { display: grid; gap: 8px; }
+.recommendation-item {
+  border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 14px;
+  background: var(--card); cursor: pointer; transition: border-color .15s, background .15s;
+}
+.recommendation-item:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.recommendation-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.recommendation-rank {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 600;
+}
+.recommendation-name { font-size: 14px; }
+.recommendation-score { font-size: 12px; color: var(--muted); }
+.recommendation-conclusion { margin-left: auto; font-size: 12px; font-weight: 600; }
+.recommendation-conclusion.ok { color: var(--ok); }
+.recommendation-conclusion.bad { color: var(--danger); }
+.recommendation-conclusion.neutral { color: var(--warn); }
+.recommendation-meta { margin-top: 3px; font-size: 11px; color: var(--dim); }
+.recommendation-reason-label { margin-top: 10px; font-size: 11px; color: var(--dim); }
+.recommendation-reason { margin: 4px 0 0; font-size: 13px; line-height: 1.7; color: var(--text); }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; border: 1px solid var(--tag-line); background: var(--tag-bg); color: var(--tag-text); white-space: nowrap; }
 .tag.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
 .tag.warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }

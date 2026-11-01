@@ -17,6 +17,11 @@
     running: '运行中', pausing: '暂停中', paused: '已暂停',
     completed: '已完成', failed: '失败', idle: '未完成',
   };
+  const CONCLUSION_LABELS = {
+    strong_yes: '强烈推荐', yes: '推荐', maybe: '待定',
+    no: '不推荐', strong_no: '强烈不推荐', pending: '待评估',
+  };
+  const PHASE_LABELS = { screen: '初筛', deep: '深评', revise: '重评' };
   const RESUME_STATUS_LABEL = {
     queued: '待解析', parsing: '解析中', parsed: '已解析', evaluating: '评估中',
     evaluated: '已评估', verifying: '核查中', verified: '已核查', reported: '已上报',
@@ -554,20 +559,38 @@
   function finalReportHtml() {
     const report = state.report;
     const top = Array.isArray(report.top) ? report.top : [];
-    const rows = top.map((candidate, index) => `<tr class="clickable" data-candidate="${esc(candidate.resumeId)}">
-      <td>${index + 1}</td><td><b>${esc(candidate.label)}</b></td><td>${esc(fmtScore(candidate.totalScore))}</td>
-      <td><span class="tag ${candidate.evalTier === 'pro' ? 'deep' : ''}">${esc(candidate.evalTier || '—')}/${esc(candidate.evalPhase || '—')}</span></td>
-      <td>${esc(candidate.conclusion || '')}</td>
-      <td class="reason-cell">${esc(candidateReason(candidate))}</td>
-    </tr>`).join('');
+    const recommended = top.filter((candidate) => candidate.conclusion === 'yes' || candidate.conclusion === 'strong_yes').length;
+    const intro = top.length
+      ? `筛选完成。共 ${top.length} 位候选人通过证据核查${recommended ? `，其中 ${recommended} 位达到推荐标准` : '，但暂无达到推荐标准的人选'}。以下是结论与理由，全部结论都能回到简历原文。`
+      : '筛选完成。本次没有候选人通过证据核查，以下是合规摘要。';
+    const items = top.map((candidate, index) => {
+      const phase = PHASE_LABELS[candidate.evalPhase] || '';
+      const evalLabel = phase === '重评'
+        ? '深度评估 · 重评'
+        : (phase === '深评' || candidate.evalTier === 'pro' ? '深度评估' : '初筛评估');
+      const conclusionTone = candidate.conclusion === 'strong_yes' || candidate.conclusion === 'yes'
+        ? 'ok'
+        : candidate.conclusion === 'strong_no' || candidate.conclusion === 'no' ? 'bad' : 'neutral';
+      return `<article class="recommendation-item clickable" data-candidate="${esc(candidate.resumeId)}">
+        <div class="recommendation-head">
+          <span class="recommendation-rank">${index + 1}</span>
+          <b class="recommendation-name">${esc(candidate.label)}</b>
+          <span class="recommendation-score">${esc(fmtScore(candidate.totalScore))} 分</span>
+          <span class="recommendation-conclusion ${conclusionTone}">${esc(CONCLUSION_LABELS[candidate.conclusion] || candidate.conclusion || '待评估')}</span>
+        </div>
+        <div class="recommendation-meta">${esc(evalLabel)}</div>
+        <div class="recommendation-reason-label">理由说明</div>
+        <p class="recommendation-reason">${esc(candidateReason(candidate))}</p>
+      </article>`;
+    }).join('');
     const compliance = report.compliance || {};
     const stats = compliance.reviewStats || {};
-    return messageHtml('assistant', '伯乐', '', `<div class="msg-text">筛选完成。以下是 Top${top.length} 推荐与合规摘要，全部结论都能回到简历原文。</div>
+    return messageHtml('assistant', '伯乐', '', `<div class="msg-text">${intro}</div>
       <div class="msg-card">
-        <h3>推荐候选人</h3>
-        ${top.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>候选人</th><th>总分</th><th>评估档位</th><th>结论</th><th>推荐理由</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-note">没有候选人通过证据核查</div>'}
+        <h3>候选人结论</h3>
+        ${top.length ? `<div class="recommendation-list">${items}</div>` : '<div class="empty-note">没有候选人通过证据核查</div>'}
         <div class="summary-grid" style="margin-top:10px">
-          <div><b>${top.length}</b><span>推荐</span></div>
+          <div><b>${recommended}</b><span>推荐</span></div>
           <div><b>${(report.escalations || []).length}</b><span>转人工</span></div>
           <div><b>${(compliance.duplicates || []).length}</b><span>重复</span></div>
           <div><b>${(compliance.failed || []).length}</b><span>失败</span></div>
@@ -1394,7 +1417,7 @@
     $('#chat-scroll').addEventListener('click', (event) => {
       if (event.target.closest('#open-evidence')) openDrawer('candidates');
       if (event.target.closest('#open-cost')) openDrawer('cost');
-      const row = event.target.closest('tr[data-candidate]');
+      const row = event.target.closest('[data-candidate]');
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
     });
     document.addEventListener('keydown', (event) => {

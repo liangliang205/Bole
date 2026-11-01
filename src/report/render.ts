@@ -18,6 +18,25 @@ function statusLabel(status: 'final' | 'draft'): string {
   return status === 'final' ? '终稿（HR 已确认）' : '草稿（待 HR 确认）';
 }
 
+const CONCLUSION_LABELS: Record<string, string> = {
+  strong_yes: '强烈推荐',
+  yes: '推荐',
+  maybe: '待定',
+  no: '不推荐',
+  strong_no: '强烈不推荐',
+  pending: '待评估',
+};
+
+function conclusionLabel(value: string): string {
+  return CONCLUSION_LABELS[value] ?? value;
+}
+
+function evaluationLabel(candidate: { evalTier?: string; evalPhase?: string }): string {
+  if (candidate.evalPhase === 'revise') return '深度评估 · 重评';
+  if (candidate.evalPhase === 'deep' || candidate.evalTier === 'pro') return '深度评估';
+  return '初筛评估';
+}
+
 function table(headers: string[], rows: string[][]): string {
   const head = `| ${headers.join(' | ')} |`;
   const sep = `| ${headers.map(() => '---').join(' | ')} |`;
@@ -28,7 +47,9 @@ function table(headers: string[], rows: string[][]): string {
 function topMarkdown(data: ReportData): string {
   const lines: string[] = [];
   data.top.forEach((candidate, index) => {
-    lines.push(`### ${index + 1}. ${candidate.label} — ${fmtScore(candidate.totalScore)} 分（${candidate.conclusion}）`);
+    lines.push(`### ${index + 1}. ${candidate.label} — ${fmtScore(candidate.totalScore)} 分（${conclusionLabel(candidate.conclusion)}）`);
+    lines.push('');
+    lines.push(`**理由说明**：${candidate.reason}`);
     lines.push('');
     lines.push(
       table(
@@ -91,6 +112,7 @@ function topMarkdown(data: ReportData): string {
 export function renderMarkdown(data: ReportData): string {
   const resumeTotal =
     data.top.length + data.escalations.length + data.others.length + data.compliance.duplicates.length + data.compliance.failed.length;
+  const recommendedCount = data.top.filter((candidate) => candidate.conclusion === 'yes' || candidate.conclusion === 'strong_yes').length;
   const lines: string[] = [];
   lines.push(`# BoLe 招聘筛选报告 — ${data.job.title}`);
   lines.push('');
@@ -103,7 +125,7 @@ export function renderMarkdown(data: ReportData): string {
     table(
       ['指标', '数值'],
       [
-        ['本次处理简历', `${resumeTotal} 份（其中推荐 ${data.top.length} 人）`],
+        ['本次处理简历', `${resumeTotal} 份（其中推荐 ${recommendedCount} 人，进入结论 ${data.top.length} 人）`],
         ['核查通过', `${data.compliance.reviewStats.pass} 次裁决`],
         ['验真环打回', `${data.compliance.reviewStats.re_eval} 次`],
         ['转人工', `${data.escalations.length} 人`],
@@ -117,12 +139,13 @@ export function renderMarkdown(data: ReportData): string {
   if (data.top.length > 0) {
     lines.push(
       table(
-        ['排名', '候选人', '总分', '结论', '推荐理由', '审核'],
+        ['排名', '候选人', '总分', '评估', '结论', '理由说明', '审核'],
         data.top.map((candidate, index) => [
           String(index + 1),
           candidate.label,
           fmtScore(candidate.totalScore),
-          candidate.conclusion,
+          evaluationLabel(candidate),
+          conclusionLabel(candidate.conclusion),
           candidate.reason.replace(/\|/g, '\\|'),
           candidate.review ? `${candidate.review.verdict}（${candidate.review.loopCount} 轮）` : '—',
         ]),
@@ -134,7 +157,7 @@ export function renderMarkdown(data: ReportData): string {
     lines.push('');
   }
 
-  lines.push('## 2. 推荐候选人（含证据链与面试建议）');
+  lines.push('## 2. 候选人结论（含证据链与面试建议）');
   lines.push('');
   lines.push('> 证据的字符区间以归一化简历文本为基准（`runs/<runId>/resumes/norm/`）；原始附件保留在 `runs/<runId>/resumes/raw/`，可直接复核引用。');
   lines.push('');
