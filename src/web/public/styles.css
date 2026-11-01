@@ -142,6 +142,8 @@ b, strong { color: var(--text); }
 .job-meta { margin-top: 3px; font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
 .dot.running { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+.dot.pausing { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+.dot.paused { background: var(--muted); }
 .dot.completed { background: var(--ok); }
 .dot.failed { background: var(--danger); }
 .dot.idle { background: var(--dim); }
@@ -174,6 +176,8 @@ b, strong { color: var(--text); }
 .topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); font-size: 11px; }
 .pill.running { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
+.pill.pausing { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
+.pill.paused { color: var(--muted); border-color: var(--line); background: var(--surface-2); }
 .pill.completed { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
 .pill.failed { color: var(--danger); border-color: var(--danger-line); background: var(--danger-bg); }
 .pill.idle { color: var(--muted); }

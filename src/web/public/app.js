@@ -13,7 +13,10 @@
     coordinator: '伯乐', profiler: '画像师', fetcher: '探马', parser: '录事',
     assessor: '相马官', auditor: '监军', advisor: '谋士',
   };
-  const STATUS_LABEL = { running: '运行中', completed: '已完成', failed: '失败', idle: '未完成' };
+  const STATUS_LABEL = {
+    running: '运行中', pausing: '暂停中', paused: '已暂停',
+    completed: '已完成', failed: '失败', idle: '未完成',
+  };
   const RESUME_STATUS_LABEL = {
     queued: '待解析', parsing: '解析中', parsed: '已解析', evaluating: '评估中',
     evaluated: '已评估', verifying: '核查中', verified: '已核查', reported: '已上报',
@@ -146,6 +149,8 @@
     closeDrawer();
     document.title = '伯乐 BoLe · 对话式招聘筛选';
     setStatus('idle');
+    $('#pause-btn').classList.add('hidden');
+    $('#resume-btn').classList.remove('hidden');
     renderJobs();
     setTimeout(() => $('#new-requirements')?.focus(), 30);
   }
@@ -197,7 +202,7 @@
         if (state.run.status === 'completed') await loadCandidates();
       }
       renderAll();
-      if (state.run.status === 'running') connectStream();
+      if (state.run.status === 'running' || state.run.status === 'pausing') connectStream();
       else disconnectStream();
     } catch (error) {
       toast(`读取会话失败：${error.message}`, 'error');
@@ -211,10 +216,16 @@
     const run = state.run;
     document.title = `${jobTitle(job)} · 伯乐 BoLe`;
     setStatus(run.status);
-    $('#resume-btn').disabled = run.status === 'running';
+    const active = run.status === 'running' || run.status === 'pausing';
+    $('#pause-btn').classList.toggle('hidden', !active);
+    $('#pause-btn').disabled = run.status === 'pausing';
+    $('#resume-btn').classList.toggle('hidden', active);
+    $('#resume-btn').disabled = active;
     $('#reply-send').disabled = !run.pendingHitl || state.sending;
     $('#reply-hint').textContent = run.pendingHitl
       ? '请回答上方 HITL 问题（可直接输入自定义回答）'
+      : run.status === 'pausing' ? '正在当前批次结束时暂停…'
+      : run.status === 'paused' ? '已暂停；点击顶部「续跑」从检查点继续'
       : run.status === 'running' ? '伯乐正在执行流水线…' : '当前没有待回答的问题';
     renderChat();
     renderHitl(run.pendingHitl);
@@ -627,8 +638,26 @@
     hint.className = `hint ${isError ? 'error' : ''}`;
   }
 
+  async function pauseCurrent() {
+    if (!state.jobId) return;
+    const status = state.run?.status;
+    if (status !== 'running' && status !== 'pausing') return;
+    if (state.run?.pendingHitl) {
+      toast('当前正在等待人工回答，请先回答后再暂停', 'error');
+      return;
+    }
+    try {
+      const data = await api(`/api/run/${encodeURIComponent(state.jobId)}/pause`, { method: 'POST' });
+      if (state.run) state.run.status = data.status;
+      renderAll();
+      toast('已请求暂停，将在当前批次结束后生效', 'ok');
+    } catch (error) {
+      toast(`暂停失败：${error.message}`, 'error');
+    }
+  }
+
   async function resumeCurrent() {
-    if (!state.jobId || state.run?.status === 'running') return;
+    if (!state.jobId || state.run?.status === 'running' || state.run?.status === 'pausing') return;
     const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
     if (!activeProvider?.hasKey) { toast('请先配置可用的模型提供商', 'error'); openSettings(); return; }
     try {
@@ -1170,6 +1199,7 @@
       if (button) selectJob(button.getAttribute('data-job'));
     });
     $('#resume-btn').addEventListener('click', resumeCurrent);
+    $('#pause-btn').addEventListener('click', pauseCurrent);
     $('#refresh-btn').addEventListener('click', async () => {
       if (!state.jobId) { await loadJobs(); return; }
       await loadRun(false);

@@ -25,6 +25,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
 - 报告：完成后直接在对话里汇总 Top 候选人、合规与成本摘要；不提供 Markdown/JSON 下载，后续可通过 MCP 由 Agent 输出。
 - 续跑：从批次检查点恢复未完成任务，不重新上传。
+- 暂停：运行中点击右上角「⏸ 暂停」，在当前批次/阶段边界安全退出并保留已提交结果；状态变为「已暂停」后可「▶ 续跑」。
 
 ## 流水线
 
@@ -93,6 +94,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | GET | `/api/run/:jobId/candidates/:id` | 证据详情 |
 | GET | `/api/run/:jobId/cost` | 成本与缓存 |
 | GET | `/api/run/:jobId/report` | 报告 JSON（仅对话内汇总/后续 MCP 使用，不提供下载） |
+| POST | `/api/run/:jobId/pause` | 请求在批次/阶段边界暂停 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |
 | GET | `/api/agents` / `/api/doctor` | 注册表 / 自检 |
 | POST | `/api/reset` | `{confirm:"RESET"}` |
@@ -145,7 +147,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **69 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、Vision OCR 与本地回退、多提供商 Key 加密与迁移、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **70 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Vision OCR 与本地回退、多提供商 Key 加密与迁移、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 

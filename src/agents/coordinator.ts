@@ -31,6 +31,16 @@ export interface PipelineRunOptions {
   hitl: HitlResponder;
   uploadFiles?: UploadedFile[];
   resumeOnly?: boolean;
+  /** Web 控制台暂停信号：在批次/阶段边界安全退出，已提交结果保留。 */
+  shouldPause?: () => boolean;
+}
+
+/** 暂停不是失败：携带这个类型让 Web 层把运行标记为 paused 而不是 failed。 */
+export class PipelinePausedError extends Error {
+  constructor() {
+    super('流水线已暂停');
+    this.name = 'PipelinePausedError';
+  }
 }
 
 export interface RunSummary {
@@ -125,6 +135,10 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       hitl: opts.hitl,
     });
   }
+  const checkpoint = (): void => {
+    if (opts.shouldPause?.()) throw new PipelinePausedError();
+  };
+  checkpoint();
   const jd: Jd = analysis.jd;
   const scorecard: Scorecard = analysis.scorecard;
 
@@ -143,6 +157,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   } else {
     await recoverIncomplete(deps);
   }
+  checkpoint();
 
   const parsePool = new CapacityPool('parse', deps.config.pools.parse);
   const assessPool = new CapacityPool('assess', deps.config.pools.assess);
@@ -331,9 +346,12 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   let parseFailures = 0;
   let evalFailures = 0;
 
+  checkpoint();
   await flowBatches<WorkItem, { batchId: number; parsed: number; evaluated: number }>({
     batches,
     maxInFlight: deps.config.maxBatchesInFlight,
+    shouldStop: () => opts.shouldPause?.() ?? false,
+    stopOnError: (error) => error instanceof PipelinePausedError,
     onBatchStart: (index, size) => {
       deps.events.emit(deps.jobId, 'coordinator', 'batch.started', {
         batchId: index + 1,
@@ -341,6 +359,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       });
     },
     onBatchError: (index, error) => {
+      if (error instanceof PipelinePausedError) return;
       deps.events.emit(deps.jobId, 'coordinator', 'batch.failed', {
         batchId: index + 1,
         error: error instanceof Error ? error.message : String(error),
@@ -348,6 +367,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     },
     run: async (batch, index) => {
       const batchId = index + 1;
+      checkpoint();
       deps.ledger.assignBatch(batch.map((item) => item.resumeId), batchId);
 
       const parseOutcomes = await mapSettled(batch, parsePool.capacity, async (item) => {
@@ -387,6 +407,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         parsed: parsedItems.length,
         failed: batch.length - parsedItems.length,
       });
+      checkpoint();
 
       const screenOutcomes = await mapSettled(parsedItems, assessPool.capacity, (item) =>
         screenCandidate(item, batchId),
@@ -408,6 +429,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         screened: screened.length,
         failed: parsedItems.length - screened.length,
       });
+      checkpoint();
 
       const shortlist = selectDeepShortlist(screened);
       if (shortlist.length > 0) {
@@ -420,6 +442,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         });
         await mapSettled(shortlist, assessPool.capacity, (candidate) => deepEvaluate(candidate, batchId));
       }
+      checkpoint();
 
       const results = await mapSettled(
         screened,
@@ -454,12 +477,14 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       return { batchId, parsed: parsedItems.length, evaluated };
     },
   });
+  checkpoint();
 
   // 汇总：只消费已提交的评估与核查结果
   const verifiedResumes = deps.ledger.listResumes(deps.jobId).filter((r) => r.status === 'verified');
   const top = selectTopCandidates(deps.ledger, deps.jobId, deps.config.topN);
   const interviewPlans = new Map<string, InterviewPlan>();
   for (const candidate of top) {
+    checkpoint();
     const parsed = loadParseResult(deps.ledger, candidate.resumeId);
     const evaluation = loadLatestEval(deps.ledger, candidate.resumeId);
     const resume = deps.ledger.getResume(candidate.resumeId);
@@ -473,6 +498,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     interviewPlans.set(candidate.resumeId, plan);
   }
 
+  checkpoint();
   const confirmation = await opts.hitl.ask({
     id: 'final_report',
     node: 'final_confirmation',
@@ -481,6 +507,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     recommendedOption: '确认输出终稿（推荐）',
     blocking: true,
   });
+  checkpoint();
   deps.ledger.addDecision({
     jobId: deps.jobId,
     node: 'final_confirmation',

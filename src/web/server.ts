@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { bootstrap, type Bootstrapped } from '../bootstrap.ts';
-import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
+import { PipelinePausedError, runPipeline, type RunSummary } from '../agents/coordinator.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
@@ -22,7 +22,7 @@ import {
 } from './data.ts';
 import { getAgents, getDoctor, resetAll } from './ops.ts';
 
-type RunStatus = 'running' | 'completed' | 'failed' | 'idle';
+type RunStatus = 'running' | 'pausing' | 'paused' | 'completed' | 'failed' | 'idle';
 
 interface WebServerOptions {
   host?: string;
@@ -36,6 +36,8 @@ interface ActiveRun {
   status: RunStatus;
   startedAt: string;
   completedAt?: string;
+  pausedAt?: string;
+  pauseRequested?: boolean;
   summary?: RunSummary;
   error?: string;
   boot: Bootstrapped;
@@ -114,6 +116,7 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
 function inferStatus(jobStatus: string): RunStatus {
   if (jobStatus === 'completed' || jobStatus === 'draft') return 'completed';
   if (jobStatus === 'failed') return 'failed';
+  if (jobStatus === 'paused') return 'paused';
   return 'idle';
 }
 
@@ -207,6 +210,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       status: runtime?.status ?? inferStatus(snapshot.job.status),
       startedAt: runtime?.startedAt ?? snapshot.job.created_ts,
       completedAt: runtime?.completedAt ?? null,
+      pausedAt: runtime?.pausedAt ?? null,
       pendingHitl: runtime?.hitl.currentQuestion() ?? null,
       error: runtime?.error ?? null,
       reportAvailable: Boolean(reportDir),
@@ -260,20 +264,36 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           hitl: opts.hitl,
           uploadFiles: opts.uploadFiles,
           resumeOnly: opts.resumeOnly,
+          shouldPause: () => run.pauseRequested === true,
         });
         run.status = 'completed';
         run.summary = summary;
         run.completedAt = new Date().toISOString();
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        run.status = 'failed';
-        run.error = message;
-        run.completedAt = new Date().toISOString();
-        try {
-          opts.boot.deps.ledger.setJobStatus(run.jobId, 'failed');
-          opts.boot.deps.events.emit(run.jobId, 'coordinator', 'run.failed', { error: message });
-        } catch {
-          // 避免二次故障掩盖原错误
+        if (error instanceof PipelinePausedError) {
+          run.status = 'paused';
+          run.pausedAt = new Date().toISOString();
+          run.completedAt = run.pausedAt;
+          try {
+            opts.boot.deps.ledger.setJobStatus(run.jobId, 'paused');
+            opts.boot.deps.events.emit(run.jobId, 'coordinator', 'run.paused', {
+              reason: '用户暂停',
+              at: run.pausedAt,
+            });
+          } catch {
+            // 暂停状态已保存在内存，事件失败不掩盖暂停
+          }
+        } else {
+          const message = error instanceof Error ? error.message : String(error);
+          run.status = 'failed';
+          run.error = message;
+          run.completedAt = new Date().toISOString();
+          try {
+            opts.boot.deps.ledger.setJobStatus(run.jobId, 'failed');
+            opts.boot.deps.events.emit(run.jobId, 'coordinator', 'run.failed', { error: message });
+          } catch {
+            // 避免二次故障掩盖原错误
+          }
         }
       } finally {
         opts.boot.close();
@@ -592,7 +612,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
               lastStatus = info.status as RunStatus;
               send('status', info);
             }
-            if (runtime.status === 'completed' || runtime.status === 'failed') {
+            if (runtime.status === 'completed' || runtime.status === 'failed' || runtime.status === 'paused') {
               send('snapshot', getSnapshot(jobId));
               send('done', { status: runtime.status, error: runtime.error ?? null });
               clearInterval(poll);
@@ -684,6 +704,35 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
+      const pauseMatch = /^\/api\/run\/([^/]+)\/pause$/.exec(pathname);
+      if (method === 'POST' && pauseMatch) {
+        const jobId = decodeURIComponent(pauseMatch[1]);
+        const runtime = runs.get(jobId);
+        if (!runtime) {
+          json(res, 404, { ok: false, error: '该任务不在当前 Web 会话内，无法暂停' });
+          return;
+        }
+        if (runtime.status !== 'running' && runtime.status !== 'pausing') {
+          json(res, 409, { ok: false, error: '当前任务没有在运行，无法暂停' });
+          return;
+        }
+        if (runtime.hitl.currentQuestion()) {
+          json(res, 409, { ok: false, error: '当前正在等待人工回答，请先回答后再暂停' });
+          return;
+        }
+        if (runtime.status === 'running') {
+          runtime.pauseRequested = true;
+          runtime.status = 'pausing';
+          try {
+            runtime.boot.deps.events.emit(jobId, 'coordinator', 'run.pausing', { reason: '用户请求暂停' });
+          } catch {
+            // 事件失败不影响暂停请求
+          }
+        }
+        json(res, 200, { ok: true, status: runtime.status, message: '将在当前批次/阶段结束后暂停' });
+        return;
+      }
+
       const resumeMatch = /^\/api\/run\/([^/]+)\/resume$/.exec(pathname);
       if (method === 'POST' && resumeMatch) {
         const jobId = decodeURIComponent(resumeMatch[1]);
@@ -692,7 +741,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 404, { ok: false, error: `任务不存在: ${jobId}` });
           return;
         }
-        if (runs.get(jobId)?.status === 'running') {
+        if (runs.get(jobId)?.status === 'running' || runs.get(jobId)?.status === 'pausing') {
           json(res, 409, { ok: false, error: '该任务正在运行，不能重复启动' });
           return;
         }
@@ -732,7 +781,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           json(res, 400, { ok: false, error: '需要 confirm="RESET" 才能清空台账' });
           return;
         }
-        if ([...runs.values()].some((run) => run.status === 'running')) {
+        if ([...runs.values()].some((run) => run.status === 'running' || run.status === 'pausing')) {
           json(res, 409, { ok: false, error: '仍有任务在运行，不能清空台账' });
           return;
         }

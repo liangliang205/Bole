@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { bootstrap } from '../../src/bootstrap.ts';
-import { runPipeline } from '../../src/agents/coordinator.ts';
+import { PipelinePausedError, runPipeline } from '../../src/agents/coordinator.ts';
 import { AutoHitlResponder } from '../../src/agents/hitl.ts';
 import type { UploadedFile } from '../../src/types.ts';
 import { FakeProvider } from '../fixtures/fake-provider.ts';
@@ -181,6 +181,64 @@ test('接入失败不阻塞批次：.doc 旧格式进入 failed 明细', async (
     assert.ok(summary.counts.reported >= 1);
   } finally {
     boot.close();
+    await env.restore();
+  }
+});
+
+test('暂停：批次结束后安全退出，续跑从检查点完成', async () => {
+  const env = await setupTempEnv();
+  const uploadDir = path.join(env.dir, 'uploads');
+  await mkdir(uploadDir, { recursive: true });
+  const files: UploadedFile[] = [];
+  for (let index = 0; index < 10; index += 1) {
+    const content = RESUME_A
+      .replace('张伟', `张伟${index}`)
+      .replace('13800000001', `138000000${String(index).padStart(2, '0')}`);
+    files.push(await makeUpload(uploadDir, `候选人${index}.txt`, content));
+  }
+  const boot = await bootstrap({
+    requirements: '急招 Java 后端工程师，3-5 年经验，熟悉 Spring Boot、MySQL、Redis。',
+    provider: new FakeProvider(),
+  });
+  let jobId = '';
+  try {
+    let paused = false;
+    await assert.rejects(
+      () => runPipeline(boot.deps, {
+        requirements: boot.job.requirements,
+        hitl: new AutoHitlResponder(),
+        uploadFiles: files,
+        shouldPause: () => {
+          if (paused) return true;
+          const events = boot.deps.ledger.listEvents({ jobId: boot.job.id, limit: 2000 });
+          paused = events.some((event) => event.type === 'batch.completed');
+          return paused;
+        },
+      }),
+      PipelinePausedError,
+    );
+    jobId = boot.job.id;
+    assert.ok(paused, '应在第一批完成后请求暂停');
+    assert.ok(boot.deps.ledger.listResumes(jobId).length > 0);
+  } finally {
+    boot.close();
+  }
+
+  try {
+    const resumed = await bootstrap({ requirements: '急招 Java 后端工程师，3-5 年经验。', jobId, provider: new FakeProvider() });
+    try {
+      const summary = await runPipeline(resumed.deps, {
+        requirements: resumed.job.requirements,
+        hitl: new AutoHitlResponder(),
+        resumeOnly: true,
+        shouldPause: () => false,
+      });
+      assert.equal(summary.status, 'final');
+      assert.ok(summary.counts.reported >= 1);
+    } finally {
+      resumed.close();
+    }
+  } finally {
     await env.restore();
   }
 });

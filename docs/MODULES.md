@@ -6,6 +6,7 @@
   - 非续跑：要求至少一个 `uploadFiles`，调用 `runFetcher`；全部失败则抛错。
   - 续跑：`recoverIncomplete` 从批次检查点恢复。
   - JD 画像 → 批流动 → 短名单深评 → 核查/自环 → 建议 → 报告。
+  - `shouldPause` 在画像/接入/批次/阶段边界检查；暂停抛 `PipelinePausedError`，`flowBatches` 不再启动新批并等待在飞批收尾，已提交结果保留。
 - 批流动：`chunk` + `flowBatches`，`maxBatchesInFlight` 限制在途批；批间无全局 barrier。
 - 容量池：`CapacityPool` + `withSlot`，满时 `PoolFullError` 退避重试，不排队。
 - 报告：`buildReport` + `selectTopCandidates` + `writeReports`。

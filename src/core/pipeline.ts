@@ -49,6 +49,10 @@ export interface BatchFlowOptions<T, R> {
   onBatchStart?: (index: number, size: number) => void;
   onBatchDone?: (index: number, result: R) => void;
   onBatchError?: (index: number, error: unknown) => void;
+  /** 暂停/停止信号：不再启动新批，但让已在飞的批自然收尾。 */
+  shouldStop?: () => boolean;
+  /** 某个错误需要终止整条批间流（例如用户暂停）。 */
+  stopOnError?: (error: unknown) => boolean;
 }
 
 /** 批间流动：最多 maxInFlight 个批同时在流，每个批独立走自己的 stage 链。 */
@@ -57,9 +61,11 @@ export async function flowBatches<T, R>(opts: BatchFlowOptions<T, R>): Promise<(
   const results = new Array<R | undefined>(batches.length);
   if (batches.length === 0) return results;
   let next = 0;
+  let stopped = false;
   const workerCount = Math.max(1, Math.min(maxInFlight, batches.length));
   const workers = Array.from({ length: workerCount }, async () => {
     for (;;) {
+      if (stopped || opts.shouldStop?.()) return;
       const index = next;
       next += 1;
       if (index >= batches.length) return;
@@ -72,6 +78,10 @@ export async function flowBatches<T, R>(opts: BatchFlowOptions<T, R>): Promise<(
       } catch (error) {
         opts.onBatchError?.(index, error);
         results[index] = undefined;
+        if (opts.stopOnError?.(error)) {
+          stopped = true;
+          return;
+        }
       }
     }
   });
