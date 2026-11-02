@@ -11,9 +11,9 @@ test('筛选完成后的主 Agent 对话：持久化多轮消息并复用稳定�
       title: '前端工程师',
       requirements: '2 年以上前端经验，熟悉 React/Vue。',
     });
-    const requests: { system: string; messages?: { role: string; content: string }[]; user: string }[] = [];
+    const requests: { system: string; messages?: { role: string; content: string }[]; user: string; tools?: unknown[] }[] = [];
     const llm = {
-      chat: async (req: { system: string; messages?: { role: string; content: string }[]; user: string }) => {
+      chat: async (req: { system: string; messages?: { role: string; content: string }[]; user: string; tools?: unknown[] }) => {
         requests.push(req);
         return { text: `回答 ${requests.length}`, usage: { promptTokens: 10, completionTokens: 2, cachedPromptTokens: 0 }, stopReason: 'completed', model: 'fake', latencyMs: 1, cacheHit: false };
       },
@@ -27,6 +27,7 @@ test('筛选完成后的主 Agent 对话：持久化多轮消息并复用稳定�
     assert.equal(requests[0].system, requests[1].system);
     assert.deepEqual(requests[1].messages?.map((message) => message.role), ['user', 'assistant', 'user']);
     assert.match(requests[0].system, /只由你回答/);
+    assert.equal(requests[0].tools, undefined, '没有报告时不应向模型暴露导出工具');
     assert.match(buildJobChatContext(job, null), /岗位需求/);
   } finally {
     ledger.close();

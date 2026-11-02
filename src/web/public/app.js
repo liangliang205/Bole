@@ -67,7 +67,7 @@
       result = result.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
       result = result.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
       result = result.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-      result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      result = result.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
       result = result.replace(/\u0001CODE(\d+)\u0001/g, (_match, index) => codes[Number(index)] ?? '');
       return result;
     };
