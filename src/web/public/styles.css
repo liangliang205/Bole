@@ -14,8 +14,6 @@ html[data-theme="light"] {
   --dim: #8a8a83;
   --accent: #111111;
   --accent-contrast: #ffffff;
-  --send-bg: #2f7cf6;
-  --send-fg: #ffffff;
   --accent-hover: #000000;
   --input: #ffffff;
   --chat-user: #efefe9;
@@ -61,8 +59,6 @@ html[data-theme="dark"] {
   --dim: #777771;
   --accent: #f4f4f0;
   --accent-contrast: #0a0a0a;
-  --send-bg: #2f7cf6;
-  --send-fg: #ffffff;
   --accent-hover: #e4e4de;
   --input: #101010;
   --chat-user: #191919;
@@ -302,14 +298,7 @@ b, strong { color: var(--text); }
 .reply-context .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reply-actions { display: flex; align-items: center; gap: 10px; flex: none; }
 .reply-model { font-size: 11px; color: var(--muted); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.send-btn {
-  width: 32px; height: 32px; border: 0; border-radius: 50%; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--send-bg); color: var(--send-fg); font-size: 18px; font-weight: 600;
-  cursor: pointer; transition: opacity .15s, transform .15s;
-}
-.send-btn:hover:not(:disabled) { transform: translateY(-1px); }
-.send-btn:disabled { opacity: .35; cursor: not-allowed; }
+.reply-actions .btn { min-height: 32px; }
 .attachments { padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .attachments:empty { display: none; }
 

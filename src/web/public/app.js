@@ -430,7 +430,7 @@
     $('#reply-hint').classList.toggle('hidden', !replyHint);
     const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
     $('#reply-model').textContent = activeProvider ? `${activeProvider.name} · ${activeProvider.proModel}` : '';
-    $('#reply-send').textContent = state.sending ? '…' : '↑';
+    $('#reply-send').textContent = state.sending ? '发送中…' : '发送';
     resizeReplyInput();
     $('#reply-input').placeholder = run.pendingHitl
       ? '回答 HITL 问题，或点击上方选项…'
