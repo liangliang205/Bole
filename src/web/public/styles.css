@@ -424,11 +424,8 @@ html[data-theme="dark"] .dsh-composer {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: 12px; padding: 2px 8px 6px; min-width: 0; container-type: inline-size;
 }
-.dsh-composer-tools, .dsh-composer-trailing { display: flex; align-items: center; min-width: 0; }
-.dsh-composer-tools { gap: 12px; }
+.dsh-composer-tools { display: flex; align-items: center; min-width: 0; }
 .dsh-composer-trailing { flex: none; margin-left: auto; gap: 12px; }
-.dsh-composer-agent { display: flex; align-items: center; gap: 7px; height: 28px; color: var(--dsh-secondary); font-size: 13px; font-weight: 500; }
-.dsh-composer-agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .dsh-composer-model {
   display: flex; align-items: center; max-width: 220px; height: 28px;
   padding: 0 8px; border-radius: 8px; color: var(--dsh-secondary);
