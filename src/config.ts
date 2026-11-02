@@ -9,6 +9,11 @@ export interface AgentPreset {
   role: string;
   tier: ModelTier;
   tools: string[];
+  /**
+   * 可用的外接 MCP 工具白名单：'*'、'server'、'server:tool'、'server:*'。
+   * 缺省或空数组 = 该 Agent 不允许调用任何外接 MCP 工具。
+   */
+  mcp?: string[];
   maxDepth: number;
   canDelegate: boolean;
   outputSchema: string;

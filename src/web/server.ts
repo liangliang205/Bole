@@ -30,6 +30,8 @@ import { DeepSeekProvider } from '../llm/deepseek.ts';
 import { LlmRouter } from '../llm/router.ts';
 import { Ledger } from '../core/ledger.ts';
 import { chatWithJob, publicChatMessages } from '../chat/service.ts';
+import { McpPluginService } from '../mcp/plugin-service.ts';
+import type { McpPluginInput } from '../mcp/plugins.ts';
 
 type RunStatus = 'running' | 'pausing' | 'paused' | 'completed' | 'failed' | 'idle';
 
@@ -177,6 +179,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const paths = resolvePaths();
   const providers = new ProviderStore(paths.dataDir);
   const knowledge = new KnowledgeService(paths.knowledgeDbPath);
+  // 外接 MCP：以插件形式管理（安装/启停/编辑），后台启动，不阻塞控制台打开。
+  const mcpPlugins = await McpPluginService.create({ dataDir: paths.dataDir, root: paths.root });
+  void mcpPlugins.start();
 
   const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => {
     const requested = body.api ?? existing?.api;
@@ -229,6 +234,36 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     const pro = ids.find((id) => /pro|max|large|opus|sonnet|gpt-4|reason/i.test(id)) ?? ids[ids.length - 1] ?? flash;
     input.flashModel ||= flash;
     input.proModel ||= pro;
+  };
+
+  const pluginInput = (body: Record<string, unknown>): McpPluginInput => {
+    const text = (key: string): string | undefined => (typeof body[key] === 'string' ? (body[key] as string) : undefined);
+    const list = (key: string): string[] | undefined =>
+      Array.isArray(body[key]) ? (body[key] as unknown[]).map((item) => String(item)) : undefined;
+    const map = (key: string): Record<string, string> | undefined => {
+      const value = body[key];
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([name, raw]) => [name, String(raw)]));
+    };
+    return {
+      id: text('id'),
+      name: text('name'),
+      description: text('description'),
+      enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
+      transport: body.transport === 'stdio' || body.transport === 'http' ? body.transport : undefined,
+      command: body.command === null ? null : text('command'),
+      args: list('args'),
+      cwd: body.cwd === null ? null : text('cwd'),
+      url: body.url === null ? null : text('url'),
+      allowTools: list('allowTools'),
+      denyTools: list('denyTools'),
+      startTimeoutMs: typeof body.startTimeoutMs === 'number' ? body.startTimeoutMs : undefined,
+      callTimeoutMs: typeof body.callTimeoutMs === 'number' ? body.callTimeoutMs : undefined,
+      quiet: typeof body.quiet === 'boolean' ? body.quiet : undefined,
+      env: map('env'),
+      headers: map('headers'),
+      clearCredentials: body.clearCredentials === true,
+    };
   };
 
   const buildRunInfo = (jobId: string) => {
@@ -1051,6 +1086,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             attachments,
             runDir: findReportDir(jobId) ?? undefined,
             dataDir: paths.dataDir,
+            mcp: mcpPlugins.managerRef(),
           });
           json(res, 200, { ok: true, answer: result.answer, messages: result.messages });
         } catch (error) {
@@ -1124,6 +1160,65 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
+      if (method === 'GET' && pathname === '/api/mcp') {
+        const view = await mcpPlugins.view();
+        json(res, 200, {
+          ok: true,
+          enabled: view.enabled,
+          storeFile: view.storeFile,
+          plugins: view.plugins.length,
+          tools: view.status.tools,
+          servers: view.status.servers,
+        });
+        return;
+      }
+      if (method === 'GET' && pathname === '/api/mcp/plugins') {
+        json(res, 200, { ok: true, ...(await mcpPlugins.view()) });
+        return;
+      }
+      if (method === 'POST' && pathname === '/api/mcp/plugins') {
+        const body = await readJsonBody(req);
+        const plugin = await mcpPlugins.install(pluginInput(body));
+        json(res, 201, { ok: true, plugin, ...(await mcpPlugins.view()) });
+        return;
+      }
+      const pluginEnabledMatch = /^\/api\/mcp\/plugins\/([^/]+)\/enabled$/.exec(pathname);
+      if (method === 'POST' && pluginEnabledMatch) {
+        const id = decodeURIComponent(pluginEnabledMatch[1]);
+        const body = await readJsonBody(req);
+        if (typeof body.enabled !== 'boolean') {
+          json(res, 400, { ok: false, error: '需要 { "enabled": true|false }' });
+          return;
+        }
+        const plugin = await mcpPlugins.setEnabled(id, body.enabled);
+        json(res, 200, { ok: true, plugin, ...(await mcpPlugins.view()) });
+        return;
+      }
+      const pluginTestMatch = /^\/api\/mcp\/plugins\/([^/]+)\/test$/.exec(pathname);
+      if (method === 'POST' && pluginTestMatch) {
+        const id = decodeURIComponent(pluginTestMatch[1]);
+        const result = await mcpPlugins.test(id);
+        json(res, 200, { ok: true, result, ...(await mcpPlugins.view()) });
+        return;
+      }
+      const pluginMatch = /^\/api\/mcp\/plugins\/([^/]+)$/.exec(pathname);
+      if (pluginMatch && method === 'PATCH') {
+        const id = decodeURIComponent(pluginMatch[1]);
+        const body = await readJsonBody(req);
+        const plugin = await mcpPlugins.update(id, pluginInput(body));
+        json(res, 200, { ok: true, plugin, ...(await mcpPlugins.view()) });
+        return;
+      }
+      if (pluginMatch && method === 'DELETE') {
+        const id = decodeURIComponent(pluginMatch[1]);
+        await mcpPlugins.remove(id);
+        json(res, 200, { ok: true, ...(await mcpPlugins.view()) });
+        return;
+      }
+      if (method === 'POST' && pathname === '/api/mcp/reload') {
+        json(res, 200, { ok: true, ...(await mcpPlugins.reload()) });
+        return;
+      }
       if (method === 'GET' && pathname === '/api/agents') {
         json(res, 200, { ok: true, ...getAgents() });
         return;
@@ -1155,7 +1250,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       text(res, 404, 'Not Found');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const status = /上传|不支持的文件|文件内容|超过|知识库|文档|嵌入|地址|名称/.test(message) ? 400 : 500;
+      const status = /上传|不支持的文件|文件内容|超过|知识库|文档|嵌入|地址|名称/.test(message) ? 400 : /插件|MCP/.test(message) ? 400 : 500;
       json(res, status, { ok: false, error: message });
     }
   });
@@ -1164,7 +1259,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     server.once('error', reject);
     server.listen(port, host, () => resolve());
   });
-  server.on('close', () => knowledge.close());
+  server.on('close', () => {
+    knowledge.close();
+    void mcpPlugins.close();
+  });
 
   process.stdout.write(`BoLe Web 已启动: http://${host}:${port}\n`);
   process.stdout.write('对话式控制台：上传简历 → 开始筛选 → 实时事件/流式生成 → 证据审计 → 对话内报告。\n');

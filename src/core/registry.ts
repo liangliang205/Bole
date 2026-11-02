@@ -62,6 +62,9 @@ export class AgentRegistry {
       if (!Array.isArray(preset.tools) || preset.tools.length === 0) {
         throw new RegistryValidationError(`preset ${id} 未声明工具集`);
       }
+      if (preset.mcp !== undefined && (!Array.isArray(preset.mcp) || preset.mcp.some((item) => typeof item !== 'string'))) {
+        throw new RegistryValidationError(`preset ${id} 的 mcp 白名单必须是字符串数组`);
+      }
       const promptFile = path.join(paths.promptsDir, path.basename(preset.prompt));
       if (!existsSync(promptFile)) {
         throw new RegistryValidationError(`preset ${id} 的提示词文件不存在: ${promptFile}`);

@@ -38,6 +38,8 @@
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
     providers: [], activeProviderId: null, activeModel: '', activeModelId: '', activeModelName: '', editingProvider: null, editorModels: [],
+    settingsTab: 'models', plugins: [], pluginStatus: null, pluginLoadError: '',
+    editingPlugin: null, pluginBusy: false, pluginEnvDirty: false, pluginHeadersDirty: false,
   };
 
   function esc(value) {
@@ -1669,18 +1671,293 @@
     });
   }
 
-  function openSettings() {
+  function openSettings(tab = 'models') {
     $('#settings-modal').classList.remove('hidden');
     $('#provider-editor').classList.add('hidden');
+    closePluginEditor();
     state.editingProvider = null;
-    renderProviders();
-    loadProviders();
+    switchSettingsTab(tab === 'plugins' ? 'plugins' : 'models');
   }
 
   function closeSettings() {
     $('#settings-modal').classList.add('hidden');
     $('#provider-editor').classList.add('hidden');
+    closePluginEditor();
     state.editingProvider = null;
+  }
+
+  // ---------------------------------------------------------------- plugins (MCP)
+
+  const PLUGIN_STATE = {
+    ready: { label: '运行中', dot: 'completed' },
+    starting: { label: '连接中', dot: 'running' },
+    failed: { label: '失败', dot: 'failed' },
+    stopped: { label: '已停止', dot: 'idle' },
+    disabled: { label: '已停用', dot: 'idle' },
+  };
+
+  function switchSettingsTab(tab) {
+    state.settingsTab = tab === 'plugins' ? 'plugins' : 'models';
+    $$('.settings-nav-item').forEach((button) => {
+      button.classList.toggle('active', button.dataset.settingsTab === state.settingsTab);
+    });
+    $('#settings-models').classList.toggle('hidden', state.settingsTab !== 'models');
+    $('#settings-plugins').classList.toggle('hidden', state.settingsTab !== 'plugins');
+    if (state.settingsTab === 'models') {
+      renderProviders();
+      loadProviders();
+    } else {
+      loadPlugins();
+    }
+  }
+
+  function setPluginStatus(text, tone = '') {
+    const el = $('#plugin-status');
+    if (!el) return;
+    el.textContent = text;
+    el.className = `settings-status ${tone}`;
+  }
+
+  function pluginRuntime(plugin) {
+    const server = (state.pluginStatus?.servers || []).find((item) => item.id === plugin.id);
+    const stateName = !plugin.enabled ? 'disabled' : (server?.state || 'starting');
+    const meta = PLUGIN_STATE[stateName] || PLUGIN_STATE.starting;
+    return {
+      state: stateName,
+      label: meta.label,
+      dot: meta.dot,
+      tools: server?.tools || 0,
+      error: server?.error || plugin.credentialError || '',
+    };
+  }
+
+  function renderPlugins() {
+    const list = $('#plugin-list');
+    if (!list) return;
+    const plugins = state.plugins || [];
+    const enabled = plugins.filter((plugin) => plugin.enabled).length;
+    if ($('#plugin-summary')) {
+      $('#plugin-summary').textContent = `${enabled}/${plugins.length} 启用 · ${state.pluginStatus?.tools || 0} 个工具可用${state.pluginLoadError ? ' · 插件库异常' : ''}`;
+    }
+    if ($('#plugin-count')) $('#plugin-count').textContent = plugins.length ? `${plugins.length} 个` : '';
+    if ($('#plugin-enabled-count')) $('#plugin-enabled-count').textContent = enabled ? `${enabled}` : '';
+
+    if (state.pluginLoadError) {
+      list.innerHTML = `<div class="empty-note">${esc(state.pluginLoadError)}</div>`;
+    } else if (!plugins.length) {
+      list.innerHTML = '<div class="empty-note">还没有安装插件。点右上角「＋ 添加插件」填写 MCP 服务。</div>';
+    } else {
+      list.innerHTML = plugins.map((plugin) => {
+        const runtime = pluginRuntime(plugin);
+        const target = plugin.transport === 'stdio'
+          ? `${plugin.command || ''} ${(plugin.args || []).join(' ')}`.trim()
+          : (plugin.url || '');
+        return `<article class="plugin-row ${plugin.enabled ? '' : 'disabled'}" data-plugin-row="${esc(plugin.id)}">
+          <label class="switch" title="${plugin.enabled ? '停用插件' : '启用插件'}">
+            <input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? 'checked' : ''} ${state.pluginBusy ? 'disabled' : ''}>
+            <span></span>
+          </label>
+          <div class="plugin-row-main">
+            <div class="plugin-row-title">
+              <span>${esc(plugin.name)}</span>
+              <span class="tag">${esc(plugin.id)}</span>
+              <span class="tag ${runtime.state === 'ready' ? 'ok' : runtime.state === 'failed' ? 'danger' : ''}">${esc(runtime.label)}${runtime.state === 'ready' ? ` · ${runtime.tools} 工具` : ''}</span>
+              ${plugin.source === 'imported' ? '<span class="tag">导入</span>' : ''}
+              ${plugin.hasCredentials ? '<span class="tag">已存凭据</span>' : ''}
+            </div>
+            <div class="plugin-row-meta" title="${esc(target)}">${esc(plugin.transport)} · ${esc(target || '—')} · 白名单 ${esc((plugin.allowTools || []).join(', ') || '*')}</div>
+            ${runtime.error ? `<div class="plugin-row-error">${esc(runtime.error)}</div>` : ''}
+          </div>
+          <div class="plugin-row-actions">
+            <button class="btn ghost" data-plugin-action="test" data-plugin-id="${esc(plugin.id)}" ${plugin.enabled ? '' : 'disabled'}>测试</button>
+            <button class="btn ghost" data-plugin-action="edit" data-plugin-id="${esc(plugin.id)}">编辑</button>
+            <button class="btn ghost danger-text" data-plugin-action="delete" data-plugin-id="${esc(plugin.id)}">删除</button>
+          </div>
+        </article>`;
+      }).join('');
+    }
+  }
+
+  function applyPlugins(data) {
+    state.plugins = data.plugins || [];
+    state.pluginStatus = data.status || null;
+    state.pluginLoadError = data.loadError || '';
+    renderPlugins();
+  }
+
+  async function loadPlugins() {
+    try {
+      applyPlugins(await api('/api/mcp/plugins'));
+    } catch (error) {
+      state.pluginLoadError = `读取插件失败：${error.message}`;
+      renderPlugins();
+      toast(`读取插件失败：${error.message}`, 'error');
+    }
+  }
+
+  async function togglePlugin(id, enabled) {
+    if (state.pluginBusy) return;
+    state.pluginBusy = true;
+    renderPlugins();
+    try {
+      applyPlugins(await api(`/api/mcp/plugins/${encodeURIComponent(id)}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }));
+      toast(enabled ? '插件已启用' : '插件已停用', 'ok');
+    } catch (error) {
+      toast(`切换失败：${error.message}`, 'error');
+      await loadPlugins();
+    } finally {
+      state.pluginBusy = false;
+      renderPlugins();
+    }
+  }
+
+  async function handlePluginAction(action, id) {
+    const plugin = (state.plugins || []).find((item) => item.id === id);
+    if (!plugin) return;
+    if (action === 'edit') { openPluginEditor(plugin); return; }
+    if (action === 'delete') {
+      if (!window.confirm(`确定删除插件「${plugin.name}」？其凭据会一并删除。`)) return;
+      try {
+        applyPlugins(await api(`/api/mcp/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+        toast('插件已删除', 'ok');
+      } catch (error) {
+        toast(`删除失败：${error.message}`, 'error');
+      }
+      return;
+    }
+    if (action === 'test') {
+      try {
+        const data = await api(`/api/mcp/plugins/${encodeURIComponent(id)}/test`, { method: 'POST' });
+        applyPlugins(data);
+        const result = data.result || {};
+        toast(result.ok ? `连接成功：${(result.tools || []).length} 个工具（${result.latencyMs}ms）` : `连接失败：${result.error || result.state}`, result.ok ? 'ok' : 'error');
+      } catch (error) {
+        toast(`测试失败：${error.message}`, 'error');
+      }
+    }
+  }
+
+  function renderPluginEditorTransport() {
+    const transport = $('#plugin-transport').value;
+    $('#plugin-stdio-fields').classList.toggle('hidden', transport !== 'stdio');
+    $('#plugin-http-fields').classList.toggle('hidden', transport !== 'http');
+    $('#plugin-env-label').classList.toggle('hidden', transport !== 'stdio');
+    $('#plugin-headers-label').classList.toggle('hidden', transport !== 'http');
+  }
+
+  function parseLines(text) {
+    return String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  }
+
+  function parseList(text) {
+    return String(text || '').split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  function parseKeyValues(text) {
+    const map = {};
+    for (const line of parseLines(text)) {
+      const index = line.indexOf('=');
+      if (index <= 0) continue;
+      const key = line.slice(0, index).trim();
+      const value = line.slice(index + 1).trim();
+      if (!key || !value) continue;
+      map[key] = value;
+    }
+    return map;
+  }
+
+  function openPluginEditor(plugin = null) {
+    state.editingPlugin = plugin;
+    state.pluginEnvDirty = false;
+    state.pluginHeadersDirty = false;
+    $('#plugin-editor').classList.remove('hidden');
+    $('#plugin-editor-title').textContent = plugin ? `编辑插件 ${plugin.name}` : '添加 MCP 插件';
+    $('#plugin-id').value = plugin?.id || '';
+    $('#plugin-id').disabled = Boolean(plugin);
+    $('#plugin-name').value = plugin?.name || '';
+    $('#plugin-desc').value = plugin?.description || '';
+    $('#plugin-transport').value = plugin?.transport || 'stdio';
+    $('#plugin-enabled').checked = plugin ? plugin.enabled : true;
+    $('#plugin-command').value = plugin?.command || '';
+    $('#plugin-args').value = (plugin?.args || []).join('\n');
+    $('#plugin-cwd').value = plugin?.cwd || '';
+    $('#plugin-url').value = plugin?.url || '';
+    $('#plugin-quiet').checked = Boolean(plugin?.quiet);
+    $('#plugin-allow').value = (plugin?.allowTools || ['*']).join(', ');
+    $('#plugin-deny').value = (plugin?.denyTools || []).join(', ');
+    $('#plugin-start-timeout').value = plugin?.startTimeoutMs || 20000;
+    $('#plugin-call-timeout').value = plugin?.callTimeoutMs || 60000;
+    const envKeys = plugin ? (plugin.envKeys || []) : [];
+    const headerKeys = plugin ? (plugin.headerKeys || []) : [];
+    $('#plugin-env').value = envKeys.map((key) => `${key}=${plugin ? '***' : ''}`).join('\n');
+    $('#plugin-headers').value = headerKeys.map((key) => `${key}=${plugin ? '***' : ''}`).join('\n');
+    renderPluginEditorTransport();
+    setPluginStatus(
+      plugin ? '保存后立即生效；凭据保持 *** 或留空表示不修改。' : '保存后会立即尝试连接；失败只影响这个插件。',
+      plugin ? 'ok' : 'warn',
+    );
+    $('#plugin-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function closePluginEditor() {
+    $('#plugin-editor').classList.add('hidden');
+    state.editingPlugin = null;
+    state.pluginEnvDirty = false;
+    state.pluginHeadersDirty = false;
+  }
+
+  async function savePlugin() {
+    const editing = state.editingPlugin;
+    const transport = $('#plugin-transport').value;
+    const body = {
+      name: $('#plugin-name').value.trim(),
+      description: $('#plugin-desc').value.trim(),
+      transport,
+      enabled: $('#plugin-enabled').checked,
+      command: transport === 'stdio' ? $('#plugin-command').value.trim() : null,
+      args: transport === 'stdio' ? parseLines($('#plugin-args').value) : [],
+      cwd: $('#plugin-cwd').value.trim() || null,
+      url: transport === 'http' ? $('#plugin-url').value.trim() : null,
+      quiet: $('#plugin-quiet').checked,
+      allowTools: parseList($('#plugin-allow').value),
+      denyTools: parseList($('#plugin-deny').value),
+      startTimeoutMs: Number($('#plugin-start-timeout').value) || 20000,
+      callTimeoutMs: Number($('#plugin-call-timeout').value) || 60000,
+    };
+    if (!editing) body.id = $('#plugin-id').value.trim();
+    if (transport === 'stdio' && (state.pluginEnvDirty || !editing)) body.env = parseKeyValues($('#plugin-env').value);
+    if (transport === 'http' && (state.pluginHeadersDirty || !editing)) body.headers = parseKeyValues($('#plugin-headers').value);
+    setPluginStatus('正在保存…');
+    try {
+      const data = editing
+        ? await api(`/api/mcp/plugins/${encodeURIComponent(editing.id)}`, { method: 'PATCH', body: JSON.stringify(body) })
+        : await api('/api/mcp/plugins', { method: 'POST', body: JSON.stringify(body) });
+      applyPlugins(data);
+      closePluginEditor();
+      toast(editing ? '插件已保存' : '插件已安装', 'ok');
+    } catch (error) {
+      setPluginStatus(`保存失败：${error.message}`, 'error');
+    }
+  }
+
+  async function testEditingPlugin() {
+    const editing = state.editingPlugin;
+    if (!editing) {
+      setPluginStatus('先保存插件，再测试连接。', 'warn');
+      return;
+    }
+    setPluginStatus('正在连接…');
+    try {
+      const data = await api(`/api/mcp/plugins/${encodeURIComponent(editing.id)}/test`, { method: 'POST' });
+      applyPlugins(data);
+      const result = data.result || {};
+      setPluginStatus(
+        result.ok ? `连接成功：${(result.tools || []).length} 个工具（${result.latencyMs}ms）` : `连接失败：${result.error || result.state}`,
+        result.ok ? 'ok' : 'error',
+      );
+    } catch (error) {
+      setPluginStatus(`测试失败：${error.message}`, 'error');
+    }
   }
 
   function openProviderEditor(provider = null) {
@@ -2376,6 +2653,29 @@
     $('#theme-toggle').addEventListener('click', toggleTheme);
     $('#settings-close').addEventListener('click', closeSettings);
     $('#provider-add').addEventListener('click', () => openProviderEditor(null));
+    $$('.settings-nav-item').forEach((button) => {
+      button.addEventListener('click', () => switchSettingsTab(button.dataset.settingsTab));
+    });
+    $('#plugins-close').addEventListener('click', closeSettings);
+    $('#plugin-add').addEventListener('click', () => openPluginEditor(null));
+    $('#plugin-refresh').addEventListener('click', loadPlugins);
+    $('#plugin-save').addEventListener('click', savePlugin);
+    $('#plugin-cancel').addEventListener('click', closePluginEditor);
+    $('#plugin-test').addEventListener('click', testEditingPlugin);
+    $('#plugin-transport').addEventListener('change', renderPluginEditorTransport);
+    $('#plugin-env').addEventListener('input', () => { state.pluginEnvDirty = true; });
+    $('#plugin-headers').addEventListener('input', () => { state.pluginHeadersDirty = true; });
+    $('#plugin-id').addEventListener('input', (event) => {
+      event.target.value = event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    });
+    $('#plugin-list').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-plugin-action]');
+      if (button) handlePluginAction(button.dataset.pluginAction, button.dataset.pluginId);
+    });
+    $('#plugin-list').addEventListener('change', (event) => {
+      const input = event.target.closest('[data-plugin-toggle]');
+      if (input) togglePlugin(input.dataset.pluginToggle, input.checked);
+    });
     $('#provider-save').addEventListener('click', saveProvider);
     $('#provider-cancel').addEventListener('click', () => {
       $('#provider-editor').classList.add('hidden');
@@ -2403,6 +2703,7 @@
     $('#open-tools').addEventListener('click', openTools);
     $('#tools-close').addEventListener('click', closeTools);
     $('#open-knowledge').addEventListener('click', openKnowledge);
+    $('#open-plugins').addEventListener('click', () => openSettings('plugins'));
     $('#knowledge-close').addEventListener('click', closeKnowledge);
     $('#knowledge-new').addEventListener('click', () => {
       $('#knowledge-create-form').classList.remove('hidden');
@@ -2485,6 +2786,10 @@
     await loadConfig();
     const jobs = await loadJobs();
     await loadKnowledge();
+    if (window.location.hash === '#plugins') {
+      openSettings('plugins');
+      return;
+    }
     if (window.location.hash === '#knowledge') {
       await openKnowledge();
       return;

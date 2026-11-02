@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "defaults": {
+    "startTimeoutMs": 20000,
+    "callTimeoutMs": 60000,
+    "maxToolsPerServer": 32,
+    "maxResultChars": 8000
+  },
+  "servers": {}
+}

@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "defaults": {
+    "startTimeoutMs": 20000,
+    "callTimeoutMs": 60000,
+    "maxToolsPerServer": 32,
+    "maxResultChars": 8000
+  },
+  "servers": {
+    "fs": {
+      "description": "运行产物目录：把报告/中间文件写到共享盘，或读取 HR 的简历目录",
+      "transport": "stdio",
+      "command": "pnpm",
+      "args": ["dlx", "@modelcontextprotocol/server-filesystem", "D:/agent/bole/runs"],
+      "allowTools": ["read_file", "list_directory", "search_files", "write_file"]
+    },
+    "fetch": {
+      "description": "抓取岗位链接/公司官网正文（无 Key）",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "lark": {
+      "description": "飞书：多维表格存候选人、云文档存报告、日历发面试邀约",
+      "transport": "stdio",
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "@larksuiteoapi/lark-mcp",
+        "mcp",
+        "-a",
+        "${ENV:LARK_APP_ID}",
+        "-s",
+        "${ENV:LARK_APP_SECRET}",
+        "-t",
+        "preset.base.default,preset.calendar.default",
+        "-l",
+        "zh"
+      ],
+      "quiet": true,
+      "denyTools": [],
+      "allowTools": ["bitable_*", "calendar_*"]
+    },
+    "remote-example": {
+      "description": "Streamable HTTP 型服务示例（此处用凭据占位，未配置则自动失败且不影响其它服务）",
+      "enabled": false,
+      "transport": "http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${ENV:EXAMPLE_MCP_TOKEN}" }
+    }
+  }
+}

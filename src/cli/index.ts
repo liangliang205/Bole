@@ -16,6 +16,8 @@ import { newId } from '../util/ids.ts';
 import { detectContentType, isSupportedUpload } from '../ingest/uploads.ts';
 import { ProviderStore } from '../settings/provider-store.ts';
 import { KnowledgeService } from '../knowledge/service.ts';
+import { McpPluginService } from '../mcp/plugin-service.ts';
+import { McpPluginStore } from '../mcp/plugins.ts';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string, text: string): string => (useColor ? `\u001b[${code}m${text}\u001b[0m` : text);
@@ -86,6 +88,7 @@ function printHelp(): void {
   report              查看已生成的 Markdown / JSON 报告
   cost                查看 token 成本与缓存命中
   agents              查看 Agent preset 注册表
+  mcp                 查看/测试外接 MCP 服务（list 或 call <server:tool>）
   doctor              环境自检（含 OCR 语言数据）
   reset               清空台账、运行产物与上传缓存
 
@@ -458,6 +461,91 @@ function cmdAgents(): void {
   }
 }
 
+/** MCP 调用参数：直接写 JSON，或 `@file.json` 读文件，或 `-` 读 stdin（绕开 PowerShell 的引号吞并）。 */
+async function readMcpArgs(args: Args): Promise<string> {
+  const raw = str(args, 'args');
+  if (!raw) return '{}';
+  if (raw === '-') {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '').trim() || '{}';
+  }
+  if (raw.startsWith('@')) {
+    const file = raw.slice(1);
+    if (!existsSync(file)) throw new Error(`--args 文件不存在：${file}`);
+    return readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  }
+  return raw;
+}
+
+async function cmdMcp(args: Args): Promise<void> {
+  const paths = resolvePaths();
+  const service = await McpPluginService.create({ dataDir: paths.dataDir, root: paths.root });
+  const sub = args.positionals[0] ?? 'list';
+  const target = args.positionals[1];
+  try {
+    await service.start();
+    if (sub === 'enable' || sub === 'disable') {
+      if (!target) throw new Error(`用法：bole mcp ${sub} <插件 id>`);
+      const plugin = await service.setEnabled(target, sub === 'enable');
+      process.stdout.write(`${green(sub === 'enable' ? '已启用' : '已停用')} ${plugin.id}（${plugin.name}）\n`);
+      return;
+    }
+    if (sub === 'test') {
+      if (!target) throw new Error('用法：bole mcp test <插件 id>');
+      const result = await service.test(target);
+      process.stdout.write(`${result.ok ? green('OK') : red('FAILED')} state=${result.state} ${result.latencyMs}ms\n`);
+      if (result.tools.length) process.stdout.write(`  工具：${result.tools.join(', ')}\n`);
+      if (result.error) process.stdout.write(`  ${red(result.error)}\n`);
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+
+    const view = await service.view();
+    process.stdout.write(
+      `${bold('外接 MCP 插件')} 启用 ${view.plugins.filter((plugin) => plugin.enabled).length}/${view.plugins.length} 个 · 可用工具 ${view.status.tools}\n`,
+    );
+    process.stdout.write(`${dim('插件库')} ${relativeToCwd(view.storeFile)}\n`);
+    if (view.loadError) process.stdout.write(`${red(view.loadError)}\n`);
+    if (view.plugins.length === 0) {
+      process.stdout.write(`${yellow('还没有安装插件。')}打开 Web「设置 → 插件」或参考 README「外接 MCP」。\n`);
+    } else {
+      process.stdout.write(`${dim('id'.padEnd(14))}${dim('启用'.padEnd(6))}${dim('状态'.padEnd(10))}${dim('工具'.padEnd(6))}${dim('名称')}\n`);
+      for (const plugin of view.plugins) {
+        const server = view.status.servers.find((item) => item.id === plugin.id);
+        const state = server?.state ?? (plugin.enabled ? 'starting' : 'disabled');
+        const color = state === 'ready' ? green : state === 'failed' ? red : yellow;
+        process.stdout.write(
+          `${plugin.id.padEnd(14)}${(plugin.enabled ? 'on' : 'off').padEnd(6)}${color(state.padEnd(10))}${String(server?.tools ?? 0).padEnd(6)}${plugin.name}\n`,
+        );
+        if (plugin.credentialError) process.stdout.write(`  ${red(plugin.credentialError)}\n`);
+        if (server?.error) process.stdout.write(`  ${red(server.error)}\n`);
+        if (server?.toolNames.length) process.stdout.write(`  ${dim(server.toolNames.join(', '))}\n`);
+      }
+    }
+
+    if (sub === 'call') {
+      const manager = service.managerRef();
+      if (!target) throw new Error('用法：bole mcp call <插件:工具> --args \'{"key":"value"}\'');
+      const [serverId, toolName] = target.split(':');
+      if (!serverId || !toolName) throw new Error('用法：bole mcp call <插件:工具> --args \'{"key":"value"}\'');
+      const entry = manager
+        .toolEntries()
+        .find((item) => item.serverId === serverId && (item.toolName === toolName || item.fullName === target));
+      if (!entry) {
+        const available = manager.toolEntries().map((item) => `${item.serverId}:${item.toolName}`);
+        throw new Error(`找不到 MCP 工具 ${target}${available.length ? `；可用：${available.join(', ')}` : ''}`);
+      }
+      const result = await manager.callTool(entry.fullName, await readMcpArgs(args));
+      process.stdout.write(`\n${bold(`调用 ${entry.serverId}:${entry.toolName}`)} ${result.ok ? green('OK') : red('FAILED')}\n`);
+      process.stdout.write(`${result.message}\n`);
+      if (!result.ok) process.exitCode = 1;
+    }
+  } finally {
+    await service.close();
+  }
+}
+
 async function cmdDoctor(): Promise<void> {
   const paths = resolvePaths();
   const config = loadPipelineConfig();
@@ -472,6 +560,17 @@ async function cmdDoctor(): Promise<void> {
   const knowledgeStats = knowledge.stats();
   knowledge.close();
   process.stdout.write(`知识库：${knowledgeStats.bases} 个 / ${knowledgeStats.enabledBases} 已启用 / ${knowledgeStats.documents} 份文档\n`);
+  try {
+    const store = new McpPluginStore({ dataDir: paths.dataDir, root: paths.root });
+    await store.ensureLoaded();
+    const plugins = store.list();
+    const enabled = plugins.filter((plugin) => plugin.enabled);
+    process.stdout.write(
+      `外接 MCP：${plugins.length ? green(`${enabled.length}/${plugins.length} 个插件启用（${enabled.map((plugin) => plugin.id).join(', ') || '无'}）`) : '未安装插件'} · ${dim(relativeToCwd(store.storeFile))}\n`,
+    );
+  } catch (error) {
+    process.stdout.write(`外接 MCP：${red(error instanceof Error ? error.message : String(error))}\n`);
+  }
   const ocrLangs = ['eng', 'chi_sim'].filter((lang) => existsSync(path.join(paths.ocrDir, `${lang}.traineddata.gz`)));
   const ocrMode = (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase();
   process.stdout.write(`OCR：${ocrMode === 'deepseek' || ocrMode === 'auto' ? `DeepSeek Vision（${process.env.BOLE_OCR_MODEL ?? active?.flashModel ?? config.models.flash}）` : ocrMode === 'local' ? '本地 Tesseract' : '外部 OCR'}${ocrMode === 'deepseek' || ocrMode === 'auto' ? `；本地回退${ocrLangs.length ? '就绪' : '未就绪（pnpm ocr:download）'}` : ''}\n`);
@@ -541,6 +640,9 @@ async function main(): Promise<void> {
       break;
     case 'agents':
       cmdAgents();
+      break;
+    case 'mcp':
+      await cmdMcp(args);
       break;
     case 'doctor':
       await cmdDoctor();

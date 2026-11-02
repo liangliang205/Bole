@@ -25,11 +25,15 @@ import { createConverter } from '@deepseek-ai/libreoffice-kit';
 import { buildReportDocx } from '../export/docx-report.ts';
 import type { ReportData } from '../report/builder.ts';
 import type { OpenAiToolSchema } from '../types.ts';
+import { MCP_TOOL_PREFIX } from '../mcp/schema.ts';
+import type { McpManager } from '../mcp/manager.ts';
 
 export interface ToolContext {
   report: ReportData;
   runDir: string;
   dataDir: string;
+  /** 外接 MCP 管理器；未启用时为 undefined，只影响 mcp__ 前缀的工具。 */
+  mcp?: McpManager;
 }
 
 export interface ToolExecResult {
@@ -261,7 +265,24 @@ export function toolSchemas(): OpenAiToolSchema[] {
   return Object.values(TOOL_REGISTRY).map((tool) => tool.schema);
 }
 
+/**
+ * 内置工具 + 外接 MCP 工具：白名单来自 agents.json 的 mcp 字段，
+ * 未配置或服务没连上时自动退化为只有内置工具。
+ */
+export function toolSchemasWithMcp(mcp: McpManager | undefined, patterns: string[] | undefined): OpenAiToolSchema[] {
+  const base = toolSchemas();
+  if (!mcp || !patterns || patterns.length === 0) return base;
+  const external = mcp.toolsFor(patterns);
+  return external.length ? [...base, ...external] : base;
+}
+
 export async function executeTool(name: string, rawArgs: string, ctx: ToolContext): Promise<ToolExecResult> {
+  if (name.startsWith(MCP_TOOL_PREFIX)) {
+    if (!ctx.mcp) {
+      return { ok: false, message: `未启用外接 MCP，无法调用 ${name}（在 config/mcp.json 配置服务后重试）` };
+    }
+    return await ctx.mcp.callTool(name, rawArgs);
+  }
   const tool = TOOL_REGISTRY[name];
   if (!tool) return { ok: false, message: `未知工具：${name}（可用：${Object.keys(TOOL_REGISTRY).join(', ')}）` };
   let args: Record<string, unknown> = {};

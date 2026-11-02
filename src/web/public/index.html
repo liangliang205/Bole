@@ -35,6 +35,7 @@
     <div class="side-footer">
       <button class="btn ghost block" id="open-settings">⚙ 设置与模型</button>
       <button class="btn ghost block" id="open-knowledge">▤ 知识库 <span id="knowledge-enabled-count" class="muted"></span></button>
+      <button class="btn ghost block" id="open-plugins">◈ 插件 <span id="plugin-enabled-count" class="muted"></span></button>
       <button class="btn ghost block" id="open-tools">⌘ 工具与环境</button>
     </div>
   </aside>
@@ -154,8 +155,9 @@
       <aside class="settings-nav">
         <div class="settings-nav-title">设置</div>
         <button class="settings-nav-item active" data-settings-tab="models">模型</button>
+        <button class="settings-nav-item" data-settings-tab="plugins">插件</button>
       </aside>
-      <section class="settings-content">
+      <section class="settings-content" id="settings-models">
         <div class="modal-head"><h2>模型</h2><button class="btn ghost" id="settings-close">✕</button></div>
         <div class="settings-toolbar">
           <span class="muted" id="provider-count"></span>
@@ -205,6 +207,68 @@
             <button class="btn ghost" id="provider-cancel">取消</button>
             <button class="btn primary" id="provider-save">创建提供商</button>
           </div>
+        </div>
+      </section>
+
+      <section class="settings-content hidden" id="settings-plugins">
+        <div class="modal-head"><h2>插件</h2><button class="btn ghost" id="plugins-close">✕</button></div>
+        <p class="muted settings-sub">外接 MCP 服务做成了插件：安装、启用后由伯乐在「完成后对话」里按需调用；关闭开关即停止该服务，不影响筛选流水线。点「＋ 添加插件」配置 stdio 命令或 HTTP 端点，凭据加密保存。</p>
+        <div class="settings-toolbar">
+          <span class="muted" id="plugin-summary"></span>
+          <button class="btn primary" id="plugin-add">＋ 添加插件</button>
+        </div>
+
+        <div id="plugin-editor" class="plugin-editor hidden">
+          <h3 id="plugin-editor-title">添加 MCP 插件</h3>
+          <div class="form-grid">
+            <label>插件 ID<input id="plugin-id" class="input" placeholder="fs" maxlength="32"></label>
+            <label>名称<input id="plugin-name" class="input" placeholder="文件系统" maxlength="60"></label>
+            <label class="span-2">说明<input id="plugin-desc" class="input" placeholder="给 HR 看的一句话" maxlength="400"></label>
+            <label>传输方式
+              <select id="plugin-transport" class="input">
+                <option value="stdio">stdio（本地子进程）</option>
+                <option value="http">HTTP（远程端点）</option>
+              </select>
+            </label>
+            <label class="knowledge-switch-line"><span>启用</span><input id="plugin-enabled" type="checkbox" checked></label>
+          </div>
+
+          <div class="form-grid" id="plugin-stdio-fields">
+            <label class="span-2">启动命令<input id="plugin-command" class="input" placeholder="npx"></label>
+            <label class="span-2">参数（每行一个）<textarea id="plugin-args" class="input" rows="4" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;D:/agent/bole/runs"></textarea></label>
+            <label>工作目录（可选）<input id="plugin-cwd" class="input" placeholder="D:/agent/bole"></label>
+            <label class="knowledge-switch-line"><span>静默子进程日志</span><input id="plugin-quiet" type="checkbox"></label>
+          </div>
+
+          <div class="form-grid hidden" id="plugin-http-fields">
+            <label class="span-2">地址<input id="plugin-url" class="input" placeholder="https://mcp.example.com/mcp"></label>
+          </div>
+
+          <div class="form-grid">
+            <label class="span-2" id="plugin-env-label">环境变量（每行 KEY=VALUE；已有值显示为 ***，留空表示不修改）
+              <textarea id="plugin-env" class="input" rows="3" placeholder="TAVILY_API_KEY=tvly-..."></textarea>
+            </label>
+            <label class="span-2 hidden" id="plugin-headers-label">请求头（每行 KEY=VALUE）
+              <textarea id="plugin-headers" class="input" rows="3" placeholder="Authorization=Bearer ..."></textarea>
+            </label>
+            <label>允许工具（逗号分隔，* 为全部）<input id="plugin-allow" class="input" placeholder="*"></label>
+            <label>拒绝工具（逗号分隔）<input id="plugin-deny" class="input" placeholder="write_file"></label>
+            <label>启动超时（ms）<input id="plugin-start-timeout" class="input" type="number" min="1000" max="120000" value="20000"></label>
+            <label>调用超时（ms）<input id="plugin-call-timeout" class="input" type="number" min="1000" max="300000" value="60000"></label>
+          </div>
+
+          <div class="settings-status" id="plugin-status"></div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="plugin-test">测试连接</button>
+            <span class="spacer"></span>
+            <button class="btn ghost" id="plugin-cancel">取消</button>
+            <button class="btn primary" id="plugin-save">保存插件</button>
+          </div>
+        </div>
+
+        <div class="plugin-section">
+          <div class="plugin-section-head"><h3>已安装 <span id="plugin-count" class="muted"></span></h3><button class="link-btn" id="plugin-refresh" type="button">刷新</button></div>
+          <div id="plugin-list" class="plugin-list"></div>
         </div>
       </section>
     </div>

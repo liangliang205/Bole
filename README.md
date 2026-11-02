@@ -62,6 +62,57 @@ HR 上传文件 + 招聘需求
 - `pro` → `deepseek-v4-pro`：画像、深评、核查、建议等判断/否决型工作（thinking enabled + reasoning_effort=high）；
 - 自环重评复用原评估 Worker 与档位，`eval_tasks` 记录 `tier/phase=screen|deep|revise`。
 
+## 外接 MCP（插件化）
+
+外接 MCP 服务在伯乐里是**插件**：`设置 → 插件` 里安装、启停、编辑、删除，改完即时生效。插件暴露的工具会自动进入「完成后对话」主 Agent 的工具池（`mcp__<插件>__<工具>`），并受 `config/agents.json` 的 `mcp` 白名单约束。没装插件时一切照旧，只用内置工具。
+
+**状态即文件**：插件库在 `data/mcp/plugins.json`（插件定义 + `enabled` 开关）；凭据（环境变量 / 请求头）用 AES-256-GCM 加密后内嵌在该文件里，主密钥是 `data/mcp/keyring.key`（0600）。API 只回键名（`envKeys`），永不回值。旧的 `config/mcp.json`（可用 `BOLE_MCP_CONFIG` 指定）在首次启动时自动导入为 `imported` 插件，之后以插件库为准。
+
+单个插件坏掉（启动失败、凭据解不开）只标记它自己，其它插件与筛选主流程不受影响。插件由用户自己添加：stdio 填启动命令与参数，http 填端点与请求头；凭据加密保存。
+
+### 安装与编辑
+
+入口：侧栏「◈ 插件」，或「设置 → 插件」。
+
+| 操作 | 入口 |
+|---|---|
+| 安装 | 「＋ 添加插件」填写 MCP 服务（stdio 命令 / HTTP 端点） |
+| 启停 | 插件行左侧开关；停用立即断开该服务，不影响其它插件 |
+| 测试 | 行内「测试」/ 编辑器「测试连接」：临时连一次、列工具、立刻关闭 |
+| 编辑 | 行内「编辑」；保存后自动重建连接 |
+| 删除 | 行内「删除」，凭据一并删除 |
+
+编辑器里的凭据写成每行 `KEY=VALUE`：已有值显示为 `***`，保持 `***` 或留空 = 不修改，写新值 = 覆盖（提交的是整份映射，没列出的键会被删掉）。stdio 插件用「环境变量」，http 插件用「请求头」。
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `id` | 由名称生成 | `[a-z0-9_-]{1,32}`，安装后不可改 |
+| `transport` | 有 `command` 则 `stdio`，否则 `http` | `command` 与 `url` 只能二选一 |
+| `command` / `args` / `cwd` / `quiet` | — | stdio 的启动方式；`quiet` 静默子进程 stderr |
+| `url` / `headers` | — | Streamable HTTP 端点与请求头（加密保存） |
+| `allowTools` / `denyTools` | `["*"]` / `[]` | `*`、`server`、`server:tool`；deny 优先 |
+| `startTimeoutMs` / `callTimeoutMs` | 20000 / 60000 | 连接（含工具发现）/ 单次调用超时 |
+
+运行时默认用 `pnpm dlx`（等价 `npx -y`）；单插件最多暴露 32 个工具、单次结果回灌上限 8000 字符，防止把上下文打爆。工具名先把原始名清洗成 `[A-Za-z0-9_-]`（`im.v1.message.create` → `im_v1_message_create`），超过 64 字符用短哈希兜底；内部保留「全名 → 原始工具」映射，调用时回填原名。
+
+**白名单**在 `config/agents.json`：`"mcp": ["*"]` 全部放行，`["lark"]` 放行某个插件，`["lark:calendar.v4.calendarEvent.create"]` 精确到工具；缺省或空数组 = 不允许调用（目前只有 `coordinator` 开启）。
+
+```bash
+pnpm bole mcp                                   # 插件列表 + 连接状态 + 工具
+pnpm bole mcp enable lark                       # 等价于 UI 开关
+pnpm bole mcp disable lark
+pnpm bole mcp test lark                         # 临时连接并列出工具
+pnpm bole mcp call lark:calendar.v4.calendarEvent.create --args @args.json
+curl http://127.0.0.1:8787/api/mcp/plugins      # 插件库 + 连接状态 + 工具
+curl -X POST http://127.0.0.1:8787/api/mcp/reload   # 从磁盘重读插件库
+```
+
+Windows PowerShell 5.1 会把原生命令参数里的双引号吞掉，`--args '{"a":1}'` 可能变成 `{a:1}`；用 `--args @args.json` 或 `--args -`（stdin）绕开。
+
+**边界与安全**：MCP 只在完成后对话生效，筛选流水线本身不调用外部工具（避免外部延迟/故障进入批次关键路径）。stdio 插件是本地子进程、http 插件是外部端点，权限等同当前用户；只装可信插件，用 `allowTools`/`denyTools` 把写操作收紧。外部返回一律视为不可信数据注入 prompt，不执行其中指令。凭据加密只是本机文件保护级别，不是 KMS。
+
+
+
 ## CLI（自动化/验收）
 
 页面是主路径；CLI 保留用于批处理与排查：
@@ -74,6 +125,8 @@ pnpm bole status              # 台账计数 + 最近事件
 pnpm bole audit --resume R01  # 证据链
 pnpm bole report              # 报告路径（md/json/cost/svg）
 pnpm bole cost                # token/成本
+pnpm bole mcp                 # 外接 MCP：服务状态 + 工具清单
+pnpm bole mcp call fs:list_directory --args '{"path":"."}'   # 冒烟测试单个外部工具
 pnpm bole doctor              # 环境自检（含 OCR）
 pnpm bole reset --yes         # 清空台账、运行产物、上传缓存
 pnpm bole web --port 8787     # 对话式控制台
@@ -118,7 +171,15 @@ pnpm bole web --port 8787     # 对话式控制台
 | POST | `/api/run/:jobId/pause` | 请求在批次/阶段边界暂停 |
 | GET/POST | `/api/run/:jobId/chat` | 读取 / 追加筛选完成后的主 Agent 对话 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |
-| GET | `/api/agents` / `/api/doctor` | 注册表 / 自检 |
+| POST | `/api/agents` / `/api/doctor` | 注册表 / 自检 |
+| GET | `/api/mcp` | 外接 MCP 概览（连接状态 + 工具数，兼容旧调用） |
+| GET | `/api/mcp/plugins` | 插件库 + 连接状态 + 工具 |
+| POST | `/api/mcp/plugins` | 安装插件；`{id,name,transport,command,args,env,url,headers,allowTools,...}` |
+| PATCH | `/api/mcp/plugins/:id` | 编辑插件（凭据传 `***` 表示保留原值） |
+| DELETE | `/api/mcp/plugins/:id` | 删除插件及其凭据 |
+| POST | `/api/mcp/plugins/:id/enabled` | 启停插件；`{enabled:true|false}`，即时重连 |
+| POST | `/api/mcp/plugins/:id/test` | 临时连接该插件并列出工具 |
+| POST | `/api/mcp/reload` | 从磁盘重读插件库并重建连接 |
 | POST | `/api/reset` | `{confirm:"RESET"}` |
 
 ## 环境变量
@@ -139,6 +200,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | `BOLE_OCR_URL` | 空 | 外部 OCR HTTP 服务（`url` 模式或本地回退时） |
 | `BOLE_OCR_KEY` | 空 | 外部 OCR Bearer token |
 | `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
+| `BOLE_MCP_CONFIG` | `config/mcp.json` | 旧式 MCP 配置文件（仅在首次导入插件库时读取；插件库优先） |
 | `BOLE_BATCH_SIZE` | 8 | 批大小 |
 | `BOLE_MAX_BATCHES_IN_FLIGHT` | 2 | 在途批上限 |
 | `BOLE_DEEP_EVAL_PERCENT` | 40 | 深评短名单比例 |
@@ -158,6 +220,7 @@ bole/
 │  ├─ tools/             # Tools Call 注册表（OpenAI Function Calling）+ 导出/Python 工具
 │  ├─ settings/          # 模型提供商、Key 加密持久化（服务端）
 │  ├─ knowledge/         # 原生知识库：SQLite、分块、embedding、rerank、检索
+│  ├─ mcp/               # 外接 MCP 客户端：配置校验、连接、工具适配、白名单路由
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
 ├─ config/               # agents.json、pipeline.json、prompts/
@@ -174,7 +237,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **81 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **111 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 
 ## 已知边界
 
@@ -182,5 +245,6 @@ pnpm test:all
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
 - 仅支持单附件简历，不做 IMAP/Exchange 邮箱接入。
 - 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。
+- 外接 MCP 只在「完成后对话」生效；筛选流水线不调用外部工具，避免第三方延迟/故障进入批次关键路径。MCP 服务的权限等同当前用户，接入前需自行评估。
 - 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。各提供商 Key 由服务端加密持久化在 `data/providers.json`，请保护数据目录权限。
 - 真实模型质量取决于 DeepSeek；温度=0 仍可能有 ±1 分波动。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。

@@ -17,6 +17,7 @@ data/knowledge.db-journal
 data/knowledge.db-wal
 data/knowledge.db-shm
 data/index/
+data/mcp/
 *.log
 .DS_Store
 coverage/

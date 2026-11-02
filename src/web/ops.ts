@@ -5,6 +5,7 @@ import { AgentRegistry } from '../core/registry.ts';
 import { Ledger } from '../core/ledger.ts';
 import { ProviderStore } from '../settings/provider-store.ts';
 import { KnowledgeService } from '../knowledge/service.ts';
+import { McpPluginStore } from '../mcp/plugins.ts';
 
 export interface DoctorCheck {
   name: string;
@@ -22,6 +23,7 @@ export function getAgents(): {
     tier: string;
     maxDepth: number;
     tools: string[];
+    mcp: string[];
     outputSchema: string;
     version: string;
   }[];
@@ -37,6 +39,7 @@ export function getAgents(): {
       tier: agent.tier,
       maxDepth: agent.maxDepth,
       tools: agent.tools,
+      mcp: agent.mcp ?? [],
       outputSchema: agent.outputSchema,
       version: agent.version,
     })),
@@ -120,6 +123,23 @@ export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
     status: 'ok',
     detail: `flash=${config.models.flash} / pro=${config.models.pro}；深评 ${config.deepEval.percent}% → ${config.deepEval.tier}`,
   });
+  try {
+    const store = new McpPluginStore({ dataDir: paths.dataDir, root: paths.root });
+    await store.ensureLoaded();
+    const plugins = store.list();
+    const enabled = plugins.filter((plugin) => plugin.enabled);
+    const broken = enabled.filter((plugin) => plugin.credentialError);
+    checks.push({
+      name: '外接 MCP',
+      status: broken.length > 0 ? 'warn' : 'ok',
+      detail:
+        plugins.length === 0
+          ? '未安装插件（主 Agent 只用内置工具）'
+          : `${enabled.length}/${plugins.length} 个插件启用${broken.length ? `；凭据问题：${broken.map((plugin) => plugin.id).join(', ')}` : ''}`,
+    });
+  } catch (error) {
+    checks.push({ name: '外接 MCP', status: 'fail', detail: error instanceof Error ? error.message : String(error) });
+  }
   return { checks };
 }
 
