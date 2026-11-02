@@ -85,18 +85,25 @@
       <div id="chat-scroll" class="chat-scroll"></div>
       <div id="stream-host" class="stream-host"></div>
       <div id="hitl-host" class="hitl-host"></div>
-      <div class="composer-wrap">
-        <div class="composer reply-composer">
-          <textarea id="reply-input" rows="2" placeholder="回答 HITL 问题，或点击上方选项…"></textarea>
-          <div class="composer-bar reply-bar">
-            <div class="reply-context">
-              <span class="reply-agent-dot"></span>
-              <span>伯乐 · 主 Agent</span>
-              <span class="muted hidden" id="reply-hint"></span>
+      <div class="composer-wrap dsh-composer">
+        <div class="dsh-composer-notice hidden" id="reply-hint"></div>
+        <div class="dsh-composer-card">
+          <div class="dsh-composer-scroll">
+            <div class="dsh-composer-grow">
+              <div id="reply-input" class="dsh-composer-input" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="回答 HITL 问题，或点击上方选项…"></div>
             </div>
-            <div class="reply-actions">
-              <span class="reply-model" id="reply-model"></span>
-              <button class="btn primary" id="reply-send" title="发送" disabled>发送</button>
+          </div>
+          <div class="dsh-composer-row">
+            <div class="dsh-composer-tools">
+              <span class="dsh-composer-agent"><span class="dsh-composer-agent-dot"></span>伯乐</span>
+            </div>
+            <div class="dsh-composer-trailing">
+              <span class="dsh-composer-model" id="reply-model"></span>
+              <button class="dsh-composer-primary" id="reply-send" aria-label="发送" disabled>
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                  <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor"/>
+                </svg>
+              </button>
             </div>
           </div>
         </div>

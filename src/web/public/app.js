@@ -580,17 +580,19 @@
     $('#resume-btn').classList.toggle('hidden', active);
     $('#resume-btn').disabled = active;
     const canChat = run.status === 'completed';
-    $('#reply-send').disabled = state.sending || (!run.pendingHitl && !canChat);
     const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
     $('#reply-hint').textContent = replyHint;
     $('#reply-hint').classList.toggle('hidden', !replyHint);
     const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
     $('#reply-model').textContent = activeProvider ? `${activeProvider.name} · ${activeProvider.proModel}` : '';
-    $('#reply-send').textContent = state.sending ? '发送中…' : '发送';
-    resizeReplyInput();
-    $('#reply-input').placeholder = run.pendingHitl
+    $('#reply-send').classList.toggle('is-sending', state.sending);
+    $('#reply-send').setAttribute('aria-busy', state.sending ? 'true' : 'false');
+    const placeholder = run.pendingHitl
       ? '回答 HITL 问题，或点击上方选项…'
       : canChat ? '继续追问伯乐，例如：为什么 R08 不推荐？' : '筛选完成后可继续和伯乐对话…';
+    $('#reply-input').setAttribute('data-placeholder', placeholder);
+    $('#reply-input').setAttribute('aria-disabled', run.pendingHitl || canChat ? 'false' : 'true');
+    syncReplyComposerState();
     renderChat();
     renderHitl(run.pendingHitl);
     if (run.status !== 'running') state.streams.clear();
@@ -948,19 +950,27 @@
     }
   }
 
-  function resizeReplyInput() {
-    const input = $('#reply-input');
-    if (!input) return;
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(180, Math.max(68, input.scrollHeight))}px`;
+  function replyValue() {
+    return ($('#reply-input').innerText || '').replace(/\u00a0/g, ' ').trim();
+  }
+
+  function syncReplyComposerState() {
+    const run = state.run;
+    if (!run) return;
+    const canSubmit = run.pendingHitl || run.status === 'completed';
+    const empty = replyValue() === '';
+    $('#reply-send').disabled = state.sending || empty || !canSubmit;
+  }
+
+  function clearReplyInput() {
+    $('#reply-input').innerHTML = '';
   }
 
   async function sendChat() {
     if (!state.jobId || state.run?.status !== 'completed') return;
-    const value = $('#reply-input').value.trim();
+    const value = replyValue();
     if (!value) { toast('请输入内容', 'error'); return; }
-    $('#reply-input').value = '';
-    resizeReplyInput();
+    clearReplyInput();
     state.sending = true;
     state.chat.push({ id: `local_${Date.now()}`, role: 'user', content: value, created_ts: new Date().toISOString() });
     renderAll();
@@ -972,7 +982,7 @@
       state.chat = data.messages || state.chat;
     } catch (error) {
       await loadChat();
-      $('#reply-input').value = value;
+      $('#reply-input').textContent = value;
       toast(`对话失败：${error.message}`, 'error');
     } finally {
       state.sending = false;
@@ -982,10 +992,9 @@
 
   async function sendReply() {
     if (state.run?.pendingHitl) {
-      const value = $('#reply-input').value.trim();
+      const value = replyValue();
       if (!value) { toast('请输入回答', 'error'); return; }
-      $('#reply-input').value = '';
-      resizeReplyInput();
+      clearReplyInput();
       await submitHitl(value);
       return;
     }
@@ -1947,9 +1956,20 @@
       if (button) { state.drawerCandidate = null; openDrawer(button.dataset.drawerTab); }
     });
     $('#reply-send').addEventListener('click', sendReply);
-    $('#reply-input').addEventListener('input', resizeReplyInput);
+    $('#reply-input').addEventListener('input', syncReplyComposerState);
     $('#reply-input').addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply(); }
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (event.shiftKey) {
+        document.execCommand('insertLineBreak');
+        return;
+      }
+      sendReply();
+    });
+    $('#reply-input').addEventListener('paste', (event) => {
+      event.preventDefault();
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      document.execCommand('insertText', false, text);
     });
     $('#open-settings').addEventListener('click', openSettings);
     $('#theme-toggle').addEventListener('click', toggleTheme);
