@@ -82,6 +82,7 @@
 
 - `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、agents/doctor/reset、Key 绑定。
 - `stream-preview.ts`：用 `partial-json` 解析未完成 JSON，按 agent/phase 转成字段、维度分数、核查裁决；token 事件带 `preview`，前端不展示原始 JSON。
+- 文件预览：`/api/run/:jobId/files/:name/preview` 对 PDF 直接内联返回，对 DOCX 用 LibreOffice Kit 转 PDF 后内联；转换结果按源文件 mtime 缓存在运行目录 `.preview/`，前端用 iframe 展示，保留原文件下载。
 - `data.ts`：jobs/snapshot/candidates/events/cost 查询。
 - `ops.ts`：agents/doctor/reset。
 - `public/`：无框架对话式 UI；会话列表、对话/工具轨迹、token 卡、HITL、证据抽屉、设置/工具、DSH 风格模型提供商管理。

@@ -111,6 +111,8 @@ pnpm bole web --port 8787     # 对话式控制台
 | GET | `/api/run/:jobId/candidates/:id` | 证据详情 |
 | GET | `/api/run/:jobId/cost` | 成本与缓存 |
 | GET | `/api/run/:jobId/report` | 报告 JSON（仅对话内汇总/后续 MCP 使用，不提供下载） |
+| GET | `/api/run/:jobId/files/:name` | 下载对话内生成的 DOCX/PDF |
+| GET | `/api/run/:jobId/files/:name/preview` | DOCX（转为 PDF 后）或 PDF 的内联预览 |
 | POST | `/api/run/:jobId/pause` | 请求在批次/阶段边界暂停 |
 | GET/POST | `/api/run/:jobId/chat` | 读取 / 追加筛选完成后的主 Agent 对话 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |

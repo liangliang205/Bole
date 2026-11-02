@@ -292,6 +292,25 @@
 </div>
 <input id="knowledge-file" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
 
+<div id="file-preview-modal" class="modal hidden">
+  <div class="modal-card file-preview-card">
+    <div class="modal-head">
+      <div class="file-preview-heading">
+        <h2 id="file-preview-title">文件预览</h2>
+        <p id="file-preview-sub" class="muted">PDF 直接预览；DOCX 自动转换为 PDF 预览</p>
+      </div>
+      <div class="file-preview-actions">
+        <a class="btn ghost" id="file-preview-download" download>下载原文件</a>
+        <button class="btn ghost" id="file-preview-close" type="button">✕</button>
+      </div>
+    </div>
+    <div class="file-preview-body">
+      <div id="file-preview-loading" class="file-preview-loading">正在生成预览…</div>
+      <iframe id="file-preview-frame" title="文件预览"></iframe>
+    </div>
+  </div>
+</div>
+
 <div id="tools-modal" class="modal hidden">
   <div class="modal-card">
     <div class="modal-head"><h2>工具与环境</h2><button class="btn ghost" id="tools-close">✕</button></div>

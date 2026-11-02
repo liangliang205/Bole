@@ -781,10 +781,11 @@
       const icon = isPdf ? 'PDF' : 'W';
       const desc = isPdf ? '只读文件，适合分发与归档' : '可编辑文档，适合修改与签字';
       const href = `/api/run/${encodeURIComponent(state.jobId)}/files/${encodeURIComponent(name)}`;
-      return `<a class="file-card" href="${href}" download title="点击下载 ${esc(name)}">
+      return `<div class="file-card" data-preview-file="${esc(name)}" role="button" tabindex="0" title="预览 ${esc(name)}">
         <span class="file-icon ${isPdf ? 'pdf' : 'word'}">${icon}</span>
         <span class="file-meta"><span class="file-name">${esc(name)}</span><span class="file-desc">${esc(desc)}</span></span>
-      </a>`;
+        <a class="file-download" href="${href}" download title="下载 ${esc(name)}">↓</a>
+      </div>`;
     });
     const visible = cards.slice(0, VISIBLE).join('');
     const hidden = cards.slice(VISIBLE).join('');
@@ -792,6 +793,27 @@
       ? `<details><summary class="file-more">全部 ${files.length} 个文件</summary><div class="file-grid" style="margin-top:6px">${hidden}</div></details>`
       : '';
     return `<div class="file-grid">${visible}</div>${more}`;
+  }
+
+  function openFilePreview(name) {
+    if (!state.jobId) return;
+    const modal = $('#file-preview-modal');
+    const frame = $('#file-preview-frame');
+    const href = `/api/run/${encodeURIComponent(state.jobId)}/files/${encodeURIComponent(name)}`;
+    $('#file-preview-title').textContent = name;
+    $('#file-preview-sub').textContent = /\.pdf$/i.test(name)
+      ? 'PDF 预览'
+      : 'DOCX 已转换为 PDF 预览；版式可能与应用软件略有差异';
+    $('#file-preview-download').setAttribute('href', href);
+    $('#file-preview-loading').classList.remove('hidden');
+    frame.src = `${href}/preview?t=${Date.now()}`;
+    modal.classList.remove('hidden');
+  }
+
+  function closeFilePreview() {
+    $('#file-preview-modal').classList.add('hidden');
+    $('#file-preview-frame').src = 'about:blank';
+    $('#file-preview-loading').classList.add('hidden');
   }
 
   function renderChat() {
@@ -2006,6 +2028,28 @@
   function bind() {
     bindSidebarResize();
     bindContentResize();
+    $('#chat-scroll').addEventListener('click', (event) => {
+      const card = event.target.closest('[data-preview-file]');
+      if (!card || event.target.closest('.file-download')) return;
+      openFilePreview(card.getAttribute('data-preview-file'));
+    });
+    $('#chat-scroll').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const card = event.target.closest('[data-preview-file]');
+      if (!card) return;
+      event.preventDefault();
+      openFilePreview(card.getAttribute('data-preview-file'));
+    });
+    $('#file-preview-close').addEventListener('click', closeFilePreview);
+    $('#file-preview-modal').addEventListener('click', (event) => {
+      if (event.target === $('#file-preview-modal')) closeFilePreview();
+    });
+    $('#file-preview-frame').addEventListener('load', () => {
+      if ($('#file-preview-frame').src !== 'about:blank') $('#file-preview-loading').classList.add('hidden');
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !$('#file-preview-modal').classList.contains('hidden')) closeFilePreview();
+    });
     $('#new-run-btn').addEventListener('click', showNewView);
     $('#new-start').addEventListener('click', startRun);
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());

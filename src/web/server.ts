@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { createConverter } from '@deepseek-ai/libreoffice-kit';
 import { bootstrap, type Bootstrapped } from '../bootstrap.ts';
 import { PipelinePausedError, runPipeline, type RunSummary } from '../agents/coordinator.ts';
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
@@ -850,6 +851,54 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         }
         // 仅供对话内汇总与后续 MCP 使用；不提供 Markdown/JSON 下载。
         json(res, 200, report);
+        return;
+      }
+
+      // Office 预览：PDF 直接内联；DOCX 先按 mtime 缓存转换为 PDF，再内联返回。
+      const previewMatch = /^\/api\/run\/([^/]+)\/files\/([^/]+)\/preview$/.exec(pathname);
+      if (method === 'GET' && previewMatch) {
+        const jobId = decodeURIComponent(previewMatch[1]);
+        const name = decodeURIComponent(previewMatch[2]);
+        if (name.includes('..') || !/^[^/\\]+\.(docx|pdf)$/i.test(name)) {
+          json(res, 400, { ok: false, error: '非法文件名' });
+          return;
+        }
+        const dir = findReportDir(jobId);
+        const file = dir ? path.join(dir, name) : null;
+        if (!dir || !file || !existsSync(file)) {
+          json(res, 404, { ok: false, error: '文件不存在或已清理' });
+          return;
+        }
+        try {
+          let previewFile = file;
+          if (/\.docx$/i.test(name)) {
+            const previewDir = path.join(dir, '.preview');
+            mkdirSync(previewDir, { recursive: true });
+            const cached = path.join(previewDir, name.replace(/\.docx$/i, '.pdf'));
+            const fresh = existsSync(cached) && statSync(cached).mtimeMs >= statSync(file).mtimeMs;
+            if (!fresh) {
+              const converter = await createConverter({ timeoutMs: 120_000 });
+              try {
+                await converter.render({ inputPath: file, outputPath: cached });
+              } finally {
+                await converter.dispose();
+              }
+              const output = readFileSync(cached);
+              if (!output.length || output.subarray(0, 5).toString('ascii') !== '%PDF-') {
+                rmSync(cached, { force: true });
+                throw new Error('DOCX 转 PDF 预览失败');
+              }
+            }
+            previewFile = cached;
+          }
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(name.replace(/\.docx$/i, '.pdf'))}`);
+          res.setHeader('Cache-Control', 'private, max-age=60');
+          res.end(readFileSync(previewFile));
+        } catch (error) {
+          json(res, 500, { ok: false, error: `预览生成失败：${error instanceof Error ? error.message : String(error)}` });
+        }
         return;
       }
 

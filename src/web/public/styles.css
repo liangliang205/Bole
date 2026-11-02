@@ -293,8 +293,10 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 
 /* 导出文件卡片（对话内附件） */
 .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin: 8px 0 2px; }
-.file-card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 10px 12px; text-decoration: none; color: var(--text); transition: border-color .15s, background .15s; }
-.file-card:hover { border-color: var(--accent); background: var(--surface-2); }
+.file-card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 10px 12px; text-decoration: none; color: var(--text); transition: border-color .15s, background .15s; cursor: pointer; }
+.file-card:hover, .file-card:focus-visible { border-color: var(--accent); background: var(--surface-2); outline: none; }
+.file-download { margin-left: auto; flex: none; color: var(--dim); text-decoration: none; font-size: 15px; line-height: 1; padding: 5px 4px; border-radius: 5px; }
+.file-download:hover { color: var(--text); background: var(--surface-3); }
 .file-icon { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; font-size: 15px; font-weight: 700; color: #fff; }
 .file-icon.word { background: #2b579a; }
 .file-icon.pdf { background: #c0392b; }
@@ -303,6 +305,21 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .file-desc { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-more { justify-self: start; margin-top: 6px; border: 0; background: transparent; color: var(--dim); font-size: 11px; cursor: pointer; padding: 2px 0; }
 .file-more:hover { color: var(--accent); }
+
+/* 文件预览 */
+.file-preview-card { width: min(1100px, 100%); max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
+.file-preview-heading { min-width: 0; }
+.file-preview-heading h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-preview-heading p { margin: 4px 0 0; font-size: 12px; }
+.file-preview-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.file-preview-body { position: relative; flex: 1; min-height: 60vh; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.file-preview-body iframe { display: block; width: 100%; height: 72vh; max-height: calc(92vh - 150px); border: 0; background: var(--surface); }
+.file-preview-loading { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; color: var(--muted); font-size: 13px; background: var(--surface-2); }
+@media (max-width: 760px) {
+  .file-preview-card { max-height: 96vh; }
+  .file-preview-body iframe { height: 70vh; max-height: calc(96vh - 150px); }
+  .file-preview-actions .btn { padding-inline: 8px; }
+}
 
 /* streaming */
 .stream-host { padding: 0 max(24px, calc((100% - var(--content-width)) / 2)); }
