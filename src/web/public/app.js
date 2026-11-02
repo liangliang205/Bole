@@ -37,7 +37,7 @@
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
-    providers: [], activeProviderId: null, activeModel: '', editingProvider: null, editorModels: [],
+    providers: [], activeProviderId: null, activeModel: '', activeModelId: '', editingProvider: null, editorModels: [],
   };
 
   function esc(value) {
@@ -584,7 +584,12 @@
     $('#reply-hint').textContent = replyHint;
     $('#reply-hint').classList.toggle('hidden', !replyHint);
     const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
-    if (!state.activeModel && activeProvider) state.activeModel = activeProvider.proModel || activeProvider.flashModel || '';
+    if (!state.activeModel && activeProvider) {
+      const modelId = activeProvider.proModel || activeProvider.flashModel || '';
+      const model = activeProvider.models?.find((item) => item.id === modelId);
+      state.activeModelId = modelId;
+      state.activeModel = model?.name?.trim() || modelId;
+    }
     renderReplyModel();
     $('#reply-send').classList.toggle('is-sending', state.sending);
     $('#reply-send').setAttribute('aria-busy', state.sending ? 'true' : 'false');
@@ -1499,7 +1504,10 @@
 
   function refreshActiveModel() {
     const provider = state.providers.find((item) => item.id === state.activeProviderId);
-    state.activeModel = provider?.proModel || provider?.flashModel || '';
+    const modelId = provider?.proModel || provider?.flashModel || '';
+    const model = provider?.models?.find((item) => item.id === modelId);
+    state.activeModelId = modelId;
+    state.activeModel = model?.name?.trim() || modelId;
     renderReplyModel();
   }
 
@@ -1508,7 +1516,9 @@
     if (!el) return;
     const model = state.activeModel || '未选择模型';
     el.textContent = model;
-    el.title = `当前模型：${model}`;
+    el.title = state.activeModelId && state.activeModelId !== model
+      ? `当前模型：${model}（${state.activeModelId}）`
+      : `当前模型：${model}`;
   }
 
   function syncProviders(data) {
