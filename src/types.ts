@@ -196,6 +196,14 @@ export interface JobRow {
   updated_ts: string;
 }
 
+export interface ChatMessageRow {
+  id: string;
+  job_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_ts: string;
+}
+
 export interface ResumeRow {
   id: string;
   job_id: string;
@@ -299,6 +307,8 @@ export interface ChatRequest {
   model?: string;
   system: string;
   user: string;
+  /** 多轮对话；存在时 user 作为最后一条用户消息的兜底。 */
+  messages?: { role: 'user' | 'assistant'; content: string }[];
   /** 图片输入（仅 user 消息支持；当前用于 DeepSeek Vision OCR）。 */
   images?: ChatImage[];
   schemaName?: string;

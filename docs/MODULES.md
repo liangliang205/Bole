@@ -101,9 +101,15 @@
 - 可选 rerank（OpenAI 兼容 `/rerank`）、Top K、上下文预算和“自动检索”开关。
 - `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像师、相马官、谋士在调用模型前注入检索片段。
 
-## 15. 测试（`tests/*`）
+## 15. 完成后对话（`src/chat/service.ts`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、cost、stream-preview、key-store、provider-store。
+- 筛选完成后，`/api/run/:jobId/chat` 只调用主 Agent（coordinator/pro），不触发解析、评估、核查子 Agent。
+- `chat_messages` 追加式保存多轮消息；`buildJobChatContext` 把岗位、结论、转人工/失败明细组成稳定 system 前缀，历史消息追加在尾部，保证 DeepSeek prompt cache 可复用同一前缀。
+- 只允许筛选完成后的会话继续追问；运行中的会话拒绝聊天。HITL 输入与普通追问共用底部输入框。
+
+## 16. 测试（`tests/*`）
+
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、cost、stream-preview、key-store、provider-store。
 - `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商标失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
 - `fixtures/documents.ts`：生成 DOCX/PDF 测试文件。

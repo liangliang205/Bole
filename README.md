@@ -28,6 +28,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 续跑：从批次检查点恢复未完成任务，不重新上传。
 - 暂停：运行中点击右上角「⏸ 暂停」，在当前批次/阶段边界安全退出并保留已提交结果；状态变为「已暂停」后可「▶ 续跑」。
 - 会话管理：右键会话或点「⋯」打开 DSH 风格菜单；支持置顶、重命名、归档/取消归档、复制会话 ID、删除（删除不可恢复）。「归档」按钮可切换查看归档会话。
+- 完成后对话：筛选完成后可以继续追问伯乐；只调用主 Agent，复用同一岗位的稳定前缀与历史，不重新运行筛选项。
 
 ## 流水线
 
@@ -108,6 +109,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | GET | `/api/run/:jobId/cost` | 成本与缓存 |
 | GET | `/api/run/:jobId/report` | 报告 JSON（仅对话内汇总/后续 MCP 使用，不提供下载） |
 | POST | `/api/run/:jobId/pause` | 请求在批次/阶段边界暂停 |
+| GET/POST | `/api/run/:jobId/chat` | 读取 / 追加筛选完成后的主 Agent 对话 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |
 | GET | `/api/agents` / `/api/doctor` | 注册表 / 自检 |
 | POST | `/api/reset` | `{confirm:"RESET"}` |
@@ -162,7 +164,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **75 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **76 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 

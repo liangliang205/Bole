@@ -31,6 +31,7 @@
   const state = {
     jobId: '', jobs: [], run: null, snapshot: null, report: null, config: null,
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
+    chat: [], chatPending: false,
     showArchived: false, menuJobId: '',
     knowledgeBases: [], knowledgeSettings: null, selectedKnowledgeBaseId: '', knowledgeDocs: [],
     attachments: [], uploadSeq: 0,
@@ -232,7 +233,7 @@
 
   function showNewView() {
     disconnectStream();
-    Object.assign(state, { jobId: '', run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '', attachments: [] });
+    Object.assign(state, { jobId: '', run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '', attachments: [], chat: [], chatPending: false });
     state.seen.clear();
     state.streams.clear();
     renderAttachments();
@@ -265,6 +266,7 @@
     Object.assign(state, {
       jobId, run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '',
       candidates: [], candidatesLoaded: false, cost: null, drawerCandidate: null,
+      chat: [], chatPending: false,
     });
     state.seen.clear();
     state.streams.clear();
@@ -294,12 +296,24 @@
         await loadReport();
         if (state.run.status === 'completed') await loadCandidates();
       }
+      if (state.run.status === 'completed') await loadChat();
+      else state.chat = [];
       renderAll();
       if (state.run.status === 'running' || state.run.status === 'pausing') connectStream();
       else disconnectStream();
     } catch (error) {
       toast(`读取会话失败：${error.message}`, 'error');
       setStatus('failed');
+    }
+  }
+
+  async function loadChat() {
+    if (!state.jobId) return;
+    try {
+      const data = await api(`/api/run/${encodeURIComponent(state.jobId)}/chat`);
+      state.chat = data.messages || [];
+    } catch {
+      state.chat = [];
     }
   }
 
@@ -314,12 +328,18 @@
     $('#pause-btn').disabled = run.status === 'pausing';
     $('#resume-btn').classList.toggle('hidden', active);
     $('#resume-btn').disabled = active;
-    $('#reply-send').disabled = !run.pendingHitl || state.sending;
+    const canChat = run.status === 'completed';
+    $('#reply-send').disabled = state.sending || (!run.pendingHitl && !canChat);
     $('#reply-hint').textContent = run.pendingHitl
       ? '请回答上方 HITL 问题（可直接输入自定义回答）'
       : run.status === 'pausing' ? '正在当前批次结束时暂停…'
       : run.status === 'paused' ? '已暂停；点击顶部「续跑」从检查点继续'
-      : run.status === 'running' ? '伯乐正在执行流水线…' : '当前没有待回答的问题';
+      : run.status === 'running' ? '伯乐正在执行流水线…'
+      : run.status === 'completed' ? '筛选完成，可以继续追问伯乐；只调用主 Agent，并复用本轮上下文缓存'
+      : '当前没有待回答的问题';
+    $('#reply-input').placeholder = run.pendingHitl
+      ? '回答 HITL 问题，或点击上方选项…'
+      : canChat ? '继续追问伯乐，例如：为什么 R08 不推荐？' : '筛选完成后可继续和伯乐对话…';
     renderChat();
     renderHitl(run.pendingHitl);
     if (run.status !== 'running') state.streams.clear();
@@ -539,6 +559,17 @@
     flushTools();
     if (state.report) parts.push(finalReportHtml());
     else if (state.run?.status === 'completed') parts.push(messageHtml('assistant', '伯乐', '', `<div class="msg-text">运行完成，正在读取报告…</div>`));
+    for (const message of state.chat) {
+      parts.push(messageHtml(
+        message.role === 'user' ? 'user' : 'assistant',
+        message.role === 'user' ? 'HR' : '伯乐',
+        fmtTime(message.created_ts),
+        `<div class="msg-text chat-text">${esc(message.content)}</div>`,
+      ));
+    }
+    if (state.sending && state.run?.status === 'completed' && !state.run?.pendingHitl) {
+      parts.push(messageHtml('assistant', '伯乐', '', '<div class="msg-text muted">正在思考…</div>'));
+    }
     const scroll = $('#chat-scroll');
     scroll.innerHTML = parts.join('');
     scroll.scrollTop = scroll.scrollHeight;
@@ -666,12 +697,43 @@
     }
   }
 
-  async function sendReply() {
-    if (!state.run?.pendingHitl) { toast('当前没有待回答的问题', 'error'); return; }
+  async function sendChat() {
+    if (!state.jobId || state.run?.status !== 'completed') return;
     const value = $('#reply-input').value.trim();
-    if (!value) { toast('请输入回答', 'error'); return; }
+    if (!value) { toast('请输入内容', 'error'); return; }
     $('#reply-input').value = '';
-    await submitHitl(value);
+    state.sending = true;
+    state.chat.push({ id: `local_${Date.now()}`, role: 'user', content: value, created_ts: new Date().toISOString() });
+    renderAll();
+    try {
+      const data = await api(`/api/run/${encodeURIComponent(state.jobId)}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message: value }),
+      });
+      state.chat = data.messages || state.chat;
+    } catch (error) {
+      await loadChat();
+      $('#reply-input').value = value;
+      toast(`对话失败：${error.message}`, 'error');
+    } finally {
+      state.sending = false;
+      renderAll();
+    }
+  }
+
+  async function sendReply() {
+    if (state.run?.pendingHitl) {
+      const value = $('#reply-input').value.trim();
+      if (!value) { toast('请输入回答', 'error'); return; }
+      $('#reply-input').value = '';
+      await submitHitl(value);
+      return;
+    }
+    if (state.run?.status === 'completed') {
+      await sendChat();
+      return;
+    }
+    toast('当前没有待回答的问题；筛选完成后可以继续和伯乐对话', 'error');
   }
 
   // ---------------------------------------------------------------- uploads / new run

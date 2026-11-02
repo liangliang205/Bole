@@ -8,6 +8,7 @@ import {
   combineStopReasons,
 } from './state.ts';
 import type {
+  ChatMessageRow,
   DecisionRow,
   EvalResult,
   EvidenceRow,
@@ -168,12 +169,33 @@ export class Ledger {
     return Boolean(this.getJob(jobId));
   }
 
+  appendChat(jobId: string, role: 'user' | 'assistant', content: string): ChatMessageRow {
+    const row: ChatMessageRow = {
+      id: newId('chat'),
+      job_id: jobId,
+      role,
+      content,
+      created_ts: nowIso(),
+    };
+    this.run('INSERT INTO chat_messages (id,job_id,role,content,created_ts) VALUES (?,?,?,?,?)',
+      row.id, row.job_id, row.role, row.content, row.created_ts);
+    return row;
+  }
+
+  listChat(jobId: string, limit = 100): ChatMessageRow[] {
+    return this.all<ChatMessageRow>(
+      'SELECT * FROM chat_messages WHERE job_id=? ORDER BY created_ts ASC, rowid ASC LIMIT ?',
+      jobId,
+      limit,
+    );
+  }
+
   /** 删除会话的业务数据；events 是 append-only 审计流，保留不删。 */
   deleteJob(jobId: string): boolean {
     if (!this.getJob(jobId)) return false;
     this.db.exec('BEGIN');
     try {
-      for (const table of ['usage', 'decisions', 'evidence', 'review_tasks', 'eval_tasks', 'parse_tasks', 'resumes']) {
+      for (const table of ['chat_messages', 'usage', 'decisions', 'evidence', 'review_tasks', 'eval_tasks', 'parse_tasks', 'resumes']) {
         this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
       }
       this.run('DELETE FROM jobs WHERE id=?', jobId);

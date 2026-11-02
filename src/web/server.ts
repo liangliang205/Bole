@@ -24,6 +24,10 @@ import {
 } from './data.ts';
 import { getAgents, getDoctor, resetAll } from './ops.ts';
 import { KnowledgeService, type KnowledgeSettings } from '../knowledge/service.ts';
+import { DeepSeekProvider } from '../llm/deepseek.ts';
+import { LlmRouter } from '../llm/router.ts';
+import { Ledger } from '../core/ledger.ts';
+import { chatWithJob } from '../chat/service.ts';
 
 type RunStatus = 'running' | 'pausing' | 'paused' | 'completed' | 'failed' | 'idle';
 
@@ -873,6 +877,72 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       if (method === 'GET' && costMatch) {
         const jobId = decodeURIComponent(costMatch[1]);
         json(res, 200, { ok: true, ...getCost(jobId) });
+        return;
+      }
+
+      const chatMatch = /^\/api\/run\/([^/]+)\/chat$/.exec(pathname);
+      if (chatMatch && (method === 'GET' || method === 'POST')) {
+        const jobId = decodeURIComponent(chatMatch[1]);
+        const job = getJob(jobId);
+        if (!job) {
+          json(res, 404, { ok: false, error: `任务不存在: ${jobId}` });
+          return;
+        }
+        const runtime = runs.get(jobId);
+        if (runtime?.status === 'running' || runtime?.status === 'pausing') {
+          json(res, 409, { ok: false, error: '筛选仍在运行，完成后才能继续对话' });
+          return;
+        }
+        const runStatus = runtime?.status ?? inferStatus(job.status);
+        if (runStatus !== 'completed') {
+          json(res, 409, { ok: false, error: '筛选尚未完成，完成后才能继续和伯乐对话' });
+          return;
+        }
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          if (method === 'GET') {
+            json(res, 200, { ok: true, messages: ledger.listChat(jobId, 100) });
+            return;
+          }
+          const body = await readJsonBody(req);
+          const message = String(body.message ?? '').trim();
+          if (!message) {
+            json(res, 400, { ok: false, error: '消息不能为空' });
+            return;
+          }
+          const active = await providers.getActive();
+          if (!active?.apiKey) {
+            json(res, 400, { ok: false, error: '尚未配置可用的模型提供商' });
+            return;
+          }
+          const config = loadPipelineConfig();
+          const provider = new DeepSeekProvider({
+            apiKey: active.apiKey,
+            baseUrl: active.baseUrl,
+            protocol: active.api,
+            deepseekStyle: active.builtin,
+            name: active.name,
+          });
+          const llm = new LlmRouter({
+            provider,
+            pricing: config.pricing,
+            models: { flash: active.flashModel, pro: active.proModel },
+            ledger,
+            jobId,
+          });
+          const result = await chatWithJob({
+            job,
+            report: readReport(jobId) as Parameters<typeof chatWithJob>[0]['report'],
+            ledger,
+            llm,
+            message,
+          });
+          json(res, 200, { ok: true, answer: result.answer, messages: result.messages });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        } finally {
+          ledger.close();
+        }
         return;
       }
 

@@ -161,6 +161,15 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_job ON decisions(job_id);
 
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_job ON chat_messages(job_id, created_ts);
+
 CREATE TABLE IF NOT EXISTS usage (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL,

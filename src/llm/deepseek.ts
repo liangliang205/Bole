@@ -162,6 +162,7 @@ export class DeepSeekProvider implements LlmProvider {
   private buildRequest(req: ChatRequest, model: string, streaming: boolean): RequestSpec {
     const thinking = this.deepseekStyle && req.tier === 'pro';
     const qwen = /^qwen|^antdigital\//i.test(model) || /maas\.aliyuncs\.com|dashscope/i.test(this.baseUrl);
+    const history = req.messages?.length ? req.messages : null;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.protocol === 'anthropic-messages') {
       headers['x-api-key'] = this.apiKey;
@@ -171,21 +172,23 @@ export class DeepSeekProvider implements LlmProvider {
     }
 
     if (this.protocol === 'openai-responses') {
-      const input = req.images?.length
-        ? [
-            {
-              role: 'user',
-              content: [
-                { type: 'input_text', text: req.user },
-                ...req.images.map((image) => ({
-                  type: 'input_image',
-                  image_url: imageData(image),
-                  detail: image.detail ?? 'high',
-                })),
-              ],
-            },
-          ]
-        : req.user;
+      const input = history
+        ? history.map((message) => ({ role: message.role, content: message.content }))
+        : req.images?.length
+          ? [
+              {
+                role: 'user',
+                content: [
+                  { type: 'input_text', text: req.user },
+                  ...req.images.map((image) => ({
+                    type: 'input_image',
+                    image_url: imageData(image),
+                    detail: image.detail ?? 'high',
+                  })),
+                ],
+              },
+            ]
+          : req.user;
       return {
         url: this.endpoint(),
         headers,
@@ -220,7 +223,9 @@ export class DeepSeekProvider implements LlmProvider {
           model,
           max_tokens: req.maxTokens ?? 4096,
           system: req.system,
-          messages: [{ role: 'user', content }],
+          messages: history
+            ? history.map((message) => ({ role: message.role, content: message.content }))
+            : [{ role: 'user', content }],
           ...(this.deepseekStyle ? { thinking: thinking ? { type: 'enabled' } : { type: 'disabled' } } : {}),
           ...(this.deepseekStyle && thinking ? { output_config: { effort: 'high' } } : {}),
           ...(thinking ? {} : { temperature: req.temperature ?? 0 }),
@@ -245,7 +250,9 @@ export class DeepSeekProvider implements LlmProvider {
         model,
         messages: [
           { role: 'system', content: req.system },
-          { role: 'user', content },
+          ...(history
+            ? history.map((message) => ({ role: message.role, content: message.content }))
+            : [{ role: 'user', content }]),
         ],
         ...(this.deepseekStyle
           ? {

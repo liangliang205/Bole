@@ -39,6 +39,7 @@ pnpm web
 4. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
 5. 完成后在对话中查看 Top 推荐与合规摘要；点「查看证据链」或右侧「任务面板」查看候选人证据链、合规与成本。不提供 Markdown/JSON 下载。
 6. 中断后可点「续跑」从批次检查点恢复；不会重复上传。
+7. 筛选完成后底部输入框可继续追问伯乐；只调用主 Agent，多轮消息保存在任务内并复用稳定上下文前缀。
 
 ## 4. CLI
 
@@ -92,7 +93,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 75 个测试
+pnpm test:all          # 76 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 
