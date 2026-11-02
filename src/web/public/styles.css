@@ -325,7 +325,6 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
   --dsh-selector: rgb(240, 240, 242);
   --dsh-hover: rgb(245, 246, 247);
   --dsh-blue: rgb(65, 118, 230);
-  --dsh-blue-hover: rgb(122, 170, 255);
   display: flex; flex-direction: column; align-items: center;
   padding: 0 16px 4px;
 }
@@ -338,7 +337,6 @@ html[data-theme="dark"] .dsh-composer {
   --dsh-selector: rgb(58, 58, 60);
   --dsh-hover: rgb(61, 61, 64);
   --dsh-blue: rgb(122, 170, 255);
-  --dsh-blue-hover: rgb(183, 200, 254);
 }
 .dsh-composer-notice {
   width: 100%; max-width: min(calc(100% - 32px), 952px); margin-bottom: 6px;
@@ -384,10 +382,10 @@ html[data-theme="dark"] .dsh-composer {
 }
 .dsh-composer-primary {
   display: grid; place-items: center; flex: none; width: 34px; height: 34px;
-  border: 0; border-radius: 50%; background: var(--dsh-blue); color: #fff;
+  border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-contrast);
   cursor: pointer; transition: background-color 100ms ease; transform: translateY(-2px);
 }
-.dsh-composer-primary:hover:not(:disabled) { background: var(--dsh-blue-hover); }
+.dsh-composer-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .dsh-composer-primary:disabled { opacity: .4; cursor: default; }
 .dsh-composer-primary.is-sending svg { animation: dsh-composer-spin 800ms linear infinite; }
 @keyframes dsh-composer-spin { to { transform: rotate(360deg); } }
