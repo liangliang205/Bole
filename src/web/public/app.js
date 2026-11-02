@@ -425,13 +425,9 @@
     $('#resume-btn').disabled = active;
     const canChat = run.status === 'completed';
     $('#reply-send').disabled = state.sending || (!run.pendingHitl && !canChat);
-    $('#reply-hint').textContent = run.pendingHitl
-      ? '请回答上方 HITL 问题（可直接输入自定义回答）'
-      : run.status === 'pausing' ? '正在当前批次结束时暂停…'
-      : run.status === 'paused' ? '已暂停；点击顶部「续跑」从检查点继续'
-      : run.status === 'running' ? '伯乐正在执行流水线…'
-      : run.status === 'completed' ? '筛选完成，可以继续追问伯乐；只调用主 Agent，并复用本轮上下文缓存'
-      : '当前没有待回答的问题';
+    const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
+    $('#reply-hint').textContent = replyHint;
+    $('#reply-hint').classList.toggle('hidden', !replyHint);
     $('#reply-input').placeholder = run.pendingHitl
       ? '回答 HITL 问题，或点击上方选项…'
       : canChat ? '继续追问伯乐，例如：为什么 R08 不推荐？' : '筛选完成后可继续和伯乐对话…';
