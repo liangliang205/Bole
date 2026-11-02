@@ -15,7 +15,7 @@ import type {
 } from '../types.ts';
 import type { RatingThresholds } from '../tools/scorecard.ts';
 import type { AgentDeps } from './deps.ts';
-import { runProfiler } from './profiler.ts';
+import { runProfiler, buildProfileSearchQuery } from './profiler.ts';
 import { runFetcher } from './fetcher.ts';
 import { ParserWorker } from './parser.ts';
 import { AssessorWorker, type AssessorContext } from './assessor.ts';
@@ -141,6 +141,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   checkpoint();
   const jd: Jd = analysis.jd;
   const scorecard: Scorecard = analysis.scorecard;
+  const knowledgeQuery = buildProfileSearchQuery(analysis);
 
   if (!opts.resumeOnly) {
     const files = opts.uploadFiles ?? [];
@@ -187,6 +188,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     jd,
     scorecard,
     thresholds: deps.config.conclusionScale as unknown as RatingThresholds,
+    knowledgeQuery,
   };
 
   interface ScreenedCandidate {
@@ -494,6 +496,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       parsed,
       evaluation: evaluation.evaluation,
       jd,
+      knowledgeQuery,
     });
     interviewPlans.set(candidate.resumeId, plan);
   }

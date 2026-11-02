@@ -5,9 +5,24 @@ import type { AgentDeps } from './deps.ts';
 import type { HitlResponder } from './hitl.ts';
 import { callAgentJson } from './structured-call.ts';
 import { sharedPrefix, systemPrompt, taskBook } from './prompts.ts';
-import { formatKnowledgeReferences } from '../knowledge/service.ts';
 import { writeJson } from '../util/fsx.ts';
 import path from 'node:path';
+
+/** 画像检索词：用已确认的 JD + 评分卡去知识库检索，而不是把知识库内容整段注入。 */
+export function buildProfileSearchQuery(analysis: Pick<JdAnalysis, 'jd' | 'scorecard'>): string {
+  const dimensions = analysis.scorecard.dimensions.map((dimension) => {
+    const anchors = Object.values(dimension.anchors ?? {}).filter(Boolean).join(' ');
+    return `${dimension.name} ${anchors}`.trim();
+  });
+  return [
+    `岗位：${analysis.jd.title}`,
+    analysis.jd.teamContext,
+    ...analysis.jd.responsibilities,
+    ...analysis.jd.hardRequirements,
+    ...analysis.jd.niceToHave,
+    ...dimensions,
+  ].filter((value) => String(value ?? '').trim()).join('\n');
+}
 
 export interface ProfilerInput {
   jobId: string;
@@ -54,19 +69,9 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
   deps.events.emit(deps.jobId, 'profiler', 'profiler.started', {
     requirementsChars: input.requirements.length,
   });
-  const hits = await deps.knowledge.recall(input.requirements, 3);
-  const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
-  if (hits.length > 0) {
-    deps.events.emit(deps.jobId, 'profiler', 'knowledge.recalled', {
-      agent: 'profiler',
-      bases: [...new Set(hits.map((hit) => hit.baseName))],
-      hits: hits.map((hit) => `${hit.title}${hit.heading ? ` / ${hit.heading}` : ''}`),
-    });
-  }
   const user = taskBook({
     task: '把 HR 的自然语言招聘需求结构化为 JD、岗位画像与评分卡，并生成疑点反问清单',
     inputs: { job_id: input.jobId },
-    references,
     schemaName: 'jd_analysis',
     completion: '3-6 个评分维度权重合计 100；疑点必须可被 HR 用选项回答；受保护属性条件不得进入评分卡',
   });
@@ -77,7 +82,7 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
     schema: jdAnalysisSchema,
     system: systemPrompt(deps, 'profiler'),
     user: `${user}\n\n【HR 原始需求】\n${input.requirements}`,
-    sharedPrefix: sharedPrefix(deps, 'profiler', [`【检索到的历史 JD/评分卡参考】\n${references.join('\n')}`]),
+    sharedPrefix: sharedPrefix(deps, 'profiler'),
     stream: deps.stream,
     phase: 'jd_analysis',
     meta: { requirements: input.requirements },
@@ -153,7 +158,6 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
   await writeJson(artifact, {
     jobId: deps.jobId,
     analysis,
-    references,
     attempts: result.attempts,
     model: result.chat.model,
     usage: result.chat.usage,

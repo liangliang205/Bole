@@ -190,7 +190,7 @@ test('接入失败不阻塞批次：.doc 旧格式进入 failed 明细', async (
   }
 });
 
-test('启用知识库后画像/评估自动召回（默认未启用不召回）', async () => {
+test('启用知识库后按岗位画像检索（画像前不注入，默认未启用不召回）', async () => {
   const env = await setupTempEnv();
   const uploadDir = path.join(env.dir, 'uploads');
   await mkdir(uploadDir, { recursive: true });
@@ -218,8 +218,17 @@ test('启用知识库后画像/评估自动召回（默认未启用不召回）'
     });
     assert.equal(summary.status, 'final');
     const events = boot.deps.ledger.listEvents({ jobId: boot.job.id, limit: 2000 });
-    assert.ok(events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'profiler'));
-    assert.ok(events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'assessor'));
+    assert.equal(
+      events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'profiler'),
+      false,
+      '画像生成前不应把知识库内容直接注入',
+    );
+    const assessed = events.find((event) => event.type === 'knowledge.recalled' && event.actor === 'assessor');
+    assert.ok(assessed, '评估阶段应使用岗位画像检索知识库');
+    const assessedPayload = JSON.parse(assessed.payload_json) as Record<string, unknown>;
+    assert.match(String(assessedPayload.query ?? ''), /Java|后端/);
+    assert.ok(Array.isArray(assessedPayload.hits));
+    assert.ok(events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'advisor'));
   } finally {
     boot.close();
     await env.restore();

@@ -12,6 +12,8 @@ export interface AdvisorInput {
   parsed: ParseResult;
   evaluation: EvalResult;
   jd: Jd;
+  /** 由岗位画像生成的检索词；优先于临时拼接。 */
+  knowledgeQuery?: string;
 }
 
 function fallbackPlan(resume: ResumeRow, evaluation: EvalResult): InterviewPlan {
@@ -36,7 +38,8 @@ function fallbackPlan(resume: ResumeRow, evaluation: EvalResult): InterviewPlan 
 /** 谋士：为核查通过的候选人生成面试问题、风险与用人建议。失败时降级为确定性模板，不阻塞报告。 */
 export async function runAdvisor(deps: AgentDeps, input: AdvisorInput): Promise<InterviewPlan> {
   const { resume, parsed, evaluation, jd } = input;
-  const ragQuery = `${jd.title} 面试 追问 验证 ${evaluation.dimensions.map((d) => d.name).join(' ')}`;
+  const ragQuery = input.knowledgeQuery?.trim()
+    || `${jd.title} 面试 追问 验证 ${evaluation.dimensions.map((d) => d.name).join(' ')}`;
   const hits = await deps.knowledge.recall(ragQuery, 3);
   const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
   if (hits.length > 0) {
@@ -44,6 +47,7 @@ export async function runAdvisor(deps: AgentDeps, input: AdvisorInput): Promise<
       agent: 'advisor',
       resumeId: resume.id,
       label: resume.label,
+      query: ragQuery,
       bases: [...new Set(hits.map((hit) => hit.baseName))],
       hits: hits.map((hit) => `${hit.title}${hit.heading ? ` / ${hit.heading}` : ''}`),
     });

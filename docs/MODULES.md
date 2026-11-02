@@ -100,7 +100,7 @@
 - `knowledge_bases`、`knowledge_documents`、`knowledge_chunks`、`knowledge_settings` 四张表；文档用 `normalizeDocument` 归一化，按 Markdown 标题/自然段分块并保留重叠。
 - 支持 Ollama 或 OpenAI 兼容 embedding；向量随分块存 SQLite。未配置 embedding 时退化为中英混合 token 关键词检索。
 - 可选 rerank（OpenAI 兼容 `/rerank`）、Top K、上下文预算和“自动检索”开关。
-- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像师、相马官、谋士在调用模型前注入检索片段。
+- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像完成后用 `buildProfileSearchQuery()` 生成检索词，相马官、谋士按该画像查询并只注入 Top K 命中片段，画像生成前不注入知识库内容。
 - 管理台按知识库返回统计（来源/解析/分块/Token/字符/向量化/维度），文档列表展示类型、状态与更新时间。
 
 ## 15. 完成后对话（`src/chat/service.ts`）

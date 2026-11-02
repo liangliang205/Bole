@@ -22,6 +22,8 @@ export interface AssessorContext {
   jd: Jd;
   scorecard: Scorecard;
   thresholds?: RatingThresholds;
+  /** 由画像生成的检索词；有值时只用画像检索，不拼接候选人字段。 */
+  knowledgeQuery?: string;
 }
 
 export interface AssessInput {
@@ -76,11 +78,10 @@ export class AssessorWorker {
       deps.ledger.setResumeStatus(resume.id, 'evaluating');
     }
 
-    const ragQuery = [
+    const ragQuery = this.ctx.knowledgeQuery?.trim() || [
       this.ctx.jd.title,
       ...this.ctx.jd.hardRequirements,
       ...this.ctx.jd.niceToHave,
-      parsed.fields.skills?.value ?? '',
     ].join(' ');
     const hits = await deps.knowledge.recall(ragQuery, 4);
     const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
@@ -89,6 +90,7 @@ export class AssessorWorker {
         agent: 'assessor',
         resumeId: resume.id,
         label: resume.label,
+        query: ragQuery,
         bases: [...new Set(hits.map((hit) => hit.baseName))],
         hits: hits.map((hit) => `${hit.title}${hit.heading ? ` / ${hit.heading}` : ''}`),
       });
