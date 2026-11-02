@@ -294,7 +294,7 @@
         applyContentWidth(current + (event.key === 'ArrowRight' ? 24 : -24));
       });
     };
-    bindHandle('#content-resizer-right', 'right');
+    bindHandle('#content-resizer', 'right');
     bindHandle('#content-resizer-left', 'left');
   }
 
