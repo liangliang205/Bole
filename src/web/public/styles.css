@@ -428,9 +428,10 @@ html[data-theme="dark"] .dsh-composer {
 .dsh-composer-trailing { display: flex; align-items: center; height: 34px; flex: none; margin-left: auto; gap: 10px; }
 .dsh-composer-add {
   display: grid; place-items: center; width: 28px; height: 28px; flex: none;
-  border: 0; border-radius: 50%; background: var(--dsh-selector);
-  color: var(--dsh-label); font-size: 20px; line-height: 1; cursor: pointer;
+  padding: 0; border: 0; border-radius: 50%; background: var(--dsh-selector);
+  color: var(--dsh-label); line-height: 0; cursor: pointer;
 }
+.dsh-composer-add svg { display: block; }
 .dsh-composer-add:hover { background: var(--dsh-hover); }
 .dsh-composer-add:disabled { opacity: .45; cursor: default; }
 .dsh-composer-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 12px 0; }
