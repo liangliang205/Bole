@@ -1476,12 +1476,15 @@
       state.knowledgeSettings = data.settings;
       renderKnowledge();
       setKnowledgeStatus('#kb-settings-status', '设置已保存；分块设置只影响新上传文档', 'ok');
+      return true;
     } catch (error) {
       setKnowledgeStatus('#kb-settings-status', `保存失败：${error.message}`, 'error');
+      return false;
     }
   }
 
   async function testKnowledgeEmbedding() {
+    if (!(await saveKnowledgeSettings())) return;
     setKnowledgeStatus('#kb-settings-status', '正在测试嵌入连接…');
     try {
       const data = await api('/api/knowledge/test-embedding', { method: 'POST' });
@@ -1493,6 +1496,7 @@
   }
 
   async function loadEmbeddingModels() {
+    if (!(await saveKnowledgeSettings())) return;
     setKnowledgeStatus('#kb-settings-status', '正在获取模型列表…');
     try {
       const data = await api('/api/knowledge/embedding-models');
