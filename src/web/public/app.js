@@ -37,7 +37,7 @@
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
-    providers: [], activeProviderId: null, activeModel: '', activeModelId: '', editingProvider: null, editorModels: [],
+    providers: [], activeProviderId: null, activeModel: '', activeModelId: '', activeModelName: '', editingProvider: null, editorModels: [],
   };
 
   function esc(value) {
@@ -588,7 +588,8 @@
       const modelId = activeProvider.proModel || activeProvider.flashModel || '';
       const model = activeProvider.models?.find((item) => item.id === modelId);
       state.activeModelId = modelId;
-      state.activeModel = model?.name?.trim() || modelId;
+      state.activeModelName = model?.name?.trim() || modelId;
+      state.activeModel = activeProvider.name?.trim() || state.activeModelName;
     }
     renderReplyModel();
     $('#reply-send').classList.toggle('is-sending', state.sending);
@@ -1507,18 +1508,19 @@
     const modelId = provider?.proModel || provider?.flashModel || '';
     const model = provider?.models?.find((item) => item.id === modelId);
     state.activeModelId = modelId;
-    state.activeModel = model?.name?.trim() || modelId;
+    state.activeModelName = model?.name?.trim() || modelId;
+    // 输入区展示当前模型服务的名称（例如「千问」），而不是内部模型 ID。
+    state.activeModel = provider?.name?.trim() || state.activeModelName;
     renderReplyModel();
   }
 
   function renderReplyModel() {
     const el = $('#reply-model');
     if (!el) return;
-    const model = state.activeModel || '未选择模型';
-    el.textContent = model;
-    el.title = state.activeModelId && state.activeModelId !== model
-      ? `当前模型：${model}（${state.activeModelId}）`
-      : `当前模型：${model}`;
+    const label = state.activeModel || '未选择模型';
+    el.textContent = label;
+    const detail = [state.activeModelName, state.activeModelId].filter((value, index, values) => value && values.indexOf(value) === index).join(' · ');
+    el.title = detail ? `当前模型：${label} · ${detail}` : `当前模型：${label}`;
   }
 
   function syncProviders(data) {
