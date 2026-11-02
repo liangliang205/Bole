@@ -306,19 +306,43 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .file-more { justify-self: start; margin-top: 6px; border: 0; background: transparent; color: var(--dim); font-size: 11px; cursor: pointer; padding: 2px 0; }
 .file-more:hover { color: var(--accent); }
 
-/* 文件预览 */
-.file-preview-card { width: min(1100px, 100%); max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
+/* 文件预览：DSH 式右侧分栏，不遮挡对话 */
+.app.preview-open { grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr) var(--preview-width, 48vw); }
+.preview-pane {
+  position: relative; grid-column: 4; height: 100vh; min-width: 0;
+  display: flex; flex-direction: column; background: var(--surface);
+  border-left: 1px solid var(--line); overflow: hidden;
+}
+.preview-pane.hidden { display: none; }
+.preview-resizer {
+  position: absolute; z-index: 16; top: 0; bottom: 0; left: -4px; width: 8px;
+  cursor: col-resize; touch-action: none;
+}
+.preview-resizer::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 1px; height: 52px;
+  transform: translate(-50%, -50%); background: var(--line-strong); opacity: .35;
+}
+.preview-resizer:hover::after { opacity: .85; }
+body.is-resizing-preview, body.is-resizing-preview * { cursor: col-resize !important; user-select: none !important; }
+.preview-pane-head {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line-soft); background: var(--sidebar);
+}
 .file-preview-heading { min-width: 0; }
-.file-preview-heading h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-preview-heading p { margin: 4px 0 0; font-size: 12px; }
+.file-preview-heading h2 { margin: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-preview-heading p { margin: 3px 0 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-preview-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-.file-preview-body { position: relative; flex: 1; min-height: 60vh; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface-2); }
-.file-preview-body iframe { display: block; width: 100%; height: 72vh; max-height: calc(92vh - 150px); border: 0; background: var(--surface); }
+.file-preview-body { position: relative; flex: 1; min-height: 0; background: var(--surface-2); }
+.file-preview-pages { height: 100%; overflow: auto; padding: 16px; display: grid; gap: 12px; justify-items: center; align-content: start; }
+.file-preview-pages canvas { display: block; max-width: 100%; height: auto; background: #fff; box-shadow: var(--shadow-soft); border-radius: 2px; }
 .file-preview-loading { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; color: var(--muted); font-size: 13px; background: var(--surface-2); }
-@media (max-width: 760px) {
-  .file-preview-card { max-height: 96vh; }
-  .file-preview-body iframe { height: 70vh; max-height: calc(96vh - 150px); }
+.file-preview-error { color: var(--danger); font-size: 13px; text-align: center; padding: 32px; }
+@media (max-width: 900px) {
+  .app.preview-open { grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr); }
+  .preview-pane { position: fixed; inset: 0 0 0 auto; z-index: 65; width: min(94vw, 720px); height: 100vh; box-shadow: var(--shadow); }
+  .preview-resizer { display: none; }
   .file-preview-actions .btn { padding-inline: 8px; }
+  .file-preview-pages { padding: 8px; }
 }
 
 /* streaming */

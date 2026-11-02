@@ -21,6 +21,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
+- 文件预览：对话内生成的 DOCX/PDF 可点击卡片，在右侧分栏用 PDF.js 预览；DOCX 先经 LibreOffice Kit 转 PDF，支持拖拽调宽和原文件下载。
 - HITL：JD 有歧义、预算/地点冲突、证据不足、核查打回时，在对话内选择推荐项或输入自定义回答。
 - 证据审计：每位候选人的解析字段、评估维度、逐条核查 verdict、原文 span 与区间。
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
@@ -112,7 +113,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | GET | `/api/run/:jobId/cost` | 成本与缓存 |
 | GET | `/api/run/:jobId/report` | 报告 JSON（仅对话内汇总/后续 MCP 使用，不提供下载） |
 | GET | `/api/run/:jobId/files/:name` | 下载对话内生成的 DOCX/PDF |
-| GET | `/api/run/:jobId/files/:name/preview` | DOCX（转为 PDF 后）或 PDF 的内联预览 |
+| GET | `/api/run/:jobId/files/:name/preview` | DOCX（转为 PDF 后）或 PDF 的内联预览；前端用 PDF.js 在右侧分栏渲染 |
 | POST | `/api/run/:jobId/pause` | 请求在批次/阶段边界暂停 |
 | GET/POST | `/api/run/:jobId/chat` | 读取 / 追加筛选完成后的主 Agent 对话 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |

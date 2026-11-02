@@ -163,6 +163,11 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
 };
+const PDFJS_DIR = path.join(import.meta.dirname, '..', '..', 'node_modules', 'pdfjs-dist', 'build');
+const PDFJS_FILES: Record<string, string> = {
+  '/vendor/pdfjs/pdf.min.mjs': 'pdf.min.mjs',
+  '/vendor/pdfjs/pdf.worker.min.mjs': 'pdf.worker.min.mjs',
+};
 
 export async function startWebServer(options: WebServerOptions = {}): Promise<void> {
   const host = options.host ?? '127.0.0.1';
@@ -338,6 +343,17 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       const url = new URL(req.url, `http://${req.headers.host ?? `${host}:${port}`}`);
       const pathname = url.pathname;
       const method = req.method ?? 'GET';
+
+      const pdfjsFile = PDFJS_FILES[pathname];
+      if (method === 'GET' && pdfjsFile) {
+        const full = path.join(PDFJS_DIR, pdfjsFile);
+        if (!existsSync(full)) {
+          text(res, 500, `缺少 PDF.js 资源：${pdfjsFile}`);
+          return;
+        }
+        text(res, 200, readFileSync(full, 'utf8'), 'text/javascript; charset=utf-8');
+        return;
+      }
 
       const staticFile = STATIC_FILES[pathname];
       if (method === 'GET' && staticFile) {

@@ -795,25 +795,122 @@
     return `<div class="file-grid">${visible}</div>${more}`;
   }
 
+  let pdfjsPromise = null;
+  let previewRenderVersion = 0;
+
+  function loadPdfjs() {
+    if (!pdfjsPromise) {
+      pdfjsPromise = import('/vendor/pdfjs/pdf.min.mjs').then((module) => {
+        module.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+        return module;
+      });
+    }
+    return pdfjsPromise;
+  }
+
+  async function renderPdfPreview(url, version) {
+    const pages = $('#file-preview-pages');
+    pages.replaceChildren();
+    const loading = $('#file-preview-loading');
+    loading.textContent = '正在生成预览…';
+    loading.classList.remove('hidden');
+    try {
+      const pdfjs = await loadPdfjs();
+      const pdf = await pdfjs.getDocument({ url }).promise;
+      if (version !== previewRenderVersion) return;
+      const width = Math.max(320, pages.clientWidth - 32);
+      for (let number = 1; number <= pdf.numPages; number += 1) {
+        if (version !== previewRenderVersion) return;
+        const page = await pdf.getPage(number);
+        const base = page.getViewport({ scale: 1 });
+        const ratio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        const scale = Math.min(2.2, width / base.width);
+        const viewport = page.getViewport({ scale: scale * ratio });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = '100%';
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('浏览器无法创建画布');
+        await page.render({ canvasContext: context, viewport }).promise;
+        if (version !== previewRenderVersion) return;
+        pages.appendChild(canvas);
+        loading.classList.add('hidden');
+      }
+    } catch (error) {
+      if (version !== previewRenderVersion) return;
+      loading.classList.add('hidden');
+      const message = document.createElement('div');
+      message.className = 'file-preview-error';
+      message.textContent = `预览失败：${error.message || String(error)}。可点击右上角下载原文件。`;
+      pages.replaceChildren(message);
+    }
+  }
+
   function openFilePreview(name) {
     if (!state.jobId) return;
-    const modal = $('#file-preview-modal');
-    const frame = $('#file-preview-frame');
+    closeDrawer();
+    const pane = $('#preview-pane');
     const href = `/api/run/${encodeURIComponent(state.jobId)}/files/${encodeURIComponent(name)}`;
     $('#file-preview-title').textContent = name;
     $('#file-preview-sub').textContent = /\.pdf$/i.test(name)
       ? 'PDF 预览'
       : 'DOCX 已转换为 PDF 预览；版式可能与应用软件略有差异';
     $('#file-preview-download').setAttribute('href', href);
-    $('#file-preview-loading').classList.remove('hidden');
-    frame.src = `${href}/preview?t=${Date.now()}`;
-    modal.classList.remove('hidden');
+    pane.classList.remove('hidden');
+    $('#app').classList.add('preview-open');
+    previewRenderVersion += 1;
+    renderPdfPreview(`${href}/preview?t=${Date.now()}`, previewRenderVersion);
   }
 
   function closeFilePreview() {
-    $('#file-preview-modal').classList.add('hidden');
-    $('#file-preview-frame').src = 'about:blank';
+    previewRenderVersion += 1;
+    $('#preview-pane').classList.add('hidden');
+    $('#app').classList.remove('preview-open');
+    $('#file-preview-pages').replaceChildren();
     $('#file-preview-loading').classList.add('hidden');
+  }
+
+  const PREVIEW_WIDTH_KEY = 'bole.previewWidth';
+  function previewBounds() {
+    return { min: 360, max: Math.max(420, Math.min(window.innerWidth * .75, 1100)) };
+  }
+  function applyPreviewWidth(width) {
+    const { min, max } = previewBounds();
+    const next = Math.max(min, Math.min(max, Math.round(width || window.innerWidth * .48)));
+    $('#app').style.setProperty('--preview-width', `${next}px`);
+  }
+  function bindPreviewResize() {
+    let saved = 0;
+    try { saved = Number(localStorage.getItem(PREVIEW_WIDTH_KEY)); } catch { /* 隐私模式 */ }
+    applyPreviewWidth(Number.isFinite(saved) && saved > 0 ? saved : window.innerWidth * .48);
+    const resizer = $('#preview-resizer');
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+    const stop = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('is-resizing-preview');
+      try {
+        localStorage.setItem(PREVIEW_WIDTH_KEY, String($('#preview-pane').getBoundingClientRect().width));
+      } catch { /* 隐私模式 */ }
+    };
+    resizer.addEventListener('pointerdown', (event) => {
+      if (window.innerWidth <= 900) return;
+      dragging = true;
+      startX = event.clientX;
+      startWidth = $('#preview-pane').getBoundingClientRect().width;
+      try { resizer.setPointerCapture(event.pointerId); } catch { /* 窗口监听兜底 */ }
+      document.body.classList.add('is-resizing-preview');
+      event.preventDefault();
+    });
+    window.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      applyPreviewWidth(startWidth + (startX - event.clientX));
+    });
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
   }
 
   function renderChat() {
@@ -1191,6 +1288,7 @@
   // ---------------------------------------------------------------- drawer
 
   function openDrawer(tab = 'candidates', load = true) {
+    if (!$('#preview-pane').classList.contains('hidden')) closeFilePreview();
     state.drawerTab = tab;
     $('#drawer').classList.remove('hidden');
     $$('#drawer-tabs .tab').forEach((button) => button.classList.toggle('active', button.dataset.drawerTab === tab));
@@ -2028,6 +2126,7 @@
   function bind() {
     bindSidebarResize();
     bindContentResize();
+    bindPreviewResize();
     $('#chat-scroll').addEventListener('click', (event) => {
       const card = event.target.closest('[data-preview-file]');
       if (!card || event.target.closest('.file-download')) return;
@@ -2041,14 +2140,8 @@
       openFilePreview(card.getAttribute('data-preview-file'));
     });
     $('#file-preview-close').addEventListener('click', closeFilePreview);
-    $('#file-preview-modal').addEventListener('click', (event) => {
-      if (event.target === $('#file-preview-modal')) closeFilePreview();
-    });
-    $('#file-preview-frame').addEventListener('load', () => {
-      if ($('#file-preview-frame').src !== 'about:blank') $('#file-preview-loading').classList.add('hidden');
-    });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !$('#file-preview-modal').classList.contains('hidden')) closeFilePreview();
+      if (event.key === 'Escape' && !$('#preview-pane').classList.contains('hidden')) closeFilePreview();
     });
     $('#new-run-btn').addEventListener('click', showNewView);
     $('#new-start').addEventListener('click', startRun);
