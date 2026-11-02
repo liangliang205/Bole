@@ -913,6 +913,48 @@
     window.addEventListener('pointercancel', stop);
   }
 
+  const DRAWER_WIDTH_KEY = 'bole.drawerWidth';
+  function drawerBounds() {
+    return { min: 340, max: Math.max(420, Math.min(900, window.innerWidth * .7)) };
+  }
+  function applyDrawerWidth(width) {
+    const { min, max } = drawerBounds();
+    const next = Math.max(min, Math.min(max, Math.round(width || 520)));
+    $('#app').style.setProperty('--drawer-width', `${next}px`);
+  }
+  function bindDrawerResize() {
+    let saved = 0;
+    try { saved = Number(localStorage.getItem(DRAWER_WIDTH_KEY)); } catch { /* 隐私模式 */ }
+    applyDrawerWidth(Number.isFinite(saved) && saved > 0 ? saved : 520);
+    const resizer = $('#drawer-resizer');
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+    const stop = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('is-resizing-drawer');
+      try {
+        localStorage.setItem(DRAWER_WIDTH_KEY, String($('#drawer').getBoundingClientRect().width));
+      } catch { /* 隐私模式 */ }
+    };
+    resizer.addEventListener('pointerdown', (event) => {
+      if (window.innerWidth <= 900) return;
+      dragging = true;
+      startX = event.clientX;
+      startWidth = $('#drawer').getBoundingClientRect().width;
+      try { resizer.setPointerCapture(event.pointerId); } catch { /* 窗口监听兜底 */ }
+      document.body.classList.add('is-resizing-drawer');
+      event.preventDefault();
+    });
+    window.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      applyDrawerWidth(startWidth + (startX - event.clientX));
+    });
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  }
+
   function renderChat() {
     if (!state.jobId || !state.snapshot) return;
     const job = state.snapshot.job || {};
@@ -1291,6 +1333,7 @@
     if (!$('#preview-pane').classList.contains('hidden')) closeFilePreview();
     state.drawerTab = tab;
     $('#drawer').classList.remove('hidden');
+    $('#app').classList.add('drawer-open');
     $$('#drawer-tabs .tab').forEach((button) => button.classList.toggle('active', button.dataset.drawerTab === tab));
     if (tab === 'candidates') { if (load) loadCandidates(); else renderCandidates(); }
     if (tab === 'compliance') { loadCandidates().then(renderCompliance); }
@@ -1299,6 +1342,7 @@
 
   function closeDrawer() {
     $('#drawer').classList.add('hidden');
+    $('#app').classList.remove('drawer-open');
     state.drawerCandidate = null;
   }
 
@@ -2127,6 +2171,7 @@
     bindSidebarResize();
     bindContentResize();
     bindPreviewResize();
+    bindDrawerResize();
     $('#chat-scroll').addEventListener('click', (event) => {
       const card = event.target.closest('[data-preview-file]');
       if (!card || event.target.closest('.file-download')) return;
