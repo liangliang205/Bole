@@ -34,6 +34,7 @@
     <div id="job-list" class="job-list"></div>
     <div class="side-footer">
       <button class="btn ghost block" id="open-settings">⚙ 设置与模型</button>
+      <button class="btn ghost block" id="open-knowledge">▤ 知识库 <span id="knowledge-enabled-count" class="muted"></span></button>
       <button class="btn ghost block" id="open-tools">⌘ 工具与环境</button>
     </div>
   </aside>
@@ -168,6 +169,78 @@
     </div>
   </div>
 </div>
+
+<div id="knowledge-modal" class="modal hidden">
+  <div class="modal-card knowledge-card">
+    <div class="modal-head">
+      <div>
+        <h2>知识库</h2>
+        <p class="muted knowledge-sub">默认不启用。启用后会参与画像、评估与面试建议的自动检索。</p>
+      </div>
+      <button class="btn ghost" id="knowledge-close">✕</button>
+    </div>
+    <div class="knowledge-layout">
+      <aside class="knowledge-bases">
+        <button class="btn primary block" id="knowledge-new" type="button">＋ 新建知识库</button>
+        <div id="knowledge-base-list" class="knowledge-base-list"></div>
+      </aside>
+      <section class="knowledge-main">
+        <div id="knowledge-empty" class="empty-note">还没有知识库。创建一个并启用后，才会参与自动检索。</div>
+        <div id="knowledge-detail" class="hidden">
+          <div class="form-grid">
+            <label>知识库名称<input id="kb-name" class="input" maxlength="100"></label>
+            <label class="knowledge-switch-line"><span>启用自动检索</span><input id="kb-enabled" type="checkbox"></label>
+            <label class="span-2">描述<input id="kb-description" class="input" placeholder="这个知识库放什么内容，便于检索路由" maxlength="2000"></label>
+          </div>
+          <div class="knowledge-actions">
+            <button class="btn" id="kb-save" type="button">保存知识库</button>
+            <button class="btn ghost danger-text" id="kb-delete" type="button">删除知识库</button>
+            <span id="kb-status" class="settings-status"></span>
+          </div>
+          <div class="knowledge-docs-head">
+            <h3>文档</h3>
+            <div class="knowledge-doc-actions">
+              <button class="btn ghost" id="kb-upload" type="button">＋ 上传文档</button>
+            </div>
+          </div>
+          <div id="kb-documents" class="knowledge-doc-list"></div>
+          <div id="kb-doc-status" class="settings-status"></div>
+        </div>
+      </section>
+    </div>
+
+    <details class="knowledge-settings">
+      <summary>检索与嵌入设置</summary>
+      <div class="form-grid">
+        <label>嵌入服务
+          <select id="kb-embedding-provider" class="input">
+            <option value="none">关闭（仅关键词检索）</option>
+            <option value="ollama">Ollama（本地）</option>
+            <option value="openai">OpenAI 兼容</option>
+          </select>
+        </label>
+        <label>嵌入模型<input id="kb-embedding-model" class="input" placeholder="qwen3-embedding:8b"></label>
+        <label class="span-2">接口地址<input id="kb-embedding-url" class="input" placeholder="http://127.0.0.1:11434"></label>
+        <label class="span-2">API Key（可选，留空保留已保存值）<input id="kb-embedding-key" class="input" type="password" placeholder="留空使用已保存凭据"></label>
+        <label>重排模型<input id="kb-rerank-model" class="input" placeholder="可选"></label>
+        <label>重排地址<input id="kb-rerank-url" class="input" placeholder="https://api.jina.ai/v1"></label>
+        <label class="span-2">重排 API Key（可选，留空保留）<input id="kb-rerank-key" class="input" type="password" placeholder="留空使用已保存凭据"></label>
+        <label>Top K<input id="kb-top-k" class="input" type="number" min="1" max="50"></label>
+        <label>分块大小（字符）<input id="kb-chunk-size" class="input" type="number" min="120" max="8000"></label>
+        <label>分块重叠（字符）<input id="kb-chunk-overlap" class="input" type="number" min="0" max="4000"></label>
+        <label>上下文最大字符<input id="kb-max-context" class="input" type="number" min="500" max="20000"></label>
+        <label class="knowledge-check"><input id="kb-auto-recall" type="checkbox"> 自动检索（画像/评估/建议）</label>
+        <label class="knowledge-check"><input id="kb-smart-chunk" type="checkbox"> 按 Markdown 标题智能分块</label>
+      </div>
+      <div class="knowledge-settings-actions">
+        <button class="btn" id="kb-settings-save" type="button">保存设置</button>
+        <button class="btn ghost" id="kb-test-embedding" type="button">测试嵌入连接</button>
+        <span id="kb-settings-status" class="settings-status"></span>
+      </div>
+    </details>
+  </div>
+</div>
+<input id="knowledge-file" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
 
 <div id="tools-modal" class="modal hidden">
   <div class="modal-card">

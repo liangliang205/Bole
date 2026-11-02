@@ -1,9 +1,10 @@
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths, loadPipelineConfig } from '../config.ts';
 import { AgentRegistry } from '../core/registry.ts';
 import { Ledger } from '../core/ledger.ts';
 import { ProviderStore } from '../settings/provider-store.ts';
+import { KnowledgeService } from '../knowledge/service.ts';
 
 export interface DoctorCheck {
   name: string;
@@ -51,14 +52,17 @@ export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
     const full = path.join(paths.root, file);
     checks.push({ name: file, status: existsSync(full) ? 'ok' : 'fail', detail: existsSync(full) ? '存在' : '缺失' });
   }
-  const knowledgeCount = existsSync(paths.knowledgeDir)
-    ? readdirSync(paths.knowledgeDir).filter((name) => name.endsWith('.md')).length
-    : 0;
-  checks.push({
-    name: 'RAG 知识库',
-    status: knowledgeCount > 0 ? 'ok' : 'warn',
-    detail: `${knowledgeCount} 个文档`,
-  });
+  const knowledge = new KnowledgeService(paths.knowledgeDbPath);
+  try {
+    const stats = knowledge.stats();
+    checks.push({
+      name: '知识库',
+      status: stats.enabledBases > 0 ? 'ok' : 'warn',
+      detail: `${stats.bases} 个知识库 / ${stats.enabledBases} 已启用 / ${stats.documents} 份文档 / ${stats.chunks} 个分块`,
+    });
+  } finally {
+    knowledge.close();
+  }
   try {
     const registry = AgentRegistry.load();
     checks.push({ name: 'Agent preset', status: 'ok', detail: `${registry.list().length} 个 / ${registry.fingerprint}` });

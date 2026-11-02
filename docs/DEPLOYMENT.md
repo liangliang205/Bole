@@ -21,6 +21,8 @@ pnpm web
 
 首次进入页面会自动检查模型提供商；没有可用 Key 时打开设置并定位到 DeepSeek 密钥。DeepSeek 是内置提供商（不可删除）；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；可「获取可用模型」、维护模型目录并选择 Flash/Pro 模型。Key 使用 AES-256-GCM 加密写入 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重复输入。CLI 不会读取环境变量；需要时用 `--key` 临时覆盖当前提供商的 Key。
 
+知识库默认没有数据，入口在左侧「知识库」。创建知识库并勾选「启用自动检索」后，画像、评估、面试建议才注入知识库片段；未启用时不召回。知识库存放在 `data/knowledge.db`，可配置 Ollama/OpenAI 兼容 embedding 与可选 rerank。
+
 ### OCR 说明
 
 - **默认 `BOLE_OCR_MODE=deepseek`**：图片以 `image_url` + base64 发给 `deepseek-flash`，逐字转写为文本；图片 token（每张最多约 1024）计入成本。
@@ -90,7 +92,7 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 71 个测试
+pnpm test:all          # 75 个测试
 curl -s http://127.0.0.1:8787/api/doctor
 ```
 

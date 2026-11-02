@@ -5,6 +5,7 @@ import type { AgentDeps } from './deps.ts';
 import type { HitlResponder } from './hitl.ts';
 import { callAgentJson } from './structured-call.ts';
 import { sharedPrefix, systemPrompt, taskBook } from './prompts.ts';
+import { formatKnowledgeReferences } from '../knowledge/service.ts';
 import { writeJson } from '../util/fsx.ts';
 import path from 'node:path';
 
@@ -53,8 +54,15 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
   deps.events.emit(deps.jobId, 'profiler', 'profiler.started', {
     requirementsChars: input.requirements.length,
   });
-  const hits = deps.rag.search(input.requirements, 3);
-  const references = hits.map((hit) => `${hit.title} / ${hit.heading}：${hit.text.slice(0, 180)}`);
+  const hits = await deps.knowledge.recall(input.requirements, 3);
+  const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
+  if (hits.length > 0) {
+    deps.events.emit(deps.jobId, 'profiler', 'knowledge.recalled', {
+      agent: 'profiler',
+      bases: [...new Set(hits.map((hit) => hit.baseName))],
+      hits: hits.map((hit) => `${hit.title}${hit.heading ? ` / ${hit.heading}` : ''}`),
+    });
+  }
   const user = taskBook({
     task: '把 HR 的自然语言招聘需求结构化为 JD、岗位画像与评分卡，并生成疑点反问清单',
     inputs: { job_id: input.jobId },

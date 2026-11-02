@@ -12,6 +12,10 @@ data/ledger.db
 data/ledger.db-journal
 data/ledger.db-wal
 data/ledger.db-shm
+data/knowledge.db
+data/knowledge.db-journal
+data/knowledge.db-wal
+data/knowledge.db-shm
 data/index/
 *.log
 .DS_Store

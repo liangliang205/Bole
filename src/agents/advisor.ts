@@ -5,6 +5,7 @@ import type { EvalResult, InterviewPlan, Jd, ParseResult, ResumeRow } from '../t
 import type { AgentDeps } from './deps.ts';
 import { callAgentJson } from './structured-call.ts';
 import { sharedPrefix, systemPrompt, taskBook } from './prompts.ts';
+import { formatKnowledgeReferences } from '../knowledge/service.ts';
 
 export interface AdvisorInput {
   resume: ResumeRow;
@@ -36,8 +37,17 @@ function fallbackPlan(resume: ResumeRow, evaluation: EvalResult): InterviewPlan 
 export async function runAdvisor(deps: AgentDeps, input: AdvisorInput): Promise<InterviewPlan> {
   const { resume, parsed, evaluation, jd } = input;
   const ragQuery = `${jd.title} 面试 追问 验证 ${evaluation.dimensions.map((d) => d.name).join(' ')}`;
-  const hits = deps.rag.search(ragQuery, 3);
-  const references = hits.map((hit) => `${hit.title} / ${hit.heading}：${hit.text.slice(0, 160)}`);
+  const hits = await deps.knowledge.recall(ragQuery, 3);
+  const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
+  if (hits.length > 0) {
+    deps.events.emit(deps.jobId, 'advisor', 'knowledge.recalled', {
+      agent: 'advisor',
+      resumeId: resume.id,
+      label: resume.label,
+      bases: [...new Set(hits.map((hit) => hit.baseName))],
+      hits: hits.map((hit) => `${hit.title}${hit.heading ? ` / ${hit.heading}` : ''}`),
+    });
+  }
   const user = `${taskBook({
     task: '为核查通过的候选人生成针对性面试问题、风险提示与用人建议',
     inputs: { resume_id: resume.id, label: resume.label, total_score: String(evaluation.totalScore) },

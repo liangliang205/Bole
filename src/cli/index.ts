@@ -15,6 +15,7 @@ import { listFilesRecursive } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
 import { detectContentType, isSupportedUpload } from '../ingest/uploads.ts';
 import { ProviderStore } from '../settings/provider-store.ts';
+import { KnowledgeService } from '../knowledge/service.ts';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string, text: string): string => (useColor ? `\u001b[${code}m${text}\u001b[0m` : text);
@@ -467,8 +468,10 @@ async function cmdDoctor(): Promise<void> {
   process.stdout.write(`模型提供商：${active ? green(`${active.name}（${active.api}）${active.apiKey ? '' : ' 未绑定 Key'}`) : red('未配置（运行 pnpm web 添加）')}\n`);
   if (active) process.stdout.write(`模型档位：flash=${active.flashModel} / pro=${active.proModel}；深评 ${config.deepEval.percent}% → ${config.deepEval.tier}\n`);
   process.stdout.write(`简历来源：上传目录 ${relativeToCwd(paths.uploadsDir)}\n`);
-  const knowledge = existsSync(paths.knowledgeDir) ? readdirSync(paths.knowledgeDir).filter((name) => name.endsWith('.md')).length : 0;
-  process.stdout.write(`RAG 知识库：${knowledge} 个文档\n`);
+  const knowledge = new KnowledgeService(paths.knowledgeDbPath);
+  const knowledgeStats = knowledge.stats();
+  knowledge.close();
+  process.stdout.write(`知识库：${knowledgeStats.bases} 个 / ${knowledgeStats.enabledBases} 已启用 / ${knowledgeStats.documents} 份文档\n`);
   const ocrLangs = ['eng', 'chi_sim'].filter((lang) => existsSync(path.join(paths.ocrDir, `${lang}.traineddata.gz`)));
   const ocrMode = (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase();
   process.stdout.write(`OCR：${ocrMode === 'deepseek' || ocrMode === 'auto' ? `DeepSeek Vision（${process.env.BOLE_OCR_MODEL ?? active?.flashModel ?? config.models.flash}）` : ocrMode === 'local' ? '本地 Tesseract' : '外部 OCR'}${ocrMode === 'deepseek' || ocrMode === 'auto' ? `；本地回退${ocrLangs.length ? '就绪' : '未就绪（pnpm ocr:download）'}` : ''}\n`);

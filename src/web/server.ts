@@ -23,6 +23,7 @@ import {
   updateJobMeta,
 } from './data.ts';
 import { getAgents, getDoctor, resetAll } from './ops.ts';
+import { KnowledgeService, type KnowledgeSettings } from '../knowledge/service.ts';
 
 type RunStatus = 'running' | 'pausing' | 'paused' | 'completed' | 'failed' | 'idle';
 
@@ -164,6 +165,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const runs = new Map<string, ActiveRun>();
   const paths = resolvePaths();
   const providers = new ProviderStore(paths.dataDir);
+  const knowledge = new KnowledgeService(paths.knowledgeDbPath);
 
   const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => {
     const requested = body.api ?? existing?.api;
@@ -508,6 +510,104 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         } catch (error) {
           json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
         }
+        return;
+      }
+
+      if (pathname === '/api/knowledge' && method === 'GET') {
+        json(res, 200, {
+          ok: true,
+          bases: knowledge.listBases(),
+          settings: knowledge.publicSettings(),
+          stats: knowledge.stats(),
+        });
+        return;
+      }
+
+      if (pathname === '/api/knowledge/bases' && method === 'POST') {
+        const body = await readJsonBody(req);
+        const base = knowledge.createBase({
+          name: String(body.name ?? ''),
+          description: String(body.description ?? ''),
+        });
+        json(res, 200, { ok: true, base });
+        return;
+      }
+
+      const knowledgeDocsMatch = /^\/api\/knowledge\/bases\/([^/]+)\/documents$/.exec(pathname);
+      if (knowledgeDocsMatch && method === 'GET') {
+        const baseId = decodeURIComponent(knowledgeDocsMatch[1]);
+        json(res, 200, { ok: true, documents: knowledge.listDocuments(baseId) });
+        return;
+      }
+      if (knowledgeDocsMatch && method === 'POST') {
+        const baseId = decodeURIComponent(knowledgeDocsMatch[1]);
+        const body = await readJsonBody(req);
+        const filename = String(body.filename ?? '').trim();
+        const contentBase64 = String(body.contentBase64 ?? '');
+        if (!filename) {
+          json(res, 400, { ok: false, error: '缺少文件名' });
+          return;
+        }
+        if (!contentBase64) {
+          json(res, 400, { ok: false, error: '文档内容为空' });
+          return;
+        }
+        const buffer = Buffer.from(contentBase64, 'base64');
+        const document = await knowledge.addDocument(baseId, {
+          filename,
+          buffer,
+          contentType: String(body.contentType ?? ''),
+        });
+        json(res, 200, { ok: true, document });
+        return;
+      }
+
+      const knowledgeBaseMatch = /^\/api\/knowledge\/bases\/([^/]+)$/.exec(pathname);
+      if (knowledgeBaseMatch && (method === 'PATCH' || method === 'DELETE')) {
+        const baseId = decodeURIComponent(knowledgeBaseMatch[1]);
+        if (method === 'DELETE') {
+          knowledge.deleteBase(baseId);
+          json(res, 200, { ok: true, removed: true });
+          return;
+        }
+        const body = await readJsonBody(req);
+        const base = knowledge.updateBase(baseId, {
+          ...(body.name !== undefined ? { name: String(body.name) } : {}),
+          ...(body.description !== undefined ? { description: String(body.description) } : {}),
+          ...(typeof body.enabled === 'boolean' ? { enabled: body.enabled } : {}),
+        });
+        json(res, 200, { ok: true, base });
+        return;
+      }
+
+      if (pathname === '/api/knowledge/settings' && method === 'PATCH') {
+        const body = await readJsonBody(req);
+        knowledge.updateSettings(body as unknown as Partial<KnowledgeSettings>);
+        json(res, 200, { ok: true, settings: knowledge.publicSettings() });
+        return;
+      }
+      if (pathname === '/api/knowledge/settings' && method === 'GET') {
+        json(res, 200, { ok: true, settings: knowledge.publicSettings() });
+        return;
+      }
+      if (pathname === '/api/knowledge/test-embedding' && method === 'POST') {
+        json(res, 200, { ok: true, result: await knowledge.testEmbedding() });
+        return;
+      }
+      if (pathname === '/api/knowledge/search' && method === 'POST') {
+        const body = await readJsonBody(req);
+        const hits = await knowledge.search(String(body.query ?? ''), {
+          topK: body.topK === undefined ? undefined : Number(body.topK),
+          baseIds: Array.isArray(body.baseIds) ? body.baseIds.map((id) => String(id)) : undefined,
+        });
+        json(res, 200, { ok: true, hits });
+        return;
+      }
+
+      const knowledgeDocumentMatch = /^\/api\/knowledge\/documents\/([^/]+)$/.exec(pathname);
+      if (knowledgeDocumentMatch && method === 'DELETE') {
+        knowledge.deleteDocument(decodeURIComponent(knowledgeDocumentMatch[1]));
+        json(res, 200, { ok: true, removed: true });
         return;
       }
 
@@ -863,7 +963,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       text(res, 404, 'Not Found');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const status = /上传|不支持的文件|文件内容|超过/.test(message) ? 400 : 500;
+      const status = /上传|不支持的文件|文件内容|超过|知识库|文档|嵌入|地址|名称/.test(message) ? 400 : 500;
       json(res, status, { ok: false, error: message });
     }
   });
@@ -872,6 +972,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     server.once('error', reject);
     server.listen(port, host, () => resolve());
   });
+  server.on('close', () => knowledge.close());
 
   process.stdout.write(`BoLe Web 已启动: http://${host}:${port}\n`);
   process.stdout.write('对话式控制台：上传简历 → 开始筛选 → 实时事件/流式生成 → 证据审计 → 对话内报告。\n');

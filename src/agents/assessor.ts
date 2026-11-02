@@ -16,6 +16,7 @@ import type {
 } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
 import { sharedPrefix, systemPrompt, taskBook } from './prompts.ts';
+import { formatKnowledgeReferences } from '../knowledge/service.ts';
 
 export interface AssessorContext {
   jd: Jd;
@@ -81,8 +82,17 @@ export class AssessorWorker {
       ...this.ctx.jd.niceToHave,
       parsed.fields.skills?.value ?? '',
     ].join(' ');
-    const hits = deps.rag.search(ragQuery, 4);
-    const references = hits.map((hit) => `${hit.title} / ${hit.heading}：${hit.text.slice(0, 180)}`);
+    const hits = await deps.knowledge.recall(ragQuery, 4);
+    const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
+    if (hits.length > 0) {
+      deps.events.emit(deps.jobId, 'assessor', 'knowledge.recalled', {
+        agent: 'assessor',
+        resumeId: resume.id,
+        label: resume.label,
+        bases: [...new Set(hits.map((hit) => hit.baseName))],
+        hits: hits.map((hit) => `${hit.title}${hit.heading ? ` / ${hit.heading}` : ''}`),
+      });
+    }
     const feedbackText =
       feedback && feedback.verdict !== 'pass'
         ? `\n\n【上一轮核查驳回】\n${feedback.requiredFixes.map((fix) => `- ${fix}`).join('\n')}\n驳回明细：${JSON.stringify(feedback.checks.filter((c) => c.verdict !== 'supported'))}`

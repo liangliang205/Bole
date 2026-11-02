@@ -5,6 +5,7 @@ import { AgentRegistry } from './core/registry.ts';
 import { Ledger } from './core/ledger.ts';
 import { EventLog } from './core/events.ts';
 import { RagIndex } from './tools/rag.ts';
+import { KnowledgeService } from './knowledge/service.ts';
 import { LlmRouter } from './llm/router.ts';
 import { DeepSeekProvider } from './llm/deepseek.ts';
 import { ProviderStore } from './settings/provider-store.ts';
@@ -38,7 +39,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const registry = AgentRegistry.load(paths.root);
   const ledger = new Ledger(paths.dbPath);
   const events = new EventLog(ledger);
-  const rag = RagIndex.loadOrBuild(paths.knowledgeDir, paths.indexDir);
+  const rag = new RagIndex([]);
 
   let provider: LlmProvider;
   let models: { flash: string; pro: string };
@@ -93,6 +94,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const runId = opts.runId ?? `run_${stamp}_${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runsDir, runId);
   await ensureDir(runDir);
+  const knowledge = new KnowledgeService(paths.knowledgeDbPath);
 
   const llm = new LlmRouter({
     provider,
@@ -115,6 +117,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     jobId: job.id,
     seed,
     rag,
+    knowledge,
     stream: opts.stream,
   };
 
@@ -137,5 +140,5 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     registryFingerprint: registry.fingerprint,
   });
 
-  return { deps, job, close: () => ledger.close() };
+  return { deps, job, close: () => { knowledge.close(); ledger.close(); } };
 }

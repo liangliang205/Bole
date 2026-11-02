@@ -32,6 +32,7 @@
     jobId: '', jobs: [], run: null, snapshot: null, report: null, config: null,
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
     showArchived: false, menuJobId: '',
+    knowledgeBases: [], knowledgeSettings: null, selectedKnowledgeBaseId: '', knowledgeDocs: [],
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
@@ -1271,6 +1272,218 @@
     }
   }
 
+  // ---------------------------------------------------------------- knowledge
+
+  function setKnowledgeStatus(target, message, tone = '') {
+    const el = $(target);
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = `settings-status ${tone}`;
+  }
+
+  async function openKnowledge() {
+    $('#knowledge-modal').classList.remove('hidden');
+    await loadKnowledge();
+  }
+
+  function closeKnowledge() {
+    $('#knowledge-modal').classList.add('hidden');
+  }
+
+  async function loadKnowledge() {
+    try {
+      const data = await api('/api/knowledge');
+      state.knowledgeBases = data.bases || [];
+      state.knowledgeSettings = data.settings || null;
+      const enabled = state.knowledgeBases.filter((base) => base.enabled).length;
+      $('#knowledge-enabled-count').textContent = enabled ? `${enabled} 已启用` : '';
+      if (!state.knowledgeBases.some((base) => base.id === state.selectedKnowledgeBaseId)) {
+        state.selectedKnowledgeBaseId = state.knowledgeBases[0]?.id ?? '';
+      }
+      renderKnowledge();
+      if (state.selectedKnowledgeBaseId) await loadKnowledgeDocuments(state.selectedKnowledgeBaseId);
+    } catch (error) {
+      toast(`读取知识库失败：${error.message}`, 'error');
+    }
+  }
+
+  function renderKnowledge() {
+    const bases = state.knowledgeBases;
+    $('#knowledge-base-list').innerHTML = bases.length ? bases.map((base) => `
+      <div class="knowledge-base-item ${base.id === state.selectedKnowledgeBaseId ? 'active' : ''}" data-kb-id="${esc(base.id)}">
+        <div class="kb-name"><span class="dot ${base.enabled ? 'enabled' : ''}"></span>${esc(base.name)}</div>
+        <div class="kb-meta">${base.enabled ? '已启用 · ' : '未启用 · '}${base.documentCount} 份文档 · ${base.chunkCount} 块</div>
+      </div>`).join('') : '<div class="empty-note">还没有知识库</div>';
+    const selected = bases.find((base) => base.id === state.selectedKnowledgeBaseId);
+    $('#knowledge-empty').classList.toggle('hidden', Boolean(selected));
+    $('#knowledge-detail').classList.toggle('hidden', !selected);
+    if (selected) {
+      $('#kb-name').value = selected.name;
+      $('#kb-description').value = selected.description;
+      $('#kb-enabled').checked = selected.enabled;
+    }
+    if (state.knowledgeSettings) {
+      const settings = state.knowledgeSettings;
+      $('#kb-embedding-provider').value = settings.embeddingProvider || 'none';
+      $('#kb-embedding-model').value = settings.embeddingModel || '';
+      $('#kb-embedding-url').value = settings.embeddingBaseUrl || '';
+      $('#kb-embedding-key').value = '';
+      $('#kb-embedding-key').placeholder = settings.hasEmbeddingKey ? '留空使用已保存凭据' : '输入 API Key（可选）';
+      $('#kb-rerank-model').value = settings.rerankModel || '';
+      $('#kb-rerank-url').value = settings.rerankBaseUrl || '';
+      $('#kb-rerank-key').value = '';
+      $('#kb-rerank-key').placeholder = settings.hasRerankKey ? '留空使用已保存凭据' : '输入 API Key（可选）';
+      $('#kb-top-k').value = settings.topK;
+      $('#kb-chunk-size').value = settings.chunkSize;
+      $('#kb-chunk-overlap').value = settings.chunkOverlap;
+      $('#kb-max-context').value = settings.maxContextChars;
+      $('#kb-auto-recall').checked = settings.autoRecall;
+      $('#kb-smart-chunk').checked = settings.smartChunk;
+    }
+  }
+
+  async function loadKnowledgeDocuments(baseId) {
+    try {
+      const data = await api(`/api/knowledge/bases/${encodeURIComponent(baseId)}/documents`);
+      state.knowledgeDocs = data.documents || [];
+      $('#kb-documents').innerHTML = state.knowledgeDocs.length ? state.knowledgeDocs.map((document) => `
+        <div class="knowledge-doc-item">
+          <span class="doc-name" title="${esc(document.filename)}">${esc(document.title)}</span>
+          <span class="doc-meta">${esc(document.format)} · ${document.chars} 字符</span>
+          <button class="btn ghost danger-text" type="button" data-kb-delete-doc="${esc(document.id)}">删除</button>
+        </div>`).join('') : '<div class="empty-note">还没有文档；上传后才会被检索。</div>';
+    } catch (error) {
+      setKnowledgeStatus('#kb-doc-status', `读取文档失败：${error.message}`, 'error');
+    }
+  }
+
+  async function createKnowledgeBase() {
+    const name = window.prompt('知识库名称');
+    if (!name?.trim()) return;
+    try {
+      const data = await api('/api/knowledge/bases', {
+        method: 'POST',
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      state.selectedKnowledgeBaseId = data.base?.id ?? '';
+      await loadKnowledge();
+      toast('知识库已创建；启用后才会参与自动检索', 'ok');
+    } catch (error) {
+      toast(`创建失败：${error.message}`, 'error');
+    }
+  }
+
+  async function saveKnowledgeBase(enabledOverride) {
+    const base = state.knowledgeBases.find((item) => item.id === state.selectedKnowledgeBaseId);
+    if (!base) return;
+    try {
+      const data = await api(`/api/knowledge/bases/${encodeURIComponent(base.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: $('#kb-name').value.trim(),
+          description: $('#kb-description').value.trim(),
+          enabled: enabledOverride ?? $('#kb-enabled').checked,
+        }),
+      });
+      await loadKnowledge();
+      setKnowledgeStatus('#kb-status', data.base?.enabled ? '已启用：画像/评估/建议会自动检索' : '已保存（未启用，不参与检索）', 'ok');
+    } catch (error) {
+      setKnowledgeStatus('#kb-status', `保存失败：${error.message}`, 'error');
+    }
+  }
+
+  async function deleteKnowledgeBase() {
+    const base = state.knowledgeBases.find((item) => item.id === state.selectedKnowledgeBaseId);
+    if (!base || !window.confirm(`确定删除知识库「${base.name}」及其全部文档？`)) return;
+    try {
+      await api(`/api/knowledge/bases/${encodeURIComponent(base.id)}`, { method: 'DELETE' });
+      state.selectedKnowledgeBaseId = '';
+      await loadKnowledge();
+      toast('知识库已删除', 'ok');
+    } catch (error) {
+      toast(`删除失败：${error.message}`, 'error');
+    }
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        resolve(result.includes(',') ? result.slice(result.indexOf(',') + 1) : result);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadKnowledgeDocuments(files) {
+    const base = state.knowledgeBases.find((item) => item.id === state.selectedKnowledgeBaseId);
+    if (!base) { toast('请先选择知识库', 'error'); return; }
+    if (!files.length) return;
+    let uploaded = 0;
+    for (const file of files) {
+      setKnowledgeStatus('#kb-doc-status', `正在处理 ${file.name}…`);
+      try {
+        await api(`/api/knowledge/bases/${encodeURIComponent(base.id)}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type,
+            contentBase64: await fileToBase64(file),
+          }),
+        });
+        uploaded += 1;
+      } catch (error) {
+        setKnowledgeStatus('#kb-doc-status', `${file.name} 失败：${error.message}`, 'error');
+      }
+    }
+    await loadKnowledge();
+    if (uploaded) {
+      setKnowledgeStatus('#kb-doc-status', `已索引 ${uploaded} 份文档`, 'ok');
+      toast(`已上传 ${uploaded} 份知识库文档`, 'ok');
+    }
+  }
+
+  async function saveKnowledgeSettings() {
+    try {
+      const body = {
+        embeddingProvider: $('#kb-embedding-provider').value,
+        embeddingModel: $('#kb-embedding-model').value.trim(),
+        embeddingBaseUrl: $('#kb-embedding-url').value.trim(),
+        rerankModel: $('#kb-rerank-model').value.trim(),
+        rerankBaseUrl: $('#kb-rerank-url').value.trim(),
+        topK: Number($('#kb-top-k').value),
+        chunkSize: Number($('#kb-chunk-size').value),
+        chunkOverlap: Number($('#kb-chunk-overlap').value),
+        maxContextChars: Number($('#kb-max-context').value),
+        autoRecall: $('#kb-auto-recall').checked,
+        smartChunk: $('#kb-smart-chunk').checked,
+      };
+      const embeddingKey = $('#kb-embedding-key').value.trim();
+      const rerankKey = $('#kb-rerank-key').value.trim();
+      if (embeddingKey) body.embeddingApiKey = embeddingKey;
+      if (rerankKey) body.rerankApiKey = rerankKey;
+      const data = await api('/api/knowledge/settings', { method: 'PATCH', body: JSON.stringify(body) });
+      state.knowledgeSettings = data.settings;
+      renderKnowledge();
+      setKnowledgeStatus('#kb-settings-status', '设置已保存；分块设置只影响新上传文档', 'ok');
+    } catch (error) {
+      setKnowledgeStatus('#kb-settings-status', `保存失败：${error.message}`, 'error');
+    }
+  }
+
+  async function testKnowledgeEmbedding() {
+    setKnowledgeStatus('#kb-settings-status', '正在测试嵌入连接…');
+    try {
+      const data = await api('/api/knowledge/test-embedding', { method: 'POST' });
+      const result = data.result || {};
+      setKnowledgeStatus('#kb-settings-status', result.ok ? `连接正常：${result.model}（${result.dimensions} 维）` : `失败：${result.error || '未知错误'}`, result.ok ? 'ok' : 'error');
+    } catch (error) {
+      setKnowledgeStatus('#kb-settings-status', `测试失败：${error.message}`, 'error');
+    }
+  }
+
   function openTools() { $('#tools-modal').classList.remove('hidden'); }
   function closeTools() { $('#tools-modal').classList.add('hidden'); }
 
@@ -1411,6 +1624,47 @@
     });
     $('#open-tools').addEventListener('click', openTools);
     $('#tools-close').addEventListener('click', closeTools);
+    $('#open-knowledge').addEventListener('click', openKnowledge);
+    $('#knowledge-close').addEventListener('click', closeKnowledge);
+    $('#knowledge-new').addEventListener('click', createKnowledgeBase);
+    $('#kb-save').addEventListener('click', () => saveKnowledgeBase());
+    $('#kb-delete').addEventListener('click', deleteKnowledgeBase);
+    $('#kb-upload').addEventListener('click', () => $('#knowledge-file').click());
+    $('#knowledge-file').addEventListener('change', async (event) => {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      await uploadKnowledgeDocuments(files);
+    });
+    $('#kb-enabled').addEventListener('change', (event) => saveKnowledgeBase(event.target.checked));
+    $('#knowledge-base-list').addEventListener('click', (event) => {
+      const item = event.target.closest('[data-kb-id]');
+      if (!item) return;
+      state.selectedKnowledgeBaseId = item.getAttribute('data-kb-id');
+      renderKnowledge();
+      loadKnowledgeDocuments(state.selectedKnowledgeBaseId);
+    });
+    $('#kb-documents').addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-kb-delete-doc]');
+      if (!button) return;
+      const id = button.getAttribute('data-kb-delete-doc');
+      if (!window.confirm('确定删除这份知识库文档？')) return;
+      try {
+        await api(`/api/knowledge/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        await loadKnowledge();
+        toast('文档已删除', 'ok');
+      } catch (error) {
+        setKnowledgeStatus('#kb-doc-status', `删除失败：${error.message}`, 'error');
+      }
+    });
+    $('#kb-settings-save').addEventListener('click', saveKnowledgeSettings);
+    $('#kb-test-embedding').addEventListener('click', testKnowledgeEmbedding);
+    $('#kb-embedding-provider').addEventListener('change', (event) => {
+      const url = $('#kb-embedding-url');
+      const current = url.value.trim();
+      if (!current || current === 'http://127.0.0.1:11434' || current === 'https://api.openai.com/v1') {
+        url.value = event.target.value === 'openai' ? 'https://api.openai.com/v1' : 'http://127.0.0.1:11434';
+      }
+    });
     $('#tool-output').parentElement.addEventListener('click', (event) => {
       const button = event.target.closest('[data-tool]');
       if (button) runTool(button.getAttribute('data-tool'));
@@ -1422,7 +1676,7 @@
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') { closeSettings(); closeTools(); closeDrawer(); }
+      if (event.key === 'Escape') { closeSettings(); closeTools(); closeKnowledge(); closeDrawer(); }
       if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
         event.preventDefault();
         $('#job-search').focus();
@@ -1439,6 +1693,11 @@
     applyTheme(currentTheme(), false);
     await loadConfig();
     const jobs = await loadJobs();
+    await loadKnowledge();
+    if (window.location.hash === '#knowledge') {
+      await openKnowledge();
+      return;
+    }
     const match = /^#job=(.+)$/.exec(window.location.hash);
     if (match && jobs.some((job) => job.id === decodeURIComponent(match[1]))) {
       await selectJob(decodeURIComponent(match[1]));

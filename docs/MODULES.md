@@ -93,9 +93,17 @@
 - `bootstrap` 读取当前提供商创建 `DeepSeekProvider`（`protocol` 与 `deepseekStyle` 区分协议/DeepSeek 参数），并用提供商的 Flash/Pro 模型名。
 - Key 不从环境变量读取，也不回传浏览器；CLI `--key` 仅临时覆盖当前提供商 Key。
 
-## 14. 测试（`tests/*`）
+## 14. 知识库（`src/knowledge/service.ts`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、cost、stream-preview、key-store、provider-store。
+- 本地 SQLite `data/knowledge.db`；知识库默认 `enabled=0`，没有启用知识库时画像/评估/建议不检索。
+- `knowledge_bases`、`knowledge_documents`、`knowledge_chunks`、`knowledge_settings` 四张表；文档用 `normalizeDocument` 归一化，按 Markdown 标题/自然段分块并保留重叠。
+- 支持 Ollama 或 OpenAI 兼容 embedding；向量随分块存 SQLite。未配置 embedding 时退化为中英混合 token 关键词检索。
+- 可选 rerank（OpenAI 兼容 `/rerank`）、Top K、上下文预算和“自动检索”开关。
+- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像师、相马官、谋士在调用模型前注入检索片段。
+
+## 15. 测试（`tests/*`）
+
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、cost、stream-preview、key-store、provider-store。
 - `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商标失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
 - `fixtures/documents.ts`：生成 DOCX/PDF 测试文件。

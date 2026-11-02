@@ -188,6 +188,42 @@ test('接入失败不阻塞批次：.doc 旧格式进入 failed 明细', async (
   }
 });
 
+test('启用知识库后画像/评估自动召回（默认未启用不召回）', async () => {
+  const env = await setupTempEnv();
+  const uploadDir = path.join(env.dir, 'uploads');
+  await mkdir(uploadDir, { recursive: true });
+  const file = await makeUpload(uploadDir, '张伟.txt', RESUME_A);
+  const boot = await bootstrap({
+    requirements: '招 Java 后端工程师，3 年以上经验。',
+    provider: new FakeProvider(),
+  });
+  try {
+    assert.deepEqual(await boot.deps.knowledge.recall('Java 后端'), []);
+    const base = boot.deps.knowledge.createBase({ name: '招聘规范', description: '评分与面试规范' });
+    await boot.deps.knowledge.addDocument(base.id, {
+      filename: '规范.md',
+      buffer: Buffer.from('# Java 后端\n\n## 评分锚点\n\n必须验证 Spring Boot、MySQL、Redis 的真实项目证据。\n\n## 面试\n\n重点追问微服务与高并发。'),
+      contentType: 'text/markdown',
+    });
+    boot.deps.knowledge.updateBase(base.id, { enabled: true });
+    const hits = await boot.deps.knowledge.recall('Java Spring Boot 项目证据', 3);
+    assert.ok(hits.length > 0);
+
+    const summary = await runPipeline(boot.deps, {
+      requirements: boot.job.requirements,
+      hitl: new AutoHitlResponder(),
+      uploadFiles: [file],
+    });
+    assert.equal(summary.status, 'final');
+    const events = boot.deps.ledger.listEvents({ jobId: boot.job.id, limit: 2000 });
+    assert.ok(events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'profiler'));
+    assert.ok(events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'assessor'));
+  } finally {
+    boot.close();
+    await env.restore();
+  }
+});
+
 test('暂停：批次结束后安全退出，续跑从检查点完成', async () => {
   const env = await setupTempEnv();
   const uploadDir = path.join(env.dir, 'uploads');

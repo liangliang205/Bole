@@ -17,6 +17,7 @@ pnpm web                   # http://127.0.0.1:8787
 ### 页面里能做什么
 
 - 设置：DSH 风格的「模型」页；DeepSeek 为内置提供商（不可删除），自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；支持获取可用模型、模型目录、手动添加和 Flash/Pro 选择。
+- 知识库：原生 SQLite 本地知识库（`data/knowledge.db`）；默认没有知识库，创建并启用后才会进入画像、评估、面试建议的自动检索。支持文档上传、Markdown 智能分块、Ollama/OpenAI 兼容 embedding、可选 rerank、Top K 和上下文预算。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
@@ -84,6 +85,15 @@ pnpm bole web --port 8787     # 对话式控制台
 | DELETE | `/api/providers/:id` | 删除提供商 |
 | POST | `/api/providers/:id/activate` | 设为当前提供商 |
 | POST | `/api/providers/:id/test` | 测试 `/models` 连接 |
+| GET | `/api/knowledge` | 知识库列表、检索设置与统计 |
+| POST | `/api/knowledge/bases` | 新建知识库（默认不启用） |
+| PATCH | `/api/knowledge/bases/:id` | 名称/描述/启用开关 |
+| DELETE | `/api/knowledge/bases/:id` | 删除知识库及文档 |
+| GET/POST | `/api/knowledge/bases/:id/documents` | 文档列表 / 上传并索引 |
+| DELETE | `/api/knowledge/documents/:id` | 删除文档 |
+| PATCH | `/api/knowledge/settings` | embedding/rerank/分块/召回设置 |
+| POST | `/api/knowledge/search` | 知识库检索 |
+| POST | `/api/knowledge/test-embedding` | 测试嵌入连接 |
 | GET | `/api/jobs` | 会话列表与计数 |
 | PATCH | `/api/jobs/:id` | `{title?,pinned?,archived?}` 重命名/置顶/归档 |
 | DELETE | `/api/jobs/:id` | 删除会话及其台账/运行产物 |
@@ -110,6 +120,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | `BOLE_PRO_MODEL` | `deepseek-v4-pro` | 覆盖当前提供商的 Pro 模型 |
 | `BOLE_DATA_DIR` | `data` | 台账/上传/索引根目录 |
 | `BOLE_DB` | `data/ledger.db` | SQLite 台账 |
+| `BOLE_KNOWLEDGE_DB` | `data/knowledge.db` | 知识库 SQLite |
 | `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
 | `BOLE_RUNS` | `runs` | 运行产物 |
 | `BOLE_OCR_MODE` | `deepseek` | `deepseek`（Vision）/ `local`（Tesseract）/ `url`（外部服务） |
@@ -134,6 +145,7 @@ bole/
 │  ├─ llm/               # DeepSeek 提供方（含 streaming）、路由、成本
 │  ├─ report/            # Markdown / JSON / cost / convergence 渲染
 │  ├─ settings/          # 模型提供商、Key 加密持久化（服务端）
+│  ├─ knowledge/         # 原生知识库：SQLite、分块、embedding、rerank、检索
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
 ├─ config/               # agents.json、pipeline.json、prompts/
@@ -150,7 +162,7 @@ pnpm typecheck
 pnpm test:all
 ```
 
-当前 **71 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
+当前 **75 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML。
 
 ## 已知边界
 

@@ -44,6 +44,7 @@ export interface BolePaths {
   uploadsDir: string;
   ocrDir: string;
   knowledgeDir: string;
+  knowledgeDbPath: string;
   indexDir: string;
   runsDir: string;
   dbPath: string;
@@ -63,6 +64,7 @@ export function resolvePaths(root = projectRoot()): BolePaths {
     uploadsDir: process.env.BOLE_UPLOADS ?? path.join(dataDir, 'uploads'),
     ocrDir: process.env.BOLE_OCR_DIR ?? path.join(dataDir, 'ocr'),
     knowledgeDir: process.env.BOLE_KNOWLEDGE ?? path.join(dataDir, 'knowledge'),
+    knowledgeDbPath: process.env.BOLE_KNOWLEDGE_DB ?? path.join(dataDir, 'knowledge.db'),
     indexDir: path.join(dataDir, 'index'),
     runsDir: process.env.BOLE_RUNS ?? path.join(root, 'runs'),
     dbPath: process.env.BOLE_DB ?? path.join(dataDir, 'ledger.db'),
