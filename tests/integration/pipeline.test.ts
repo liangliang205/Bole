@@ -105,8 +105,8 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     }
     assert.equal(Object.prototype.hasOwnProperty.call(summary.reports, 'html'), false);
     assert.equal(existsSync(path.join(summary.runDir, 'report.html')), false);
-    // 伯乐终稿工具：模型调用 export_word 生成 Word
-    assert.ok(existsSync(path.join(summary.runDir, 'report.docx')), '伯乐应通过 export_word 工具生成 docx');
+    // 终稿阶段不再自动导出文件；只有用户在对话中明确要求时才由主 Agent 调用工具。
+    assert.equal(existsSync(path.join(summary.runDir, 'report.docx')), false);
     const reportJson = JSON.parse(readFileSync(reports.json, 'utf8')) as { top: { reason?: string }[] };
     assert.ok(reportJson.top.length > 0);
     assert.ok(reportJson.top.every((candidate) => (candidate.reason ?? '').trim().length > 0), '推荐候选人应带理由说明');

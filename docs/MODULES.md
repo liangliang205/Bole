@@ -10,7 +10,7 @@
 - 批流动：`chunk` + `flowBatches`，`maxBatchesInFlight` 限制在途批；批间无全局 barrier。
 - 容量池：`CapacityPool` + `withSlot`，满时 `PoolFullError` 退避重试，不排队。
 - 报告：`buildReport` + `selectTopCandidates` + `writeReports`。
-- 终稿工具：`runExporter` 以 OpenAI Function Calling 循环调用 `src/tools/tools-call.ts` 注册的工具，模型自主选择 Word/PDF。
+- 按需导出：报告落盘不自动生成文件；完成后对话中 HR 明确要求时，主 Agent 才通过 Function Calling 调用 `src/tools/tools-call.ts` 注册的工具。
 
 ## 2. 接入（`src/agents/fetcher.ts` + `src/ingest/*`）
 

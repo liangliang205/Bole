@@ -962,6 +962,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             ledger,
             llm,
             message,
+            runDir: findReportDir(jobId) ?? undefined,
+            dataDir: paths.dataDir,
           });
           json(res, 200, { ok: true, answer: result.answer, messages: result.messages });
         } catch (error) {

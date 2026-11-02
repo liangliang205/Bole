@@ -1,6 +1,9 @@
+import path from 'node:path';
 import type { Ledger } from '../core/ledger.ts';
 import type { LlmRouter } from '../llm/router.ts';
-import type { ChatMessageRow, JobRow } from '../types.ts';
+import type { ReportData } from '../report/builder.ts';
+import { executeTool, toolSchemas } from '../tools/tools-call.ts';
+import type { ChatMessageRow, ChatTurn, JobRow } from '../types.ts';
 
 const CONCLUSION_LABELS: Record<string, string> = {
   strong_yes: '强烈推荐',
@@ -73,29 +76,68 @@ export function buildJobChatContext(job: JobRow, report: ReportLike | null): str
 
 export async function chatWithJob(opts: {
   job: JobRow;
-  report: ReportLike | null;
+  report: ReportData | null;
   ledger: Ledger;
   llm: LlmRouter;
   message: string;
+  runDir?: string;
+  dataDir?: string;
 }): Promise<{ answer: string; messages: ChatMessageRow[] }> {
   const message = opts.message.trim();
   if (!message) throw new Error('消息不能为空');
   if (message.length > 4000) throw new Error('单条消息不能超过 4000 个字符');
   opts.ledger.appendChat(opts.job.id, 'user', message);
   const history = opts.ledger.listChat(opts.job.id, 40);
-  const system = buildJobChatContext(opts.job, opts.report);
-  const result = await opts.llm.chat({
-    agent: 'coordinator',
-    tier: 'pro',
-    system,
-    user: message,
-    messages: history.map((item) => ({ role: item.role, content: item.content })),
-    temperature: 0.2,
-    maxTokens: 2048,
-    meta: { jobId: opts.job.id, kind: 'job-chat' },
-  });
-  const answer = result.text.trim();
+  const toolsEnabled = Boolean(opts.report && opts.runDir && opts.dataDir);
+  const system = [
+    buildJobChatContext(opts.job, opts.report),
+    toolsEnabled
+      ? '【工具使用规则】只有 HR 在对话中明确要求生成/导出 Word、PDF 或其他文件时，才调用工具；没有明确要求时不要调用任何工具，直接用文字回答。不要为了展示能力主动生成文件。'
+      : '',
+  ].filter(Boolean).join('\n\n');
+  const turns: ChatTurn[] = history.map((item) => ({ role: item.role, content: item.content }));
+  const files = new Set<string>();
+  let answer = '';
+
+  for (let step = 0; step < 5; step += 1) {
+    const result = await opts.llm.chat({
+      agent: 'coordinator',
+      tier: 'pro',
+      system,
+      user: message,
+      messages: turns,
+      ...(toolsEnabled ? { tools: toolSchemas(), toolChoice: 'auto' as const } : {}),
+      temperature: 0.2,
+      maxTokens: 2048,
+      meta: { jobId: opts.job.id, kind: 'job-chat' },
+    });
+    const toolCalls = result.toolCalls ?? [];
+    if (toolCalls.length === 0) {
+      answer = result.text.trim();
+      break;
+    }
+    turns.push({ role: 'assistant', content: result.text || null, tool_calls: toolCalls });
+    for (const call of toolCalls) {
+      const executed = await executeTool(call.function.name, call.function.arguments, {
+        report: opts.report!,
+        runDir: opts.runDir!,
+        dataDir: opts.dataDir!,
+      });
+      for (const file of executed.files ?? []) {
+        if (/\.(docx|pdf)$/i.test(file)) files.add(file);
+      }
+      turns.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(executed) });
+    }
+  }
+
   if (!answer) throw new Error('主 Agent 没有返回内容');
+  const names = [...files].map((file) => path.basename(file));
+  if (names.length) {
+    const links = names
+      .map((name) => `[${name}](/api/run/${encodeURIComponent(opts.job.id)}/files/${encodeURIComponent(name)})`)
+      .join(' · ');
+    if (!names.every((name) => answer.includes(name))) answer = `${answer}\n\n文件：${links}`;
+  }
   opts.ledger.appendChat(opts.job.id, 'assistant', answer);
   return { answer, messages: opts.ledger.listChat(opts.job.id, 100) };
 }
