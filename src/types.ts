@@ -195,12 +195,18 @@ export interface JobRow {
   updated_ts: string;
 }
 
+export interface ChatAttachment {
+  name: string;
+  text: string;
+}
+
 export interface ChatMessageRow {
   id: string;
   job_id: string;
   role: 'user' | 'assistant';
   content: string;
   files?: string[];
+  attachments?: ChatAttachment[];
   created_ts: string;
 }
 

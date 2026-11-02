@@ -88,13 +88,16 @@
       <div class="composer-wrap dsh-composer">
         <div class="dsh-composer-notice hidden" id="reply-hint"></div>
         <div class="dsh-composer-card">
+          <div id="chat-attachments" class="dsh-composer-attachments"></div>
           <div class="dsh-composer-scroll">
             <div class="dsh-composer-grow">
               <div id="reply-input" class="dsh-composer-input" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="回答 HITL 问题，或点击上方选项…"></div>
             </div>
           </div>
           <div class="dsh-composer-row">
-            <div class="dsh-composer-tools"></div>
+            <div class="dsh-composer-tools">
+              <button class="dsh-composer-add" id="chat-attach-btn" type="button" title="添加图片、PDF、Word、Markdown 文件" aria-label="添加附件">+</button>
+            </div>
             <div class="dsh-composer-trailing">
               <span class="dsh-composer-model" id="reply-model"></span>
               <button class="dsh-composer-primary" id="reply-send" aria-label="发送" disabled>
@@ -321,6 +324,7 @@
   </div>
 </div>
 
+<input id="chat-file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
 <input id="file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
 <div id="session-menu" class="session-menu hidden" role="menu"></div>
 <div id="toast" class="toast hidden"></div>

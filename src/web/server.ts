@@ -7,6 +7,7 @@ import { PipelinePausedError, runPipeline, type RunSummary } from '../agents/coo
 import type { HitlAnswer, HitlQuestion, HitlResponder } from '../agents/hitl.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { loadUpload } from '../ingest/uploads.ts';
+import { normalizeDocument } from '../ingest/normalize.ts';
 import { fetchModelList, verifyDeepSeekKey } from '../settings/key-store.ts';
 import { ProviderStore, type ProviderApi, type ProviderInput, type ProviderPublic } from '../settings/provider-store.ts';
 import { StreamPreviewer } from './stream-preview.ts';
@@ -28,7 +29,7 @@ import { KnowledgeService, type KnowledgeSettings } from '../knowledge/service.t
 import { DeepSeekProvider } from '../llm/deepseek.ts';
 import { LlmRouter } from '../llm/router.ts';
 import { Ledger } from '../core/ledger.ts';
-import { chatWithJob } from '../chat/service.ts';
+import { chatWithJob, publicChatMessages } from '../chat/service.ts';
 
 type RunStatus = 'running' | 'pausing' | 'paused' | 'completed' | 'failed' | 'idle';
 
@@ -992,12 +993,32 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         const ledger = new Ledger(paths.dbPath);
         try {
           if (method === 'GET') {
-            json(res, 200, { ok: true, messages: ledger.listChat(jobId, 100) });
+            json(res, 200, { ok: true, messages: publicChatMessages(ledger.listChat(jobId, 100)) });
             return;
           }
           const body = await readJsonBody(req);
           const message = String(body.message ?? '').trim();
-          if (!message) {
+          const uploadIds = Array.isArray(body.uploadIds)
+            ? body.uploadIds.map((id) => String(id)).filter(Boolean).slice(0, 5)
+            : [];
+          const attachments: { name: string; text: string }[] = [];
+          for (const uploadId of uploadIds) {
+            const file = await loadUpload(uploadId, paths.uploadsDir);
+            if (!file) {
+              json(res, 400, { ok: false, error: '附件不存在或已过期，请重新上传' });
+              return;
+            }
+            try {
+              const normalized = await normalizeDocument(readFileSync(file.path), file.filename, file.contentType);
+              const text = normalized.text.trim().slice(0, 20_000);
+              if (!text) throw new Error('没有可读取的文本');
+              attachments.push({ name: file.filename, text });
+            } catch (error) {
+              json(res, 400, { ok: false, error: `附件解析失败（${file.filename}）：${error instanceof Error ? error.message : String(error)}` });
+              return;
+            }
+          }
+          if (!message && attachments.length === 0) {
             json(res, 400, { ok: false, error: '消息不能为空' });
             return;
           }
@@ -1027,6 +1048,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             ledger,
             llm,
             message,
+            attachments,
             runDir: findReportDir(jobId) ?? undefined,
             dataDir: paths.dataDir,
           });

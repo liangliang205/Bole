@@ -424,8 +424,26 @@ html[data-theme="dark"] .dsh-composer {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: 12px; padding: 2px 8px 6px; min-width: 0; container-type: inline-size;
 }
-.dsh-composer-tools { display: flex; align-items: center; min-width: 0; }
+.dsh-composer-tools { display: flex; align-items: center; min-width: 0; gap: 8px; }
 .dsh-composer-trailing { flex: none; margin-left: auto; gap: 12px; }
+.dsh-composer-add {
+  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+  border: 0; border-radius: 50%; background: var(--dsh-selector);
+  color: var(--dsh-label); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.dsh-composer-add:hover { background: var(--dsh-hover); }
+.dsh-composer-add:disabled { opacity: .45; cursor: default; }
+.dsh-composer-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 12px 0; }
+.dsh-composer-attachments:empty { display: none; }
+.chat-attachment {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 5px 8px; border: 1px solid var(--dsh-input-stroke); border-radius: 8px;
+  background: var(--dsh-selector); color: var(--dsh-secondary); font-size: 11px;
+}
+.chat-attachment .name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attachment button { border: 0; background: transparent; color: var(--dsh-caption); cursor: pointer; padding: 0 1px; font-size: 13px; }
+.chat-attachment.uploading { opacity: .65; }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 2px; }
 .dsh-composer-model {
   display: flex; align-items: center; max-width: 220px; height: 28px;
   padding: 0 8px; border-radius: 8px; color: var(--dsh-secondary);

@@ -31,7 +31,7 @@
   const state = {
     jobId: '', jobs: [], run: null, snapshot: null, report: null, config: null,
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
-    chat: [], chatPending: false,
+    chat: [], chatPending: false, chatAttachments: [], chatAttachSeq: 0,
     showArchived: false, menuJobId: '',
     knowledgeBases: [], knowledgeSettings: null, selectedKnowledgeBaseId: '', knowledgeDocs: [], knowledgeStats: null,
     attachments: [], uploadSeq: 0,
@@ -482,7 +482,7 @@
 
   function showNewView() {
     disconnectStream();
-    Object.assign(state, { jobId: '', run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '', attachments: [], chat: [], chatPending: false });
+    Object.assign(state, { jobId: '', run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '', attachments: [], chat: [], chatPending: false, chatAttachments: [] });
     state.seen.clear();
     state.streams.clear();
     renderAttachments();
@@ -517,7 +517,7 @@
     Object.assign(state, {
       jobId, run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '',
       candidates: [], candidatesLoaded: false, cost: null, drawerCandidate: null,
-      chat: [], chatPending: false,
+      chat: [], chatPending: false, chatAttachments: [],
     });
     state.seen.clear();
     state.streams.clear();
@@ -599,6 +599,7 @@
       : canChat ? '继续追问伯乐，例如：为什么 R08 不推荐？' : '筛选完成后可继续和伯乐对话…';
     $('#reply-input').setAttribute('data-placeholder', placeholder);
     $('#reply-input').setAttribute('aria-disabled', run.pendingHitl || canChat ? 'false' : 'true');
+    renderChatAttachments();
     syncReplyComposerState();
     renderChat();
     renderHitl(run.pendingHitl);
@@ -1016,11 +1017,15 @@
     else if (state.run?.status === 'completed') parts.push(messageHtml('assistant', '伯乐', '', `<div class="msg-text">运行完成，正在读取报告…</div>`));
     for (const message of state.chat) {
       const files = Array.isArray(message.files) ? message.files : [];
+      const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+      const attachmentChips = attachments.length
+        ? `<div class="msg-attachments">${attachments.map((attachment) => `<span class="chat-attachment"><span class="name">${esc(attachment.name)}</span></span>`).join('')}</div>`
+        : '';
       parts.push(messageHtml(
         message.role === 'user' ? 'user' : 'assistant',
         message.role === 'user' ? 'HR' : '伯乐',
         fmtTime(message.created_ts),
-        `<div class="msg-text chat-markdown">${renderChatMarkdown(message.content)}</div>${files.length ? fileCardsHtml(files) : ''}`,
+        `<div class="msg-text chat-markdown">${renderChatMarkdown(message.content)}</div>${attachmentChips}${files.length ? fileCardsHtml(files) : ''}`,
       ));
     }
     if (state.sending && state.run?.status === 'completed' && !state.run?.pendingHitl) {
@@ -1161,8 +1166,67 @@
     const run = state.run;
     if (!run) return;
     const canSubmit = run.pendingHitl || run.status === 'completed';
-    const empty = replyValue() === '';
-    $('#reply-send').disabled = state.sending || empty || !canSubmit;
+    const pending = state.chatAttachments.some((item) => item.status === 'uploading');
+    const empty = replyValue() === '' && state.chatAttachments.filter((item) => item.status !== 'error').length === 0;
+    $('#reply-send').disabled = state.sending || pending || empty || !canSubmit;
+    $('#chat-attach-btn').disabled = state.sending || !canSubmit;
+  }
+
+  function renderChatAttachments() {
+    const host = $('#chat-attachments');
+    if (!host) return;
+    host.innerHTML = state.chatAttachments.map((file) => `
+      <span class="chat-attachment ${file.status === 'error' ? 'error' : file.status === 'uploading' ? 'uploading' : ''}">
+        <span class="name" title="${esc(file.filename)}">${esc(file.filename)}</span>
+        <span>${file.status === 'uploading' ? '上传中…' : file.status === 'error' ? '失败' : ''}</span>
+        <button type="button" data-chat-attachment-remove="${esc(file.id)}" title="移除">×</button>
+      </span>`).join('');
+    host.querySelectorAll('[data-chat-attachment-remove]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.chatAttachments = state.chatAttachments.filter((item) => item.id !== button.getAttribute('data-chat-attachment-remove'));
+        renderChatAttachments();
+        syncReplyComposerState();
+      });
+    });
+  }
+
+  async function uploadChatFiles(files) {
+    if (!files.length) return;
+    const room = Math.max(0, 5 - state.chatAttachments.length);
+    if (room === 0) { toast('最多上传 5 个附件', 'error'); return; }
+    for (const file of files.slice(0, room)) {
+      if (file.size > 25 * 1024 * 1024) { toast(`${file.name} 超过 25MB`, 'error'); continue; }
+      state.chatAttachSeq += 1;
+      const entry = {
+        id: `chat_file_${state.chatAttachSeq}`,
+        filename: file.name,
+        size: file.size,
+        status: 'uploading',
+        uploadId: '',
+      };
+      state.chatAttachments.push(entry);
+      renderChatAttachments();
+      syncReplyComposerState();
+      try {
+        const contentBase64 = await fileToBase64(file);
+        const data = await api('/api/uploads', {
+          method: 'POST',
+          body: JSON.stringify({ filename: file.name, contentBase64 }),
+        });
+        entry.uploadId = data.upload.uploadId;
+        entry.status = 'ready';
+      } catch (error) {
+        entry.status = 'error';
+        toast(`${file.name} 上传失败：${error.message}`, 'error');
+      }
+      renderChatAttachments();
+      syncReplyComposerState();
+    }
+  }
+
+  function clearChatAttachments() {
+    state.chatAttachments = [];
+    renderChatAttachments();
   }
 
   function clearReplyInput() {
@@ -1172,17 +1236,29 @@
   async function sendChat() {
     if (!state.jobId || state.run?.status !== 'completed') return;
     const value = replyValue();
-    if (!value) { toast('请输入内容', 'error'); return; }
+    const ready = state.chatAttachments.filter((item) => item.status === 'ready' && item.uploadId);
+    if (state.chatAttachments.some((item) => item.status === 'uploading')) { toast('附件还在上传，请稍候', 'error'); return; }
+    if (!value && ready.length === 0) { toast('请输入内容或添加附件', 'error'); return; }
     clearReplyInput();
     state.sending = true;
-    state.chat.push({ id: `local_${Date.now()}`, role: 'user', content: value, created_ts: new Date().toISOString() });
+    state.chat.push({
+      id: `local_${Date.now()}`,
+      role: 'user',
+      content: value || '请查看附件。',
+      attachments: ready.map((item) => ({ name: item.filename, text: '' })),
+      created_ts: new Date().toISOString(),
+    });
     renderAll();
     try {
       const data = await api(`/api/run/${encodeURIComponent(state.jobId)}/chat`, {
         method: 'POST',
-        body: JSON.stringify({ message: value }),
+        body: JSON.stringify({
+          message: value,
+          uploadIds: ready.map((item) => item.uploadId),
+        }),
       });
       state.chat = data.messages || state.chat;
+      clearChatAttachments();
     } catch (error) {
       await loadChat();
       $('#reply-input').textContent = value;
@@ -2275,6 +2351,12 @@
       if (button) { state.drawerCandidate = null; openDrawer(button.dataset.drawerTab); }
     });
     $('#reply-send').addEventListener('click', sendReply);
+    $('#chat-attach-btn').addEventListener('click', () => $('#chat-file-input').click());
+    $('#chat-file-input').addEventListener('change', async (event) => {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      await uploadChatFiles(files);
+    });
     $('#reply-input').addEventListener('input', syncReplyComposerState);
     $('#reply-input').addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;

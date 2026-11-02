@@ -24,6 +24,34 @@ test('面试建议 skill 只在 HR 明确询问时加载', async () => {
   }
 });
 
+test('对话附件文本进入模型上下文，但客户端只返回附件名', async () => {
+  const ledger = new Ledger(':memory:');
+  try {
+    const job = ledger.createJob({ title: '后端工程师', requirements: '3 年后端经验。' });
+    const requests: { messages?: { role: string; content: string }[] }[] = [];
+    const llm = {
+      chat: async (req: { messages?: { role: string; content: string }[] }) => {
+        requests.push(req);
+        return { text: '已阅读附件', usage: { promptTokens: 10, completionTokens: 2, cachedPromptTokens: 0 }, stopReason: 'completed', model: 'fake', latencyMs: 1, cacheHit: false };
+      },
+    } as unknown as LlmRouter;
+    const result = await chatWithJob({
+      job,
+      report: null,
+      ledger,
+      llm,
+      message: '总结附件',
+      attachments: [{ name: 'notes.md', text: '# 面试笔记\n\n重点验证项目证据。' }],
+    });
+    assert.match(String(requests[0].messages?.at(-1)?.content), /面试笔记/);
+    assert.equal(result.messages[0].attachments?.[0]?.name, 'notes.md');
+    assert.equal(result.messages[0].attachments?.[0]?.text, '');
+    assert.match(String(ledger.listChat(job.id)[0].attachments?.[0]?.text), /面试笔记/);
+  } finally {
+    ledger.close();
+  }
+});
+
 test('筛选完成后的主 Agent 对话：持久化多轮消息并复用稳定上下文前缀', async () => {
   const ledger = new Ledger(':memory:');
   try {

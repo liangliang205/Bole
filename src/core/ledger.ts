@@ -8,6 +8,7 @@ import {
   combineStopReasons,
 } from './state.ts';
 import type {
+  ChatAttachment,
   ChatMessageRow,
   DecisionRow,
   EvalResult,
@@ -169,37 +170,56 @@ export class Ledger {
     return Boolean(this.getJob(jobId));
   }
 
-  appendChat(jobId: string, role: 'user' | 'assistant', content: string, files: string[] = []): ChatMessageRow {
+  appendChat(
+    jobId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    files: string[] = [],
+    attachments: ChatAttachment[] = [],
+  ): ChatMessageRow {
     const row: ChatMessageRow = {
       id: newId('chat'),
       job_id: jobId,
       role,
       content,
       files,
+      attachments,
       created_ts: nowIso(),
     };
-    this.run('INSERT INTO chat_messages (id,job_id,role,content,files_json,created_ts) VALUES (?,?,?,?,?,?)',
-      row.id, row.job_id, row.role, row.content, files.length ? JSON.stringify(files) : null, row.created_ts);
+    this.run(
+      'INSERT INTO chat_messages (id,job_id,role,content,files_json,attachments_json,created_ts) VALUES (?,?,?,?,?,?,?)',
+      row.id,
+      row.job_id,
+      row.role,
+      row.content,
+      files.length ? JSON.stringify(files) : null,
+      attachments.length ? JSON.stringify(attachments) : null,
+      row.created_ts,
+    );
     return row;
   }
 
   listChat(jobId: string, limit = 100): ChatMessageRow[] {
-    const rows = this.all<ChatMessageRow & { files_json?: string | null }>(
+    const rows = this.all<ChatMessageRow & { files_json?: string | null; attachments_json?: string | null }>(
       'SELECT * FROM chat_messages WHERE job_id=? ORDER BY created_ts ASC, rowid ASC LIMIT ?',
       jobId,
       limit,
     );
-    return rows.map(({ files_json, ...row }) => {
-      let files: string[] = [];
-      if (files_json) {
+    return rows.map(({ files_json, attachments_json, ...row }) => {
+      const parseList = <T>(value: string | null | undefined): T[] => {
+        if (!value) return [];
         try {
-          const parsed = JSON.parse(files_json);
-          if (Array.isArray(parsed)) files = parsed.map(String);
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? (parsed as T[]) : [];
         } catch {
-          // 损坏的旧记录仍显示文本，不影响对话。
+          return [];
         }
-      }
-      return { ...row, files };
+      };
+      return {
+        ...row,
+        files: parseList<string>(files_json),
+        attachments: parseList<ChatAttachment>(attachments_json),
+      };
     });
   }
 

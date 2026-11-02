@@ -110,6 +110,7 @@
 - 筛选完成后，`/api/run/:jobId/chat` 只调用主 Agent（coordinator/pro），不触发解析、评估、核查子 Agent。
 - `chat_messages` 追加式保存多轮消息；`buildJobChatContext` 把岗位、结论、转人工/失败明细组成稳定 system 前缀，历史消息追加在尾部，保证 DeepSeek prompt cache 可复用同一前缀。
 - 只允许筛选完成后的会话继续追问；运行中的会话拒绝聊天。HITL 输入与普通追问共用底部输入框。
+- 对话附件：输入区「＋」上传图片/PDF/DOCX/Markdown/TXT/HTML 到 `/api/uploads`；服务端用 `normalizeDocument` 抽取文本，保存到 `chat_messages.attachments_json` 并注入主 Agent，API 回传时只保留附件名。
 
 ## 16. 测试（`tests/*`）
 

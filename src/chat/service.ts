@@ -3,7 +3,7 @@ import type { Ledger } from '../core/ledger.ts';
 import type { LlmRouter } from '../llm/router.ts';
 import type { ReportData } from '../report/builder.ts';
 import { executeTool, toolSchemas } from '../tools/tools-call.ts';
-import type { ChatMessageRow, ChatTurn, JobRow } from '../types.ts';
+import type { ChatAttachment, ChatMessageRow, ChatTurn, JobRow } from '../types.ts';
 import { INTERVIEW_SKILL_BODY, INTERVIEW_SKILL_CATALOG, wantsInterviewAdvice } from './interview-skill.ts';
 
 const CONCLUSION_LABELS: Record<string, string> = {
@@ -75,19 +75,28 @@ export function buildJobChatContext(job: JobRow, report: ReportLike | null): str
   return lines.join('\n');
 }
 
+export function publicChatMessages(messages: ChatMessageRow[]): ChatMessageRow[] {
+  return messages.map((message) => ({
+    ...message,
+    attachments: message.attachments?.map((attachment) => ({ name: attachment.name, text: '' })),
+  }));
+}
+
 export async function chatWithJob(opts: {
   job: JobRow;
   report: ReportData | null;
   ledger: Ledger;
   llm: LlmRouter;
   message: string;
+  attachments?: ChatAttachment[];
   runDir?: string;
   dataDir?: string;
 }): Promise<{ answer: string; messages: ChatMessageRow[] }> {
-  const message = opts.message.trim();
+  const attachments = opts.attachments ?? [];
+  const message = opts.message.trim() || (attachments.length ? '请查看附件。' : '');
   if (!message) throw new Error('消息不能为空');
   if (message.length > 4000) throw new Error('单条消息不能超过 4000 个字符');
-  opts.ledger.appendChat(opts.job.id, 'user', message);
+  opts.ledger.appendChat(opts.job.id, 'user', message, [], attachments);
   const history = opts.ledger.listChat(opts.job.id, 40);
   const toolsEnabled = Boolean(opts.report && opts.runDir && opts.dataDir);
   const system = [
@@ -104,7 +113,12 @@ export async function chatWithJob(opts: {
         ].join('\n')
       : '',
   ].filter(Boolean).join('\n\n');
-  const turns: ChatTurn[] = history.map((item) => ({ role: item.role, content: item.content }));
+  const turns: ChatTurn[] = history.map((item) => ({
+    role: item.role,
+    content: item.attachments?.length
+      ? `${item.content}\n\n${item.attachments.map((attachment) => `【附件：${attachment.name}】\n${attachment.text}`).join('\n\n')}`
+      : item.content,
+  }));
   const files = new Set<string>();
   let answer = '';
 
@@ -149,5 +163,5 @@ export async function chatWithJob(opts: {
       .trim();
   }
   opts.ledger.appendChat(opts.job.id, 'assistant', answer, names);
-  return { answer, messages: opts.ledger.listChat(opts.job.id, 100) };
+  return { answer, messages: publicChatMessages(opts.ledger.listChat(opts.job.id, 100)) };
 }

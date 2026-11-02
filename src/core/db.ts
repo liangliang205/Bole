@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   files_json TEXT,
+  attachments_json TEXT,
   created_ts TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_job ON chat_messages(job_id, created_ts);
@@ -215,4 +216,5 @@ function migrate(db: DatabaseSync): void {
   const chatColumns = db.prepare('PRAGMA table_info(chat_messages)').all() as { name: string }[];
   const chatExisting = new Set(chatColumns.map((column) => column.name));
   if (!chatExisting.has('files_json')) db.exec('ALTER TABLE chat_messages ADD COLUMN files_json TEXT');
+  if (!chatExisting.has('attachments_json')) db.exec('ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT');
 }
