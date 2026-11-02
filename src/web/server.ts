@@ -853,6 +853,32 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         return;
       }
 
+      // 对话内附件下载：只允许运行目录中的 docx / pdf（伯乐工具产物）
+      const filesMatch = /^\/api\/run\/([^/]+)\/files\/([^/]+)$/.exec(pathname);
+      if (method === 'GET' && filesMatch) {
+        const jobId = decodeURIComponent(filesMatch[1]);
+        const name = decodeURIComponent(filesMatch[2]);
+        if (name.includes('..') || !/^[^/\\]+\.(docx|pdf)$/i.test(name)) {
+          json(res, 400, { ok: false, error: '非法文件名' });
+          return;
+        }
+        const dir = findReportDir(jobId);
+        const file = dir ? path.join(dir, name) : null;
+        if (!file || !existsSync(file)) {
+          json(res, 404, { ok: false, error: '文件不存在或已清理' });
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader(
+          'Content-Type',
+          /\.pdf$/i.test(name) ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(readFileSync(file));
+        return;
+      }
+
       const candidatesMatch = /^\/api\/run\/([^/]+)\/candidates$/.exec(pathname);
       if (method === 'GET' && candidatesMatch) {
         const jobId = decodeURIComponent(candidatesMatch[1]);

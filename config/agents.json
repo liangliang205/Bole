@@ -6,7 +6,7 @@
       "nameZh": "伯乐",
       "role": "唯一编排者：结构化需求 → 扇出调度 → 汇总报告 → HITL 门控",
       "tier": "pro",
-      "tools": ["dispatch", "send_message", "stop", "query_workspace", "hitl"],
+      "tools": ["dispatch", "send_message", "stop", "query_workspace", "hitl", "export_word", "office_export_pdf", "load_workspace_dependencies", "python_exec"],
       "maxDepth": 1,
       "canDelegate": true,
       "outputSchema": "coordinator_plan",

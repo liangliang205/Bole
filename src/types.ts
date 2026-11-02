@@ -301,14 +301,39 @@ export interface ChatImage {
   detail?: 'low' | 'high' | 'original' | 'auto';
 }
 
+/** OpenAI Function Calling 标准：工具定义（OpenAI Tools API schema）。 */
+export interface OpenAiToolSchema {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+/** 模型返回的工具调用（OpenAI tools 格式）。 */
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+/** 工具调用循环中的消息（OpenAI chat 格式）。 */
+export type ChatTurn =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
+  | { role: 'tool'; content: string; tool_call_id: string };
+
 export interface ChatRequest {
   agent: string;
   tier: ModelTier;
   model?: string;
   system: string;
   user: string;
-  /** 多轮对话；存在时 user 作为最后一条用户消息的兜底。 */
-  messages?: { role: 'user' | 'assistant'; content: string }[];
   /** 图片输入（仅 user 消息支持；当前用于 DeepSeek Vision OCR）。 */
   images?: ChatImage[];
   schemaName?: string;
@@ -321,11 +346,19 @@ export interface ChatRequest {
   onToken?: (delta: string) => void;
   /** 真实提供方不读取该字段，保留给测试替身。 */
   meta?: Record<string, unknown>;
+  /** 工具调用：OpenAI function calling 定义；存在时提供方按 tools 协议请求。 */
+  tools?: OpenAiToolSchema[];
+  /** auto：由模型决定是否调用工具；none：禁止调用。 */
+  toolChoice?: 'auto' | 'none';
+  /** 多轮工具消息；存在时优先于 system/user 单轮构造。 */
+  messages?: ChatTurn[];
 }
 
 export interface ChatResult {
   text: string;
   json?: unknown;
+  /** 模型请求的工具调用；为空表示模型选择直接回答。 */
+  toolCalls?: ToolCall[];
   usage: LlmUsage;
   stopReason: StopReason;
   model: string;

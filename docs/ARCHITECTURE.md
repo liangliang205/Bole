@@ -56,7 +56,8 @@
    - 监军（pro）逐条核查。
 4. **验真环**：核查不通过 → 打回重评（复用原评估 Worker 与档位），最多 2 轮；仍不足 → `quarantine` 转人工。
 5. **建议**：对通过核查的候选人，谋士（pro）生成面试问题与风险提示。
-6. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML。
+6. **终稿工具**：报告落盘后，伯乐（coordinator）通过 OpenAI Function Calling 标准自主决定导出 Word/PDF，工具由 `src/tools/tools-call.ts` 注册（`load_workspace_dependencies` 来自 DeepSeek 官方 DSH 包；`export_word` 基于 docx 库；`office_export_pdf` 基于官方 `@deepseek-ai/libreoffice-kit`；`python_exec` 在子进程执行 Python）。产物写入运行目录，前端以附件卡片展示并可下载。
+7. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML。
 
 ## 4. 档位与路由
 

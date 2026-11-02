@@ -704,7 +704,7 @@
 
   // ---------------------------------------------------------------- chat rendering
 
-  const MILESTONES = new Set(['jd.analyzed', 'fetch.completed', 'hitl.question', 'hitl.answered', 'escalate.human', 'run.failed', 'report.generated']);
+  const MILESTONES = new Set(['jd.analyzed', 'fetch.completed', 'hitl.question', 'hitl.answered', 'escalate.human', 'run.failed', 'report.generated', 'report.exported']);
 
   function eventLine(event) {
     const payload = event.payload || {};
@@ -742,6 +742,12 @@
       case 'candidate.processed': return { title: `${label}处理完成：${payload.status}`, detail: payload.score ? `${fmtScore(payload.score)} 分` : '', agent };
       case 'batch.completed': return { title: `第 ${payload.batchId} 批完成`, detail: `评估 ${payload.evaluated} · 深评 ${payload.deep}`, agent };
       case 'report.generated': return { title: '报告已生成', detail: '', agent };
+      case 'tool.called': return { title: `伯乐调用工具 ${payload.tool}`, detail: String(payload.arguments || ''), agent };
+      case 'tool.completed': return { title: `工具 ${payload.tool} 完成`, detail: String(payload.message || ''), agent };
+      case 'tool.error': return { title: `工具 ${payload.tool} 失败`, detail: String(payload.message || ''), agent };
+      case 'tool.failed': return { title: '工具调用失败', detail: String((payload.errors || [])[0] || ''), agent };
+      case 'tool.fallback': return { title: '已按需求默认导出', detail: String(payload.reason || ''), agent };
+      case 'report.exported': return { title: '终稿文件已导出', detail: (payload.formats || []).join(' · '), agent };
       case 'run.completed': return { title: '运行完成', detail: `耗时 ${payload.durationMs}ms · 成本 $${Number(payload.usage?.costUsd || 0).toFixed(4)}`, agent };
       case 'run.failed': return { title: '运行失败', detail: String(payload.error || ''), agent };
       default: return { title: event.type, detail: JSON.stringify(payload).slice(0, 160), agent };
@@ -764,6 +770,28 @@
       const line = eventLine(event);
       return `<div class="tool-row"><span class="tool-agent">${esc(line.agent)}</span><span class="tool-title">${esc(line.title)}${line.detail ? `：${esc(line.detail)}` : ''}</span><span class="tool-time">${esc(fmtTime(event.ts))}</span></div>`;
     }).join('');
+  }
+
+  function fileCardsHtml(files) {
+    const VISIBLE = 4;
+    const cards = files.map((file) => {
+      const name = String(file).split(/[\\/]/).pop();
+      const isPdf = /\.pdf$/i.test(name);
+      const label = isPdf ? 'PDF' : 'DOCX';
+      const icon = isPdf ? 'PDF' : 'W';
+      const desc = isPdf ? '只读文件，适合分发与归档' : '可编辑文档，适合修改与签字';
+      const href = `/api/run/${encodeURIComponent(state.jobId)}/files/${encodeURIComponent(name)}`;
+      return `<a class="file-card" href="${href}" download title="点击下载 ${esc(name)}">
+        <span class="file-icon ${isPdf ? 'pdf' : 'word'}">${icon}</span>
+        <span class="file-meta"><span class="file-name">${esc(name)}</span><span class="file-desc">${esc(desc)}</span></span>
+      </a>`;
+    });
+    const visible = cards.slice(0, VISIBLE).join('');
+    const hidden = cards.slice(VISIBLE).join('');
+    const more = hidden
+      ? `<details><summary class="file-more">全部 ${files.length} 个文件</summary><div class="file-grid" style="margin-top:6px">${hidden}</div></details>`
+      : '';
+    return `<div class="file-grid">${visible}</div>${more}`;
   }
 
   function renderChat() {
@@ -803,6 +831,12 @@
           parts.push(messageHtml('assistant', '监军', fmtTime(event.ts), `<div class="msg-text"><strong>${esc(event.payload?.label || '')}</strong> 已转人工：${esc(event.payload?.reason || '')}</div>`));
         } else if (event.type === 'run.failed') {
           parts.push(messageHtml('assistant', '伯乐', fmtTime(event.ts), `<div class="msg-text">运行失败：${esc(event.payload?.error || '')}</div>`));
+        } else if (event.type === 'report.exported') {
+          const files = event.payload?.files || [];
+          const summary = String(event.payload?.summary || '').trim();
+          const text = summary || (files.length ? '终稿已生成，已按对话需求导出以下文件。' : '本次没有导出文件。');
+          const extra = files.length ? fileCardsHtml(files) : '';
+          parts.push(messageHtml('assistant', '伯乐', fmtTime(event.ts), `<div class="msg-text">${esc(text)}</div>`, extra));
         } else {
           toolGroup.push(event);
         }

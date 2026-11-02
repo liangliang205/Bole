@@ -291,6 +291,19 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .chip.uploading { opacity: .6; }
 .chip.error { border-color: var(--danger-line); color: var(--danger); background: var(--danger-bg); }
 
+/* 导出文件卡片（对话内附件） */
+.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin: 8px 0 2px; }
+.file-card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 10px 12px; text-decoration: none; color: var(--text); transition: border-color .15s, background .15s; }
+.file-card:hover { border-color: var(--accent); background: var(--surface-2); }
+.file-icon { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; font-size: 15px; font-weight: 700; color: #fff; }
+.file-icon.word { background: #2b579a; }
+.file-icon.pdf { background: #c0392b; }
+.file-meta { min-width: 0; display: grid; gap: 2px; }
+.file-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-desc { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-more { justify-self: start; margin-top: 6px; border: 0; background: transparent; color: var(--dim); font-size: 11px; cursor: pointer; padding: 2px 0; }
+.file-more:hover { color: var(--accent); }
+
 /* streaming */
 .stream-host { padding: 0 max(24px, calc((100% - var(--content-width)) / 2)); }
 .stream-card { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); padding: 10px 12px; margin-bottom: 8px; box-shadow: var(--shadow-soft); }
