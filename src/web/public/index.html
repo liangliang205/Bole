@@ -176,12 +176,20 @@
       <div>
         <h2>知识库</h2>
         <p class="muted knowledge-sub">默认不启用。启用后会参与画像、评估与面试建议的自动检索。</p>
+        <p class="knowledge-notice hidden" id="knowledge-embedding-notice">未配置嵌入模型：知识库仍可创建和使用，当前仅关键词检索。</p>
       </div>
       <button class="btn ghost" id="knowledge-close">✕</button>
     </div>
     <div class="knowledge-layout">
       <aside class="knowledge-bases">
         <button class="btn primary block" id="knowledge-new" type="button">＋ 新建知识库</button>
+        <div id="knowledge-create-form" class="knowledge-create hidden">
+          <input id="kb-new-name" class="input" placeholder="知识库名称" maxlength="100">
+          <div class="knowledge-create-actions">
+            <button class="btn" id="kb-new-create" type="button">创建</button>
+            <button class="btn ghost" id="kb-new-cancel" type="button">取消</button>
+          </div>
+        </div>
         <div id="knowledge-base-list" class="knowledge-base-list"></div>
       </aside>
       <section class="knowledge-main">
@@ -219,7 +227,8 @@
             <option value="openai">OpenAI 兼容</option>
           </select>
         </label>
-        <label>嵌入模型<input id="kb-embedding-model" class="input" placeholder="qwen3-embedding:8b"></label>
+        <label>嵌入模型<input id="kb-embedding-model" class="input" list="kb-embedding-models" placeholder="qwen3-embedding:8b"></label>
+        <datalist id="kb-embedding-models"></datalist>
         <label class="span-2">接口地址<input id="kb-embedding-url" class="input" placeholder="http://127.0.0.1:11434"></label>
         <label class="span-2">API Key（可选，留空保留已保存值）<input id="kb-embedding-key" class="input" type="password" placeholder="留空使用已保存凭据"></label>
         <label>重排模型<input id="kb-rerank-model" class="input" placeholder="可选"></label>
@@ -234,6 +243,7 @@
       </div>
       <div class="knowledge-settings-actions">
         <button class="btn" id="kb-settings-save" type="button">保存设置</button>
+        <button class="btn ghost" id="kb-model-refresh" type="button">获取模型列表</button>
         <button class="btn ghost" id="kb-test-embedding" type="button">测试嵌入连接</button>
         <span id="kb-settings-status" class="settings-status"></span>
       </div>

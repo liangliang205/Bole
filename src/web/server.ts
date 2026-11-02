@@ -529,7 +529,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           name: String(body.name ?? ''),
           description: String(body.description ?? ''),
         });
-        json(res, 200, { ok: true, base });
+        const warning = knowledge.settings().embeddingProvider === 'none'
+          ? '未配置嵌入模型：知识库已创建，将仅使用关键词检索'
+          : undefined;
+        json(res, 200, { ok: true, base, warning });
         return;
       }
 
@@ -592,6 +595,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       }
       if (pathname === '/api/knowledge/test-embedding' && method === 'POST') {
         json(res, 200, { ok: true, result: await knowledge.testEmbedding() });
+        return;
+      }
+      if (pathname === '/api/knowledge/embedding-models' && method === 'GET') {
+        json(res, 200, { ok: true, models: await knowledge.listEmbeddingModels() });
         return;
       }
       if (pathname === '/api/knowledge/search' && method === 'POST') {

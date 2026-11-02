@@ -281,6 +281,7 @@ export class KnowledgeService {
   readonly dbPath: string;
   private readonly db: DatabaseSync;
   private closed = false;
+  private lastEmbeddingError = '';
 
   constructor(dbPath: string) {
     this.dbPath = dbPath;
@@ -602,12 +603,56 @@ export class KnowledgeService {
     const settings = this.settings();
     if (settings.embeddingProvider === 'none') return { ok: false, model: '', dimensions: 0, error: '未启用嵌入模型' };
     const vectors = await this.embedTexts(['知识库连接测试']);
-    if (!vectors) return { ok: false, model: settings.embeddingModel, dimensions: 0, error: '无法连接嵌入服务' };
+    if (!vectors) return { ok: false, model: settings.embeddingModel, dimensions: 0, error: this.lastEmbeddingError || '无法连接嵌入服务' };
     return { ok: true, model: settings.embeddingModel, dimensions: vectors[0]?.length ?? 0 };
+  }
+
+  /** 读取嵌入服务模型列表，供设置页选择；失败时返回空数组。 */
+  async listEmbeddingModels(): Promise<string[]> {
+    const settings = this.settings();
+    try {
+      if (settings.embeddingProvider === 'ollama') {
+        const base = settings.embeddingBaseUrl.replace(/\/$/, '');
+        const response = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) return [];
+        const data = (await response.json()) as { models?: { name?: string; model?: string }[] };
+        return (data.models ?? []).map((item) => item.name ?? item.model ?? '').filter(Boolean);
+      }
+      if (settings.embeddingProvider === 'openai') {
+        const base = settings.embeddingBaseUrl.replace(/\/$/, '');
+        const endpoint = /\/v1$/i.test(base) ? `${base}/models` : `${base}/v1/models`;
+        const headers: Record<string, string> = {};
+        if (settings.embeddingApiKey) headers.Authorization = `Bearer ${settings.embeddingApiKey}`;
+        const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) return [];
+        const data = (await response.json()) as { data?: { id?: string }[] };
+        return (data.data ?? []).map((item) => item.id ?? '').filter(Boolean);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async resolveOllamaModel(model: string, base: string): Promise<string> {
+    try {
+      const response = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(8_000) });
+      if (!response.ok) return model;
+      const data = (await response.json()) as { models?: { name?: string; model?: string }[] };
+      const names = (data.models ?? []).map((item) => item.name ?? item.model ?? '').filter(Boolean);
+      if (names.includes(model)) return model;
+      // 兼容常见的 Ollama tag 写法：qwen3-embedding-8b → qwen3-embedding:8b
+      const alias = model.replace(/-(\d+)b$/i, ':$1b');
+      if (names.includes(alias)) return alias;
+      return model;
+    } catch {
+      return model;
+    }
   }
 
   private async embedTexts(texts: string[]): Promise<number[][] | null> {
     const settings = this.settings();
+    this.lastEmbeddingError = '';
     if (settings.embeddingProvider === 'none' || !settings.embeddingModel.trim() || texts.length === 0) return null;
     const batches: string[][] = [];
     for (let index = 0; index < texts.length; index += 32) batches.push(texts.slice(index, index + 32));
@@ -616,10 +661,11 @@ export class KnowledgeService {
       for (const batch of batches) {
         if (settings.embeddingProvider === 'ollama') {
           const base = settings.embeddingBaseUrl.replace(/\/$/, '');
+          const model = await this.resolveOllamaModel(settings.embeddingModel, base);
           let response = await fetch(`${base}/api/embed`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: settings.embeddingModel, input: batch }),
+            body: JSON.stringify({ model, input: batch }),
             signal: AbortSignal.timeout(60_000),
           });
           if (response.ok) {
@@ -628,16 +674,22 @@ export class KnowledgeService {
               vectors.push(...data.embeddings);
               continue;
             }
+          } else {
+            const body = (await response.text()).slice(0, 240);
+            this.lastEmbeddingError = `Ollama /api/embed HTTP ${response.status}：${body || '空响应'}`;
           }
           // 兼容旧版 Ollama /api/embeddings
           for (const item of batch) {
             response = await fetch(`${base}/api/embeddings`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ model: settings.embeddingModel, prompt: item }),
+              body: JSON.stringify({ model, prompt: item }),
               signal: AbortSignal.timeout(60_000),
             });
-            if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
+            if (!response.ok) {
+              const body = (await response.text()).slice(0, 240);
+              throw new Error(`Ollama /api/embeddings HTTP ${response.status}：${body || '空响应'}`);
+            }
             const data = (await response.json()) as { embedding?: number[] };
             if (!data.embedding) throw new Error('Ollama 返回空向量');
             vectors.push(data.embedding);
@@ -653,7 +705,10 @@ export class KnowledgeService {
             body: JSON.stringify({ model: settings.embeddingModel, input: batch }),
             signal: AbortSignal.timeout(60_000),
           });
-          if (!response.ok) throw new Error(`Embedding HTTP ${response.status}`);
+          if (!response.ok) {
+            const body = (await response.text()).slice(0, 240);
+            throw new Error(`Embedding HTTP ${response.status}：${body || '空响应'}`);
+          }
           const data = (await response.json()) as { data?: { embedding?: number[] }[] };
           const batchVectors = (data.data ?? []).map((item) => item.embedding).filter((item): item is number[] => Array.isArray(item));
           if (batchVectors.length !== batch.length) throw new Error('Embedding 返回数量不匹配');
@@ -661,13 +716,13 @@ export class KnowledgeService {
         }
       }
       return vectors;
-    } catch {
+    } catch (error) {
+      this.lastEmbeddingError = error instanceof Error ? error.message : String(error);
       return null;
     }
   }
 
-  private async rerank(query: string, candidates: { row: ChunkRow; score: number }[]): Promise<{ row: ChunkRow; score: number }[]> {
-    const settings = this.settings();
+  private async rerank(query: string, candidates: { row: ChunkRow; score: number }[]): Promise<{ row: ChunkRow; score: number }[]> {    const settings = this.settings();
     if (!settings.rerankModel || !settings.rerankBaseUrl || candidates.length === 0) return candidates;
     try {
       const base = settings.rerankBaseUrl.replace(/\/$/, '');

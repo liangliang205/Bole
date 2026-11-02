@@ -1339,6 +1339,7 @@
       $('#kb-max-context').value = settings.maxContextChars;
       $('#kb-auto-recall').checked = settings.autoRecall;
       $('#kb-smart-chunk').checked = settings.smartChunk;
+      $('#knowledge-embedding-notice').classList.toggle('hidden', settings.embeddingProvider !== 'none');
     }
   }
 
@@ -1358,16 +1359,23 @@
   }
 
   async function createKnowledgeBase() {
-    const name = window.prompt('知识库名称');
-    if (!name?.trim()) return;
+    const input = $('#kb-new-name');
+    const name = input.value.trim();
+    if (!name) {
+      toast('请先填写知识库名称', 'error');
+      input.focus();
+      return;
+    }
     try {
       const data = await api('/api/knowledge/bases', {
         method: 'POST',
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name }),
       });
       state.selectedKnowledgeBaseId = data.base?.id ?? '';
+      input.value = '';
+      $('#knowledge-create-form').classList.add('hidden');
       await loadKnowledge();
-      toast('知识库已创建；启用后才会参与自动检索', 'ok');
+      toast(data.warning ?? '知识库已创建；启用后才会参与自动检索', data.warning ? 'warn' : 'ok');
     } catch (error) {
       toast(`创建失败：${error.message}`, 'error');
     }
@@ -1481,6 +1489,19 @@
       setKnowledgeStatus('#kb-settings-status', result.ok ? `连接正常：${result.model}（${result.dimensions} 维）` : `失败：${result.error || '未知错误'}`, result.ok ? 'ok' : 'error');
     } catch (error) {
       setKnowledgeStatus('#kb-settings-status', `测试失败：${error.message}`, 'error');
+    }
+  }
+
+  async function loadEmbeddingModels() {
+    setKnowledgeStatus('#kb-settings-status', '正在获取模型列表…');
+    try {
+      const data = await api('/api/knowledge/embedding-models');
+      const models = data.models || [];
+      $('#kb-embedding-models').innerHTML = models.map((model) => `<option value="${esc(model)}"></option>`).join('');
+      if (models.length && !$('#kb-embedding-model').value.trim()) $('#kb-embedding-model').value = models[0];
+      setKnowledgeStatus('#kb-settings-status', models.length ? `发现 ${models.length} 个嵌入模型` : '没有获取到模型，请检查服务地址/Key', models.length ? 'ok' : 'warn');
+    } catch (error) {
+      setKnowledgeStatus('#kb-settings-status', `获取模型失败：${error.message}`, 'error');
     }
   }
 
@@ -1626,7 +1647,18 @@
     $('#tools-close').addEventListener('click', closeTools);
     $('#open-knowledge').addEventListener('click', openKnowledge);
     $('#knowledge-close').addEventListener('click', closeKnowledge);
-    $('#knowledge-new').addEventListener('click', createKnowledgeBase);
+    $('#knowledge-new').addEventListener('click', () => {
+      $('#knowledge-create-form').classList.remove('hidden');
+      $('#kb-new-name').focus();
+    });
+    $('#kb-new-create').addEventListener('click', createKnowledgeBase);
+    $('#kb-new-cancel').addEventListener('click', () => {
+      $('#knowledge-create-form').classList.add('hidden');
+      $('#kb-new-name').value = '';
+    });
+    $('#kb-new-name').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); createKnowledgeBase(); }
+    });
     $('#kb-save').addEventListener('click', () => saveKnowledgeBase());
     $('#kb-delete').addEventListener('click', deleteKnowledgeBase);
     $('#kb-upload').addEventListener('click', () => $('#knowledge-file').click());
@@ -1657,6 +1689,7 @@
       }
     });
     $('#kb-settings-save').addEventListener('click', saveKnowledgeSettings);
+    $('#kb-model-refresh').addEventListener('click', loadEmbeddingModels);
     $('#kb-test-embedding').addEventListener('click', testKnowledgeEmbedding);
     $('#kb-embedding-provider').addEventListener('change', (event) => {
       const url = $('#kb-embedding-url');

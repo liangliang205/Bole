@@ -383,6 +383,10 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .knowledge-sub { margin: 4px 0 0; font-size: 12px; }
 .knowledge-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; margin-top: 14px; }
 .knowledge-bases { border-right: 1px solid var(--line-soft); padding-right: 12px; }
+.knowledge-create { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.knowledge-create-actions { display: flex; gap: 6px; }
+.knowledge-create-actions .btn { flex: 1; }
+.knowledge-notice { margin: 7px 0 0; padding: 7px 9px; border: 1px solid var(--warn-line); border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 11px; }
 .knowledge-base-list { display: grid; gap: 5px; margin-top: 10px; }
 .knowledge-base-item {
   border: 1px solid transparent; border-radius: 9px; padding: 8px 9px; cursor: pointer; background: transparent;
@@ -444,6 +448,7 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .tool-card.danger { border-color: var(--danger-line); background: var(--danger-bg); }
 .tool-output { margin-top: 12px; }
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 90; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); padding: 10px 16px; border-radius: 10px; box-shadow: var(--shadow); font-size: 13px; max-width: 90vw; }
+.toast.warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn); }
 .toast.error { border-color: var(--danger-line); color: var(--danger); }
 .toast.ok { border-color: var(--ok-line); color: var(--ok); }
 
