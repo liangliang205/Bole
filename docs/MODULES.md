@@ -100,6 +100,7 @@
 - 支持 Ollama 或 OpenAI 兼容 embedding；向量随分块存 SQLite。未配置 embedding 时退化为中英混合 token 关键词检索。
 - 可选 rerank（OpenAI 兼容 `/rerank`）、Top K、上下文预算和“自动检索”开关。
 - `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像师、相马官、谋士在调用模型前注入检索片段。
+- 管理台按知识库返回统计（来源/解析/分块/Token/字符/向量化/维度），文档列表展示类型、状态与更新时间。
 
 ## 15. 完成后对话（`src/chat/service.ts`）
 

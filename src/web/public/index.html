@@ -212,24 +212,47 @@
       <section class="knowledge-main">
         <div id="knowledge-empty" class="empty-note">还没有知识库。创建一个并启用后，才会参与自动检索。</div>
         <div id="knowledge-detail" class="hidden">
-          <div class="form-grid">
-            <label>知识库名称<input id="kb-name" class="input" maxlength="100"></label>
-            <label class="knowledge-switch-line"><span>启用自动检索</span><input id="kb-enabled" type="checkbox"></label>
-            <label class="span-2">描述<input id="kb-description" class="input" placeholder="这个知识库放什么内容，便于检索路由" maxlength="2000"></label>
-          </div>
-          <div class="knowledge-actions">
-            <button class="btn" id="kb-save" type="button">保存知识库</button>
-            <button class="btn ghost danger-text" id="kb-delete" type="button">删除知识库</button>
-            <span id="kb-status" class="settings-status"></span>
-          </div>
-          <div class="knowledge-docs-head">
-            <h3>文档</h3>
-            <div class="knowledge-doc-actions">
-              <button class="btn ghost" id="kb-upload" type="button">＋ 上传文档</button>
+          <div class="knowledge-hero">
+            <div class="knowledge-hero-icon">▤</div>
+            <div class="knowledge-hero-copy">
+              <h2 id="kb-title">知识库</h2>
+              <div id="kb-tags" class="knowledge-tags"></div>
             </div>
+            <button class="btn primary" id="kb-upload" type="button">＋ 添加数据源</button>
           </div>
-          <div id="kb-documents" class="knowledge-doc-list"></div>
-          <div id="kb-doc-status" class="settings-status"></div>
+          <div id="kb-stats" class="knowledge-stats"></div>
+          <div class="knowledge-panel">
+            <div class="knowledge-panel-head">
+              <div>
+                <h3>文档</h3>
+                <span id="kb-updated" class="knowledge-panel-sub">上传后会立即解析并索引</span>
+              </div>
+              <button class="btn ghost" id="kb-upload-secondary" type="button">＋ 添加数据源</button>
+            </div>
+            <div class="knowledge-table-wrap">
+              <table class="knowledge-table">
+                <thead>
+                  <tr><th>名称</th><th>类型</th><th>状态</th><th>更新时间</th><th></th></tr>
+                </thead>
+                <tbody id="kb-documents"></tbody>
+              </table>
+            </div>
+            <div id="kb-doc-status" class="settings-status"></div>
+          </div>
+
+          <details class="knowledge-settings knowledge-config">
+            <summary>知识库设置</summary>
+            <div class="form-grid">
+              <label>知识库名称<input id="kb-name" class="input" maxlength="100"></label>
+              <label class="knowledge-switch-line"><span>启用自动检索</span><input id="kb-enabled" type="checkbox"></label>
+              <label class="span-2">描述<input id="kb-description" class="input" placeholder="这个知识库放什么内容，便于检索路由" maxlength="2000"></label>
+            </div>
+            <div class="knowledge-actions">
+              <button class="btn" id="kb-save" type="button">保存知识库</button>
+              <button class="btn ghost danger-text" id="kb-delete" type="button">删除知识库</button>
+              <span id="kb-status" class="settings-status"></span>
+            </div>
+          </details>
         </div>
       </section>
     </div>

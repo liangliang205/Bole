@@ -33,7 +33,7 @@
     events: [], seen: new Set(), lastSeq: 0, streams: new Map(), hitlId: '',
     chat: [], chatPending: false,
     showArchived: false, menuJobId: '',
-    knowledgeBases: [], knowledgeSettings: null, selectedKnowledgeBaseId: '', knowledgeDocs: [],
+    knowledgeBases: [], knowledgeSettings: null, selectedKnowledgeBaseId: '', knowledgeDocs: [], knowledgeStats: null,
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
@@ -1655,6 +1655,52 @@
     }
   }
 
+  function formatKnowledgeSize(chars) {
+    const value = Number(chars) || 0;
+    if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${value} 字符`;
+  }
+
+  function formatKnowledgeRelative(value) {
+    const time = new Date(value).getTime();
+    if (!Number.isFinite(time)) return '—';
+    const diff = Math.max(0, Date.now() - time);
+    const minute = 60_000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diff < minute) return '刚刚';
+    if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
+    if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
+    return `${Math.floor(diff / day)} 天前`;
+  }
+
+  function renderKnowledgeTags(base) {
+    if (!base) return;
+    const formats = [...new Set(state.knowledgeDocs.map((document) => String(document.format || '').toUpperCase()).filter(Boolean))];
+    const tags = [
+      base.enabled ? '自动检索' : '未启用',
+      ...formats,
+      `${base.documentCount ?? state.knowledgeDocs.length} 份文档`,
+    ];
+    $('#kb-tags').innerHTML = tags.map((tag) => `<span class="knowledge-tag">${esc(tag)}</span>`).join('');
+  }
+
+  function renderKnowledgeStats(stats) {
+    const value = stats || {};
+    const cards = [
+      [value.sources ?? 0, '来源项'],
+      [value.parsedDocuments ?? 0, '已解析文档'],
+      [value.chunks ?? 0, '分块'],
+      [Number(value.tokens ?? 0).toLocaleString(), '≈ Token'],
+      [formatKnowledgeSize(value.chars ?? 0), '字符'],
+      [value.embeddedChunks ? '✓' : '0', '已向量化'],
+      [value.embeddingDimensions ? `${value.embeddingDimensions}d` : '—', '向量维度'],
+    ];
+    $('#kb-stats').innerHTML = cards.map(([number, label]) => `
+      <div class="knowledge-stat"><b>${esc(number)}</b><span>${esc(label)}</span></div>`).join('');
+  }
+
   function renderKnowledge() {
     const bases = state.knowledgeBases;
     $('#knowledge-base-list').innerHTML = bases.length ? bases.map((base) => `
@@ -1666,9 +1712,20 @@
     $('#knowledge-empty').classList.toggle('hidden', Boolean(selected));
     $('#knowledge-detail').classList.toggle('hidden', !selected);
     if (selected) {
+      $('#kb-title').textContent = selected.name || '知识库';
       $('#kb-name').value = selected.name;
       $('#kb-description').value = selected.description;
       $('#kb-enabled').checked = selected.enabled;
+      renderKnowledgeTags(selected);
+      renderKnowledgeStats(state.knowledgeStats || {
+        sources: selected.documentCount,
+        parsedDocuments: selected.documentCount,
+        chunks: selected.chunkCount,
+        chars: 0,
+        tokens: 0,
+        embeddedChunks: 0,
+        embeddingDimensions: 0,
+      });
     }
     if (state.knowledgeSettings) {
       const settings = state.knowledgeSettings;
@@ -1695,12 +1752,28 @@
     try {
       const data = await api(`/api/knowledge/bases/${encodeURIComponent(baseId)}/documents`);
       state.knowledgeDocs = data.documents || [];
-      $('#kb-documents').innerHTML = state.knowledgeDocs.length ? state.knowledgeDocs.map((document) => `
-        <div class="knowledge-doc-item">
-          <span class="doc-name" title="${esc(document.filename)}">${esc(document.title)}</span>
-          <span class="doc-meta">${esc(document.format)} · ${document.chars} 字符</span>
-          <button class="btn ghost danger-text" type="button" data-kb-delete-doc="${esc(document.id)}">删除</button>
-        </div>`).join('') : '<div class="empty-note">还没有文档；上传后才会被检索。</div>';
+      state.knowledgeStats = data.stats || null;
+      const base = state.knowledgeBases.find((item) => item.id === baseId);
+      renderKnowledgeTags(base);
+      renderKnowledgeStats(state.knowledgeStats);
+      const latest = state.knowledgeDocs.reduce((value, document) => (
+        !value || String(document.createdAt) > String(value) ? document.createdAt : value
+      ), '');
+      $('#kb-updated').textContent = latest ? `更新于 ${formatKnowledgeRelative(latest)}` : '上传后会立即解析并索引';
+      $('#kb-documents').innerHTML = state.knowledgeDocs.length ? state.knowledgeDocs.map((document) => {
+        const status = document.status === 'active' ? '就绪' : document.status || '处理中';
+        const tone = document.status === 'active' ? 'ok' : document.warning ? 'warn' : '';
+        return `<tr>
+          <td>
+            <div class="knowledge-doc-name" title="${esc(document.filename)}">${esc(document.title)}</div>
+            <div class="knowledge-doc-sub">${document.chars.toLocaleString()} 字符</div>
+          </td>
+          <td><span class="knowledge-type">${esc(String(document.format || '文件').toUpperCase())}</span></td>
+          <td><span class="knowledge-status ${tone}"><i></i>${esc(status)}</span></td>
+          <td class="knowledge-time">${esc(formatKnowledgeRelative(document.createdAt))}</td>
+          <td><button class="knowledge-row-action" type="button" title="删除文档" data-kb-delete-doc="${esc(document.id)}">⋯</button></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="5" class="knowledge-table-empty">还没有文档；上传后才会被检索。</td></tr>';
     } catch (error) {
       setKnowledgeStatus('#kb-doc-status', `读取文档失败：${error.message}`, 'error');
     }
@@ -2035,6 +2108,7 @@
     $('#kb-save').addEventListener('click', () => saveKnowledgeBase());
     $('#kb-delete').addEventListener('click', deleteKnowledgeBase);
     $('#kb-upload').addEventListener('click', () => $('#knowledge-file').click());
+    $('#kb-upload-secondary').addEventListener('click', () => $('#knowledge-file').click());
     $('#knowledge-file').addEventListener('change', async (event) => {
       const files = Array.from(event.target.files || []);
       event.target.value = '';

@@ -543,7 +543,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       const knowledgeDocsMatch = /^\/api\/knowledge\/bases\/([^/]+)\/documents$/.exec(pathname);
       if (knowledgeDocsMatch && method === 'GET') {
         const baseId = decodeURIComponent(knowledgeDocsMatch[1]);
-        json(res, 200, { ok: true, documents: knowledge.listDocuments(baseId) });
+        json(res, 200, { ok: true, documents: knowledge.listDocuments(baseId), stats: knowledge.baseStats(baseId) });
         return;
       }
       if (knowledgeDocsMatch && method === 'POST') {

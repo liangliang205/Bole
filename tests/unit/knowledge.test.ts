@@ -30,6 +30,12 @@ test('知识库默认空、禁用时不召回，启用后按关键词检索', as
     assert.match(references, /招聘知识/);
     assert.match(references, /Spring Boot/);
     assert.equal(service.stats().enabledBases, 1);
+    const baseStats = service.baseStats(base.id);
+    assert.equal(baseStats.sources, 1);
+    assert.equal(baseStats.parsedDocuments, 1);
+    assert.ok(baseStats.chunks > 0);
+    assert.ok(baseStats.chars > 0);
+    assert.ok(baseStats.tokens >= baseStats.chars / 3);
   } finally {
     service.close();
     await rm(dir, { recursive: true, force: true });

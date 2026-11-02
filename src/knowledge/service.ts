@@ -51,6 +51,17 @@ export interface KnowledgeDocument {
   createdAt: string;
 }
 
+export interface KnowledgeBaseStats {
+  sources: number;
+  documents: number;
+  parsedDocuments: number;
+  chunks: number;
+  chars: number;
+  tokens: number;
+  embeddedChunks: number;
+  embeddingDimensions: number;
+}
+
 export interface KnowledgeHit {
   baseId: string;
   baseName: string;
@@ -528,6 +539,43 @@ export class KnowledgeService {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  baseStats(baseId: string): KnowledgeBaseStats {
+    const docs = this.db.prepare(`
+      SELECT COUNT(*) AS sources,
+             COALESCE(SUM(CASE WHEN status='active' THEN 1 ELSE 0 END), 0) AS parsed,
+             COALESCE(SUM(chars), 0) AS chars
+      FROM knowledge_documents WHERE base_id=?
+    `).get(baseId) as { sources: number; parsed: number; chars: number };
+    const chunks = this.db.prepare(`
+      SELECT COUNT(*) AS total,
+             COALESCE(SUM(CASE WHEN embedding_json IS NOT NULL THEN 1 ELSE 0 END), 0) AS embedded
+      FROM knowledge_chunks WHERE base_id=?
+    `).get(baseId) as { total: number; embedded: number };
+    const sample = this.db.prepare(
+      'SELECT embedding_json FROM knowledge_chunks WHERE base_id=? AND embedding_json IS NOT NULL LIMIT 1',
+    ).get(baseId) as { embedding_json: string } | undefined;
+    let embeddingDimensions = 0;
+    if (sample?.embedding_json) {
+      try {
+        const vector = JSON.parse(sample.embedding_json);
+        if (Array.isArray(vector)) embeddingDimensions = vector.length;
+      } catch {
+        // 损坏的向量不影响管理页统计。
+      }
+    }
+    const chars = Number(docs.chars ?? 0);
+    return {
+      sources: Number(docs.sources ?? 0),
+      documents: Number(docs.sources ?? 0),
+      parsedDocuments: Number(docs.parsed ?? 0),
+      chunks: Number(chunks.total ?? 0),
+      chars,
+      tokens: Math.ceil(chars / 3),
+      embeddedChunks: Number(chunks.embedded ?? 0),
+      embeddingDimensions,
+    };
   }
 
   stats(): { bases: number; enabledBases: number; documents: number; chunks: number; embeddedChunks: number } {
