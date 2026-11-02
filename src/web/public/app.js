@@ -1491,7 +1491,8 @@
       const result = data.result || {};
       setKnowledgeStatus('#kb-settings-status', result.ok ? `连接正常：${result.model}（${result.dimensions} 维）` : `失败：${result.error || '未知错误'}`, result.ok ? 'ok' : 'error');
     } catch (error) {
-      setKnowledgeStatus('#kb-settings-status', `测试失败：${error.message}`, 'error');
+      const message = error.message || '';
+      setKnowledgeStatus('#kb-settings-status', /未知接口|Not Found|404/.test(message) ? '服务端还是旧版本：请重启 pnpm web 后刷新页面' : `测试失败：${message}`, 'error');
     }
   }
 
@@ -1502,10 +1503,16 @@
       const data = await api('/api/knowledge/embedding-models');
       const models = data.models || [];
       $('#kb-embedding-models').innerHTML = models.map((model) => `<option value="${esc(model)}"></option>`).join('');
-      if (models.length && !$('#kb-embedding-model').value.trim()) $('#kb-embedding-model').value = models[0];
+      const current = $('#kb-embedding-model').value.trim();
+      if (models.length && (!current || !models.includes(current))) {
+        $('#kb-embedding-model').value = models[0];
+        setKnowledgeStatus('#kb-settings-status', `发现 ${models.length} 个模型，已选择 ${models[0]}；可测试或修改`, 'ok');
+        return;
+      }
       setKnowledgeStatus('#kb-settings-status', models.length ? `发现 ${models.length} 个嵌入模型` : '没有获取到模型，请检查服务地址/Key', models.length ? 'ok' : 'warn');
     } catch (error) {
-      setKnowledgeStatus('#kb-settings-status', `获取模型失败：${error.message}`, 'error');
+      const message = error.message || '';
+      setKnowledgeStatus('#kb-settings-status', /未知接口|Not Found|404/.test(message) ? '服务端还是旧版本：请重启 pnpm web 后刷新页面' : `获取模型失败：${message}`, 'error');
     }
   }
 

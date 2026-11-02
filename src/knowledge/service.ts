@@ -602,6 +602,7 @@ export class KnowledgeService {
   async testEmbedding(): Promise<{ ok: boolean; model: string; dimensions: number; error?: string }> {
     const settings = this.settings();
     if (settings.embeddingProvider === 'none') return { ok: false, model: '', dimensions: 0, error: '未启用嵌入模型' };
+    if (!settings.embeddingModel.trim()) return { ok: false, model: '', dimensions: 0, error: '请先填写/选择嵌入模型名称' };
     const vectors = await this.embedTexts(['知识库连接测试']);
     if (!vectors) return { ok: false, model: settings.embeddingModel, dimensions: 0, error: this.lastEmbeddingError || '无法连接嵌入服务' };
     return { ok: true, model: settings.embeddingModel, dimensions: vectors[0]?.length ?? 0 };
