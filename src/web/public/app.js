@@ -428,6 +428,10 @@
     const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
     $('#reply-hint').textContent = replyHint;
     $('#reply-hint').classList.toggle('hidden', !replyHint);
+    const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
+    $('#reply-model').textContent = activeProvider ? `${activeProvider.name} · ${activeProvider.proModel}` : '';
+    $('#reply-send').textContent = state.sending ? '…' : '↑';
+    resizeReplyInput();
     $('#reply-input').placeholder = run.pendingHitl
       ? '回答 HITL 问题，或点击上方选项…'
       : canChat ? '继续追问伯乐，例如：为什么 R08 不推荐？' : '筛选完成后可继续和伯乐对话…';
@@ -788,11 +792,19 @@
     }
   }
 
+  function resizeReplyInput() {
+    const input = $('#reply-input');
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(180, Math.max(68, input.scrollHeight))}px`;
+  }
+
   async function sendChat() {
     if (!state.jobId || state.run?.status !== 'completed') return;
     const value = $('#reply-input').value.trim();
     if (!value) { toast('请输入内容', 'error'); return; }
     $('#reply-input').value = '';
+    resizeReplyInput();
     state.sending = true;
     state.chat.push({ id: `local_${Date.now()}`, role: 'user', content: value, created_ts: new Date().toISOString() });
     renderAll();
@@ -817,6 +829,7 @@
       const value = $('#reply-input').value.trim();
       if (!value) { toast('请输入回答', 'error'); return; }
       $('#reply-input').value = '';
+      resizeReplyInput();
       await submitHitl(value);
       return;
     }
@@ -1776,6 +1789,7 @@
       if (button) { state.drawerCandidate = null; openDrawer(button.dataset.drawerTab); }
     });
     $('#reply-send').addEventListener('click', sendReply);
+    $('#reply-input').addEventListener('input', resizeReplyInput);
     $('#reply-input').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply(); }
     });

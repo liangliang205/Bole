@@ -85,9 +85,16 @@
       <div class="composer-wrap">
         <div class="composer reply-composer">
           <textarea id="reply-input" rows="2" placeholder="回答 HITL 问题，或点击上方选项…"></textarea>
-          <div class="composer-bar">
-            <span class="muted" id="reply-hint">当前没有待回答的问题</span>
-            <button class="btn primary" id="reply-send" disabled>发送</button>
+          <div class="composer-bar reply-bar">
+            <div class="reply-context">
+              <span class="reply-agent-dot"></span>
+              <span>伯乐 · 主 Agent</span>
+              <span class="muted hidden" id="reply-hint"></span>
+            </div>
+            <div class="reply-actions">
+              <span class="reply-model" id="reply-model"></span>
+              <button class="send-btn" id="reply-send" title="发送" aria-label="发送" disabled>↑</button>
+            </div>
           </div>
         </div>
       </div>
