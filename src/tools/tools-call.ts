@@ -114,7 +114,7 @@ const loadWorkspaceDependencies: ToolDefinition = {
     function: {
       name: 'load_workspace_dependencies',
       description:
-        'Get absolute paths to bundled Python and library directories, plus bundled Python distribution versions. Node.js and pnpm paths are included when the payload provides them. Python includes numpy, pandas, python-docx, python-pptx, openpyxl, Pillow, lxml, and XlsxWriter. Use these libraries for Office files unless the user or workspace instructions select another environment. This does not change PATH or package-manager settings.',
+        'Get absolute paths to bundled Python and library directories, plus bundled Python distribution versions. Node.js and pnpm paths are included when the payload provides them. Python includes numpy, pandas, python-docx, python-pptx, openpyxl, Pillow, lxml, and XlsxWriter. Use only when a custom Python/Office transformation is needed; routine Word/PDF export does not require this lookup. This does not change PATH or package-manager settings.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -150,12 +150,15 @@ const exportWord: ToolDefinition = {
     function: {
       name: 'export_word',
       description:
-        '把本次运行的招聘筛选终稿报告导出为 Word（.docx），写入运行目录。内容来自已生成的 report.json（数据源唯一），不会修改报告。',
+        'Generate the final recruiting report as an editable Word document in the run directory. Use only when HR explicitly requests a Word/editable report; do not generate a file proactively. Reads the existing report.json without modifying it and returns the .docx path.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
   run: async (_args, ctx) => {
     const buffer = await buildReportDocx(ctx.report);
+    if (buffer.length < 2 || buffer.subarray(0, 2).toString('ascii') !== 'PK') {
+      throw new Error('Word 生成失败：输出不是有效的 DOCX 文件');
+    }
     const target = path.join(ctx.runDir, 'report.docx');
     await writeFile(target, buffer);
     return { ok: true, message: `已生成 Word：${target}`, files: [target], data: { bytes: buffer.length } };
@@ -168,7 +171,7 @@ const officeExportPdf: ToolDefinition = {
     function: {
       name: 'office_export_pdf',
       description:
-        '把运行目录中的 Word（.docx）文档转换为 PDF 并写入运行目录（DSH 的 office-export-pdf 方案，基于 LibreOffice）。必须先有 docx 文件；未指定路径时默认使用 report.docx。',
+        'Convert the final saved Word report to a new PDF with LibreOffice Kit. Use only after HR explicitly requests PDF; the .docx source must exist and is preserved. Validates the command result, nonempty output, and %PDF- signature. Returns the .pdf path.',
       parameters: {
         type: 'object',
         properties: {
@@ -186,11 +189,16 @@ const officeExportPdf: ToolDefinition = {
     const converter = await createConverter({ timeoutMs: 120_000 });
     try {
       const result = await converter.render({ inputPath: docxPath, outputPath });
+      const output = await readFile(outputPath).catch(() => null);
+      if (!output?.length || output.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        await rm(outputPath, { force: true });
+        throw new Error('PDF 生成失败：输出为空或缺少 %PDF- 文件签名');
+      }
       return {
         ok: true,
-        message: `已生成 PDF：${outputPath}`,
+        message: `已生成 PDF：${outputPath}${result.pageCount ? `（${result.pageCount} 页）` : ''}`,
         files: [outputPath],
-        data: { backend: result.backend, pageCount: result.pageCount, missingFonts: result.missingFonts },
+        data: { backend: result.backend, pageCount: result.pageCount, missingFonts: result.missingFonts, bytes: output.length },
       };
     } finally {
       await converter.dispose();
@@ -204,7 +212,7 @@ const pythonExec: ToolDefinition = {
     function: {
       name: 'python_exec',
       description:
-        '在运行目录中执行一段 Python 代码并返回输出（超时 30 秒，输出截断）。优先使用 DSH 内置 Python（配合 load_workspace_dependencies），未配置时使用系统 Python。',
+        'Execute Python in the run directory for a custom document or data transformation that HR explicitly requested. Do not use it to inspect report.json or to produce routine Word/PDF exports; use export_word or office_export_pdf for those. Returns stdout/stderr with a 30s default timeout.',
       parameters: {
         type: 'object',
         properties: {

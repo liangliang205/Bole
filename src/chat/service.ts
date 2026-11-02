@@ -92,7 +92,13 @@ export async function chatWithJob(opts: {
   const system = [
     buildJobChatContext(opts.job, opts.report),
     toolsEnabled
-      ? '【工具使用规则】只有 HR 在对话中明确要求生成/导出 Word、PDF 或其他文件时，才调用工具；没有明确要求时不要调用任何工具，直接用文字回答。不要为了展示能力主动生成文件。'
+      ? [
+          '【文件生成规则】文件工具是可选的，不是每次回答的默认步骤。',
+          '- 只有 HR 在当前对话中明确要求生成、导出或下载 Word/PDF/可编辑报告时，才调用工具。',
+          '- Word 使用 export_word；PDF 使用 office_export_pdf，且需要先有 docx 源文件。',
+          '- HR 没有明确要求生成文件时，不调用任何工具，直接用文字回答；不要主动生成或建议性生成文件。',
+          '- 工具成功后只报告实际生成的文件和下载链接；失败时保留已有源文件并说明限制，不要反复转换未变化的输入，也不要用 python_exec 检查 report.json。',
+        ].join('\n')
       : '',
   ].filter(Boolean).join('\n\n');
   const turns: ChatTurn[] = history.map((item) => ({ role: item.role, content: item.content }));
