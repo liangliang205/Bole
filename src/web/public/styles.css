@@ -124,14 +124,14 @@ b, strong { color: var(--text); }
 }
 .sidebar-resizer::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
-  background: var(--line-soft); transition: background .15s;
+  background: var(--line-strong); opacity: .35; transition: opacity .15s;
 }
-.sidebar-resizer:hover::after { background: var(--line-strong); }
+.sidebar-resizer:hover::after { opacity: .9; }
 .resize-grip {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   z-index: 1; padding: 5px 4px; border: 1px solid var(--line); border-radius: 7px;
-  background: var(--bg); color: var(--dim); font-size: 11px; line-height: 1;
-  white-space: nowrap; opacity: 0; transition: opacity .15s, color .15s;
+  background: color-mix(in srgb, var(--bg) 72%, transparent); color: var(--dim); font-size: 11px; line-height: 1;
+  white-space: nowrap; opacity: .45; transition: opacity .15s, color .15s;
   user-select: none; pointer-events: none;
 }
 .sidebar-resizer:hover .resize-grip, .app.is-resizing .resize-grip { opacity: 1; color: var(--text); }
@@ -200,15 +200,16 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .main { min-width: 0; display: flex; flex-direction: column; height: 100vh; position: relative; }
 .content-resizer {
   display: none; position: absolute; z-index: 12; top: 54px; bottom: 94px;
-  right: calc((100% - var(--content-width)) / 2 - 4px); width: 8px;
-  cursor: col-resize; touch-action: none;
+  width: 8px; cursor: col-resize; touch-action: none;
 }
+.content-resizer-right { right: calc((100% - var(--content-width)) / 2 - 4px); }
+.content-resizer-left { left: calc((100% - var(--content-width)) / 2 - 4px); }
 .main.chat-active .content-resizer { display: block; }
 .content-resizer::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
-  background: var(--line-soft); transition: background .15s;
+  background: var(--line-strong); opacity: .35; transition: opacity .15s;
 }
-.content-resizer:hover::after { background: var(--line-strong); }
+.content-resizer:hover::after { opacity: .9; }
 .content-resizer:hover .resize-grip, .main.is-resizing-content .resize-grip { opacity: 1; color: var(--text); }
 body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !important; user-select: none !important; }
 .topbar {

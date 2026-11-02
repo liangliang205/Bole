@@ -226,11 +226,12 @@
     const { min, max } = contentBounds();
     const next = Math.max(min, Math.min(max, Math.round(width || CONTENT_DEFAULT)));
     $('#app').style.setProperty('--content-width', `${next}px`);
-    const handle = $('#content-resizer');
-    if (handle) {
-      handle.setAttribute('aria-valuenow', String(next));
-      handle.setAttribute('aria-valuemin', String(min));
-      handle.setAttribute('aria-valuemax', String(max));
+    for (const selector of ['#content-resizer', '#content-resizer-left']) {
+      const item = $(selector);
+      if (!item) continue;
+      item.setAttribute('aria-valuenow', String(next));
+      item.setAttribute('aria-valuemin', String(min));
+      item.setAttribute('aria-valuemax', String(max));
     }
     if (persist) {
       try { localStorage.setItem(CONTENT_WIDTH_KEY, String(next)); } catch { /* 隐私模式 */ }
@@ -246,49 +247,55 @@
       // 忽略隐私模式读取失败
     }
     applyContentWidth(saved, false);
-    const resizer = $('#content-resizer');
-    let dragging = false;
-    let startX = 0;
-    let startWidth = 0;
-    const stop = () => {
-      if (!dragging) return;
-      dragging = false;
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', stop);
-      window.removeEventListener('pointercancel', stop);
-      $('.main').classList.remove('is-resizing-content');
-      document.body.classList.remove('is-resizing-content');
-      applyContentWidth(parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT);
+    const bindHandle = (selector, side) => {
+      const resizer = $(selector);
+      if (!resizer) return;
+      let dragging = false;
+      let startX = 0;
+      let startWidth = 0;
+      const stop = () => {
+        if (!dragging) return;
+        dragging = false;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+        $('.main').classList.remove('is-resizing-content');
+        document.body.classList.remove('is-resizing-content');
+        applyContentWidth(parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT);
+      };
+      const move = (event) => {
+        if (!dragging) return;
+        const direction = side === 'left' ? startX - event.clientX : event.clientX - startX;
+        applyContentWidth(startWidth + direction * 2, false);
+      };
+      resizer.addEventListener('pointerdown', (event) => {
+        if (window.innerWidth <= 760) return;
+        dragging = true;
+        startX = event.clientX;
+        startWidth = parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT;
+        try { resizer.setPointerCapture(event.pointerId); } catch { /* 窗口监听兜底 */ }
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop);
+        window.addEventListener('pointercancel', stop);
+        $('.main').classList.add('is-resizing-content');
+        document.body.classList.add('is-resizing-content');
+        event.preventDefault();
+      });
+      resizer.addEventListener('pointermove', move);
+      resizer.addEventListener('pointerup', stop);
+      resizer.addEventListener('pointercancel', stop);
+      resizer.addEventListener('lostpointercapture', stop);
+      resizer.addEventListener('dblclick', () => applyContentWidth(CONTENT_DEFAULT));
+      resizer.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return;
+        event.preventDefault();
+        if (event.key === 'Home') { applyContentWidth(CONTENT_DEFAULT); return; }
+        const current = parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT;
+        applyContentWidth(current + (event.key === 'ArrowRight' ? 24 : -24));
+      });
     };
-    const move = (event) => {
-      if (!dragging) return;
-      applyContentWidth(startWidth + (event.clientX - startX) * 2, false);
-    };
-    resizer.addEventListener('pointerdown', (event) => {
-      if (window.innerWidth <= 760) return;
-      dragging = true;
-      startX = event.clientX;
-      startWidth = parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT;
-      try { resizer.setPointerCapture(event.pointerId); } catch { /* 窗口监听兜底 */ }
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', stop);
-      window.addEventListener('pointercancel', stop);
-      $('.main').classList.add('is-resizing-content');
-      document.body.classList.add('is-resizing-content');
-      event.preventDefault();
-    });
-    resizer.addEventListener('pointermove', move);
-    resizer.addEventListener('pointerup', stop);
-    resizer.addEventListener('pointercancel', stop);
-    resizer.addEventListener('lostpointercapture', stop);
-    resizer.addEventListener('dblclick', () => applyContentWidth(CONTENT_DEFAULT));
-    resizer.addEventListener('keydown', (event) => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return;
-      event.preventDefault();
-      if (event.key === 'Home') { applyContentWidth(CONTENT_DEFAULT); return; }
-      const current = parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT;
-      applyContentWidth(current + (event.key === 'ArrowRight' ? 24 : -24));
-    });
+    bindHandle('#content-resizer-right', 'right');
+    bindHandle('#content-resizer-left', 'left');
   }
 
   function bindSidebarResize() {
