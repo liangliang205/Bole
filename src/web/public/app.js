@@ -198,6 +198,8 @@
 
   const SIDEBAR_WIDTH_KEY = 'bole.sidebarWidth';
   const SIDEBAR_DEFAULT = 286;
+  const CONTENT_WIDTH_KEY = 'bole.contentWidth';
+  const CONTENT_DEFAULT = 900;
 
   function sidebarBounds() {
     return { min: 220, max: Math.max(260, Math.min(480, window.innerWidth - 560)) };
@@ -213,6 +215,80 @@
     if (persist) {
       try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* 隐私模式 */ }
     }
+  }
+
+  function contentBounds() {
+    const mainWidth = $('.main')?.clientWidth ?? window.innerWidth;
+    return { min: 620, max: Math.max(620, Math.min(1400, mainWidth - 48)) };
+  }
+
+  function applyContentWidth(width, persist = true) {
+    const { min, max } = contentBounds();
+    const next = Math.max(min, Math.min(max, Math.round(width || CONTENT_DEFAULT)));
+    $('#app').style.setProperty('--content-width', `${next}px`);
+    const handle = $('#content-resizer');
+    if (handle) {
+      handle.setAttribute('aria-valuenow', String(next));
+      handle.setAttribute('aria-valuemin', String(min));
+      handle.setAttribute('aria-valuemax', String(max));
+    }
+    if (persist) {
+      try { localStorage.setItem(CONTENT_WIDTH_KEY, String(next)); } catch { /* 隐私模式 */ }
+    }
+  }
+
+  function bindContentResize() {
+    let saved = CONTENT_DEFAULT;
+    try {
+      const stored = Number(localStorage.getItem(CONTENT_WIDTH_KEY));
+      if (Number.isFinite(stored) && stored > 0) saved = stored;
+    } catch {
+      // 忽略隐私模式读取失败
+    }
+    applyContentWidth(saved, false);
+    const resizer = $('#content-resizer');
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+    const stop = () => {
+      if (!dragging) return;
+      dragging = false;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+      $('.main').classList.remove('is-resizing-content');
+      document.body.classList.remove('is-resizing-content');
+      applyContentWidth(parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT);
+    };
+    const move = (event) => {
+      if (!dragging) return;
+      applyContentWidth(startWidth + (event.clientX - startX) * 2, false);
+    };
+    resizer.addEventListener('pointerdown', (event) => {
+      if (window.innerWidth <= 760) return;
+      dragging = true;
+      startX = event.clientX;
+      startWidth = parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT;
+      try { resizer.setPointerCapture(event.pointerId); } catch { /* 窗口监听兜底 */ }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
+      $('.main').classList.add('is-resizing-content');
+      document.body.classList.add('is-resizing-content');
+      event.preventDefault();
+    });
+    resizer.addEventListener('pointermove', move);
+    resizer.addEventListener('pointerup', stop);
+    resizer.addEventListener('pointercancel', stop);
+    resizer.addEventListener('lostpointercapture', stop);
+    resizer.addEventListener('dblclick', () => applyContentWidth(CONTENT_DEFAULT));
+    resizer.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return;
+      event.preventDefault();
+      if (event.key === 'Home') { applyContentWidth(CONTENT_DEFAULT); return; }
+      const current = parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT;
+      applyContentWidth(current + (event.key === 'ArrowRight' ? 24 : -24));
+    });
   }
 
   function bindSidebarResize() {
@@ -236,6 +312,7 @@
       $('#app').classList.remove('is-resizing');
       document.body.classList.remove('is-resizing');
       applySidebarWidth($('.sidebar').getBoundingClientRect().width);
+      applyContentWidth(parseFloat(getComputedStyle($('#app')).getPropertyValue('--content-width')) || CONTENT_DEFAULT);
     };
 
     resizer.addEventListener('pointerdown', (event) => {
@@ -405,6 +482,7 @@
     history.replaceState(null, '', '#new');
     $('#empty-view').classList.remove('hidden');
     $('#chat-view').classList.add('hidden');
+    $('.main').classList.remove('chat-active');
     closeDrawer();
     document.title = '伯乐 BoLe · 对话式招聘筛选';
     setStatus('idle');
@@ -417,6 +495,7 @@
   function showChatView() {
     $('#empty-view').classList.add('hidden');
     $('#chat-view').classList.remove('hidden');
+    $('.main').classList.add('chat-active');
   }
 
   function setStatus(status) {
@@ -1785,6 +1864,7 @@
 
   function bind() {
     bindSidebarResize();
+    bindContentResize();
     $('#new-run-btn').addEventListener('click', showNewView);
     $('#new-start').addEventListener('click', startRun);
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
