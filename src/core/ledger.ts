@@ -169,25 +169,38 @@ export class Ledger {
     return Boolean(this.getJob(jobId));
   }
 
-  appendChat(jobId: string, role: 'user' | 'assistant', content: string): ChatMessageRow {
+  appendChat(jobId: string, role: 'user' | 'assistant', content: string, files: string[] = []): ChatMessageRow {
     const row: ChatMessageRow = {
       id: newId('chat'),
       job_id: jobId,
       role,
       content,
+      files,
       created_ts: nowIso(),
     };
-    this.run('INSERT INTO chat_messages (id,job_id,role,content,created_ts) VALUES (?,?,?,?,?)',
-      row.id, row.job_id, row.role, row.content, row.created_ts);
+    this.run('INSERT INTO chat_messages (id,job_id,role,content,files_json,created_ts) VALUES (?,?,?,?,?,?)',
+      row.id, row.job_id, row.role, row.content, files.length ? JSON.stringify(files) : null, row.created_ts);
     return row;
   }
 
   listChat(jobId: string, limit = 100): ChatMessageRow[] {
-    return this.all<ChatMessageRow>(
+    const rows = this.all<ChatMessageRow & { files_json?: string | null }>(
       'SELECT * FROM chat_messages WHERE job_id=? ORDER BY created_ts ASC, rowid ASC LIMIT ?',
       jobId,
       limit,
     );
+    return rows.map(({ files_json, ...row }) => {
+      let files: string[] = [];
+      if (files_json) {
+        try {
+          const parsed = JSON.parse(files_json);
+          if (Array.isArray(parsed)) files = parsed.map(String);
+        } catch {
+          // 损坏的旧记录仍显示文本，不影响对话。
+        }
+      }
+      return { ...row, files };
+    });
   }
 
   /** 删除会话的业务数据；events 是 append-only 审计流，保留不删。 */

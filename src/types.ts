@@ -201,6 +201,7 @@ export interface ChatMessageRow {
   job_id: string;
   role: 'user' | 'assistant';
   content: string;
+  files?: string[];
   created_ts: string;
 }
 

@@ -848,11 +848,12 @@
     if (state.report) parts.push(finalReportHtml());
     else if (state.run?.status === 'completed') parts.push(messageHtml('assistant', '伯乐', '', `<div class="msg-text">运行完成，正在读取报告…</div>`));
     for (const message of state.chat) {
+      const files = Array.isArray(message.files) ? message.files : [];
       parts.push(messageHtml(
         message.role === 'user' ? 'user' : 'assistant',
         message.role === 'user' ? 'HR' : '伯乐',
         fmtTime(message.created_ts),
-        `<div class="msg-text chat-markdown">${renderChatMarkdown(message.content)}</div>`,
+        `<div class="msg-text chat-markdown">${renderChatMarkdown(message.content)}</div>${files.length ? fileCardsHtml(files) : ''}`,
       ));
     }
     if (state.sending && state.run?.status === 'completed' && !state.run?.pendingHitl) {

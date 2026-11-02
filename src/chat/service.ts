@@ -97,7 +97,7 @@ export async function chatWithJob(opts: {
           '- 只有 HR 在当前对话中明确要求生成、导出或下载 Word/PDF/可编辑报告时，才调用工具。',
           '- Word 使用 export_word；PDF 使用 office_export_pdf，且需要先有 docx 源文件。',
           '- HR 没有明确要求生成文件时，不调用任何工具，直接用文字回答；不要主动生成或建议性生成文件。',
-          '- 工具成功后只报告实际生成的文件和下载链接；失败时保留已有源文件并说明限制，不要反复转换未变化的输入，也不要用 python_exec 检查 report.json。',
+          '- 工具成功后只报告实际生成的文件名和下载结果；界面会显示文件卡片，不要在正文输出绝对路径。失败时保留已有源文件并说明限制，不要反复转换未变化的输入，也不要用 python_exec 检查 report.json。',
         ].join('\n')
       : '',
   ].filter(Boolean).join('\n\n');
@@ -139,11 +139,12 @@ export async function chatWithJob(opts: {
   if (!answer) throw new Error('主 Agent 没有返回内容');
   const names = [...files].map((file) => path.basename(file));
   if (names.length) {
-    const links = names
-      .map((name) => `[${name}](/api/run/${encodeURIComponent(opts.job.id)}/files/${encodeURIComponent(name)})`)
-      .join(' · ');
-    if (!names.every((name) => answer.includes(name))) answer = `${answer}\n\n文件：${links}`;
+    // 工具结果里的绝对路径只用于卡片下载，不把本机路径展示给 HR。
+    answer = answer
+      .replace(/^文件路径[:：].*$/gm, '')
+      .replace(/(?:[A-Za-z]:\\|\/)[^\s]+\.(?:docx|pdf)/gi, '')
+      .trim();
   }
-  opts.ledger.appendChat(opts.job.id, 'assistant', answer);
+  opts.ledger.appendChat(opts.job.id, 'assistant', answer, names);
   return { answer, messages: opts.ledger.listChat(opts.job.id, 100) };
 }
