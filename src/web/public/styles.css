@@ -421,11 +421,11 @@ html[data-theme="dark"] .dsh-composer {
   text-overflow: ellipsis; pointer-events: none; user-select: none;
 }
 .dsh-composer-row {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 2px 8px 6px; min-width: 0; container-type: inline-size;
+  display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 2px 8px 8px; min-width: 0; min-height: 38px; container-type: inline-size;
 }
 .dsh-composer-tools { display: flex; align-items: center; min-width: 0; gap: 8px; }
-.dsh-composer-trailing { flex: none; margin-left: auto; gap: 12px; }
+.dsh-composer-trailing { display: flex; align-items: center; height: 34px; flex: none; margin-left: auto; gap: 10px; }
 .dsh-composer-add {
   display: grid; place-items: center; width: 28px; height: 28px; flex: none;
   border: 0; border-radius: 50%; background: var(--dsh-selector);
@@ -445,15 +445,15 @@ html[data-theme="dark"] .dsh-composer {
 .chat-attachment.uploading { opacity: .65; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 2px; }
 .dsh-composer-model {
-  display: flex; align-items: center; max-width: 220px; height: 28px;
+  display: flex; align-items: center; max-width: 220px; height: 34px;
   padding: 0 8px; border-radius: 8px; color: var(--dsh-secondary);
-  font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap;
+  font-size: 13px; line-height: 1; font-weight: 500; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
 .dsh-composer-primary {
   display: grid; place-items: center; flex: none; width: 34px; height: 34px;
   border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-contrast);
-  cursor: pointer; transition: background-color 100ms ease; transform: translateY(-2px);
+  cursor: pointer; transition: background-color 100ms ease;
 }
 .dsh-composer-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .dsh-composer-primary:disabled { opacity: .4; cursor: default; }
