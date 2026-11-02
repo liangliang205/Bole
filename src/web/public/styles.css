@@ -374,11 +374,9 @@ html[data-theme="dark"] .dsh-composer {
 .dsh-composer-agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .dsh-composer-model {
   display: flex; align-items: center; max-width: 220px; height: 28px;
-  padding: 0 20px 0 8px; border-radius: 8px; color: var(--dsh-secondary);
+  padding: 0 8px; border-radius: 8px; color: var(--dsh-secondary);
   font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 4px center; background-size: 12px 12px;
 }
 .dsh-composer-primary {
   display: grid; place-items: center; flex: none; width: 34px; height: 34px;

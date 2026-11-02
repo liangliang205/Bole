@@ -37,7 +37,7 @@
     attachments: [], uploadSeq: 0,
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
-    providers: [], activeProviderId: null, editingProvider: null, editorModels: [],
+    providers: [], activeProviderId: null, activeModel: '', editingProvider: null, editorModels: [],
   };
 
   function esc(value) {
@@ -584,7 +584,8 @@
     $('#reply-hint').textContent = replyHint;
     $('#reply-hint').classList.toggle('hidden', !replyHint);
     const activeProvider = state.providers.find((provider) => provider.id === state.activeProviderId);
-    $('#reply-model').textContent = activeProvider ? `${activeProvider.name} · ${activeProvider.proModel}` : '';
+    if (!state.activeModel && activeProvider) state.activeModel = activeProvider.proModel || activeProvider.flashModel || '';
+    renderReplyModel();
     $('#reply-send').classList.toggle('is-sending', state.sending);
     $('#reply-send').setAttribute('aria-busy', state.sending ? 'true' : 'false');
     const placeholder = run.pendingHitl
@@ -1297,10 +1298,25 @@
     el.className = `settings-status ${tone}`;
   }
 
+  function refreshActiveModel() {
+    const provider = state.providers.find((item) => item.id === state.activeProviderId);
+    state.activeModel = provider?.proModel || provider?.flashModel || '';
+    renderReplyModel();
+  }
+
+  function renderReplyModel() {
+    const el = $('#reply-model');
+    if (!el) return;
+    const model = state.activeModel || '未选择模型';
+    el.textContent = model;
+    el.title = `当前模型：${model}`;
+  }
+
   function syncProviders(data) {
     state.providers = data.providers || [];
     state.activeProviderId = data.activeId ?? null;
     state.config = { ...(state.config || {}), providers: state.providers, activeProviderId: state.activeProviderId };
+    refreshActiveModel();
     renderProviders();
   }
 
@@ -1309,6 +1325,7 @@
       state.config = await api('/api/config');
       state.providers = state.config.providers || [];
       state.activeProviderId = state.config.activeProviderId ?? null;
+      refreshActiveModel();
       const deepseek = state.providers.find((provider) => provider.builtin);
       const anyKey = state.providers.some((provider) => provider.hasKey);
       if (!anyKey) {
