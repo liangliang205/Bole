@@ -4,6 +4,7 @@ import type { LlmRouter } from '../llm/router.ts';
 import type { ReportData } from '../report/builder.ts';
 import { executeTool, toolSchemas } from '../tools/tools-call.ts';
 import type { ChatMessageRow, ChatTurn, JobRow } from '../types.ts';
+import { INTERVIEW_SKILL_BODY, INTERVIEW_SKILL_CATALOG, wantsInterviewAdvice } from './interview-skill.ts';
 
 const CONCLUSION_LABELS: Record<string, string> = {
   strong_yes: '强烈推荐',
@@ -91,6 +92,8 @@ export async function chatWithJob(opts: {
   const toolsEnabled = Boolean(opts.report && opts.runDir && opts.dataDir);
   const system = [
     buildJobChatContext(opts.job, opts.report),
+    `【可用技能】${INTERVIEW_SKILL_CATALOG}`,
+    wantsInterviewAdvice(message) ? INTERVIEW_SKILL_BODY : '',
     toolsEnabled
       ? [
           '【文件生成规则】文件工具是可选的，不是每次回答的默认步骤。',

@@ -8,8 +8,7 @@ export type AgentId =
   | 'fetcher'
   | 'parser'
   | 'assessor'
-  | 'auditor'
-  | 'advisor';
+  | 'auditor';
 
 export type TaskKind = 'parse' | 'eval' | 'review';
 

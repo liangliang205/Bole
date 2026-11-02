@@ -55,7 +55,7 @@
    - 取 Top40% 进入相马官（pro）深评；
    - 监军（pro）逐条核查。
 4. **验真环**：核查不通过 → 打回重评（复用原评估 Worker 与档位），最多 2 轮；仍不足 → `quarantine` 转人工。
-5. **建议**：对通过核查的候选人，谋士（pro）生成面试问题与风险提示。
+5. **按需面试建议**：不再由流水线自动生成。筛选完成后的对话中，只有 HR 明确询问“面试怎么问、追问什么、注意什么”时，才加载 `src/chat/interview-skill.ts` 的 skill 指令回答；不注册 Agent，也不改变相马官结论。
 6. **按需导出**：报告落盘后不会自动生成文件。筛选完成后的主 Agent 对话中，只有 HR 明确要求生成/导出 Word、PDF 或其他文件时，模型才通过 OpenAI Function Calling 调用 `src/tools/tools-call.ts` 注册的工具（`load_workspace_dependencies` 来自 DeepSeek 官方 DSH 包；`export_word` 基于 docx 库；`office_export_pdf` 基于官方 `@deepseek-ai/libreoffice-kit`；`python_exec` 在子进程执行 Python）。产物写入运行目录，对话中返回下载链接。
 7. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML。
 

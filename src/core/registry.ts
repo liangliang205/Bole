@@ -12,7 +12,6 @@ export const AGENT_IDS: AgentId[] = [
   'parser',
   'assessor',
   'auditor',
-  'advisor',
 ];
 
 export const KNOWN_SCHEMAS = new Set([
@@ -22,7 +21,6 @@ export const KNOWN_SCHEMAS = new Set([
   'parse_resume',
   'evaluate_resume',
   'review_eval',
-  'interview_plan',
 ]);
 
 export class RegistryValidationError extends Error {

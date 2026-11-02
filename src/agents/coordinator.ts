@@ -20,7 +20,6 @@ import { runFetcher } from './fetcher.ts';
 import { ParserWorker } from './parser.ts';
 import { AssessorWorker, type AssessorContext } from './assessor.ts';
 import { AuditorWorker } from './auditor.ts';
-import { runAdvisor } from './advisor.ts';
 import { loadJobAnalysis, loadLatestEval, loadParseResult } from './data.ts';
 import type { HitlResponder } from './hitl.ts';
 import { buildReport, selectTopCandidates } from '../report/builder.ts';
@@ -484,22 +483,8 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   // 汇总：只消费已提交的评估与核查结果
   const verifiedResumes = deps.ledger.listResumes(deps.jobId).filter((r) => r.status === 'verified');
   const top = selectTopCandidates(deps.ledger, deps.jobId, deps.config.topN);
+  // 面试建议不再作为流水线 Agent 自动生成；改为完成后对话中的按需 skill。
   const interviewPlans = new Map<string, InterviewPlan>();
-  for (const candidate of top) {
-    checkpoint();
-    const parsed = loadParseResult(deps.ledger, candidate.resumeId);
-    const evaluation = loadLatestEval(deps.ledger, candidate.resumeId);
-    const resume = deps.ledger.getResume(candidate.resumeId);
-    if (!parsed || !evaluation || !resume) continue;
-    const plan = await runAdvisor(deps, {
-      resume,
-      parsed,
-      evaluation: evaluation.evaluation,
-      jd,
-      knowledgeQuery,
-    });
-    interviewPlans.set(candidate.resumeId, plan);
-  }
 
   checkpoint();
   const confirmation = await opts.hitl.ask({

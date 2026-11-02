@@ -48,15 +48,16 @@
 - 不通过 → `requiredFixes`；coordinator 打回评估，`loop+1`，复用原 Worker 与档位。
 - 超过 `selfLoop.maxLoops` → `quarantine` 转人工，写 `escalation_reason`。
 
-## 7. 建议（`src/agents/advisor.ts`）
+## 7. 按需面试建议 skill（`src/chat/interview-skill.ts`）
 
-- 对通过核查的候选人生成 `interview_plan`：问题、追问、风险。
-- 失败不阻塞主流程；报告里标注"建议缺失"。
+- 不注册 Agent，不进入筛选流水线，也不自动生成；完成后对话中由 `wantsInterviewAdvice()` 判断。
+- 只有 HR 明确询问“面试怎么问/追问什么/注意什么”时才注入 skill 指令，输出问题、验证维度、追问与注意事项。
+- 不重新评分、不改变相马官结论；未指名候选人时先询问是哪一位。
 
 ## 8. 结构化调用（`src/core/structured.ts`、`src/agents/structured-call.ts`）
 
 - `runStructuredTask`：任务台账 + 两阶段提交 + schema 校验 + 同轮重试 + postValidate/persist。
-- `callAgentJson`：无台账任务（画像/建议）的 schema 重试。
+- `callAgentJson`：无台账任务（画像）的 schema 重试。
 - 两者都支持 `stream` 回调；token 进入 SSE，最终仍以完整 JSON 校验为准。
 
 ## 9. 台账与状态（`src/core/*`）
@@ -101,7 +102,7 @@
 - `knowledge_bases`、`knowledge_documents`、`knowledge_chunks`、`knowledge_settings` 四张表；文档用 `normalizeDocument` 归一化，按 Markdown 标题/自然段分块并保留重叠。
 - 支持 Ollama 或 OpenAI 兼容 embedding；向量随分块存 SQLite。未配置 embedding 时退化为中英混合 token 关键词检索。
 - 可选 rerank（OpenAI 兼容 `/rerank`）、Top K、上下文预算和“自动检索”开关。
-- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像完成后用 `buildProfileSearchQuery()` 生成检索词，相马官、谋士按该画像查询并只注入 Top K 命中片段，画像生成前不注入知识库内容。
+- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像完成后用 `buildProfileSearchQuery()` 生成检索词，相马官与按需面试建议按该画像查询并只注入 Top K 命中片段，画像生成前不注入知识库内容。
 - 管理台按知识库返回统计（来源/解析/分块/Token/字符/向量化/维度），文档列表展示类型、状态与更新时间。
 
 ## 15. 完成后对话（`src/chat/service.ts`）

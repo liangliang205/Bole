@@ -228,7 +228,11 @@ test('启用知识库后按岗位画像检索（画像前不注入，默认未�
     const assessedPayload = JSON.parse(assessed.payload_json) as Record<string, unknown>;
     assert.match(String(assessedPayload.query ?? ''), /Java|后端/);
     assert.ok(Array.isArray(assessedPayload.hits));
-    assert.ok(events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'advisor'));
+    assert.equal(
+      events.some((event) => event.type === 'knowledge.recalled' && event.actor === 'advisor'),
+      false,
+      '面试建议不再作为流水线 Agent 自动执行',
+    );
   } finally {
     boot.close();
     await env.restore();

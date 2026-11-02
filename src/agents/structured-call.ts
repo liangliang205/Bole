@@ -20,7 +20,7 @@ export interface JsonCallOptions<T> {
 }
 
 /**
- * 无台账任务的 Agent 调用（画像师/谋士）：schema 校验失败同轮重试，最多 2 次。
+ * 无台账任务的 Agent 调用（画像师）：schema 校验失败同轮重试，最多 2 次。
  * 解析/评估/核查走 runStructuredTask（带任务台账与两阶段提交）。
  */
 export async function callAgentJson<T>(

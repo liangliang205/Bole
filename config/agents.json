@@ -72,18 +72,6 @@
       "outputSchema": "review_eval",
       "prompt": "prompts/auditor.md",
       "version": "1.0.0"
-    },
-    "advisor": {
-      "id": "advisor",
-      "nameZh": "谋士",
-      "role": "为核查通过的候选人生成面试问题、风险提示与用人建议",
-      "tier": "pro",
-      "tools": ["rag_search", "scorecard_compute"],
-      "maxDepth": 0,
-      "canDelegate": false,
-      "outputSchema": "interview_plan",
-      "prompt": "prompts/advisor.md",
-      "version": "1.0.0"
     }
   }
 }

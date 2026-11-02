@@ -109,21 +109,6 @@ export const jdAnalysisSchema = z.object({
     .default({ removed: [], findings: [] }),
 });
 
-export const interviewPlanSchema = z.object({
-  resumeId: z.string().optional(),
-  questions: z
-    .array(
-      z.object({
-        question: z.string().min(4),
-        target: z.string().default(''),
-        evidenceHint: z.string().default(''),
-      }),
-    )
-    .min(1),
-  risks: z.array(z.string()).default([]),
-  recommendation: z.string().default(''),
-});
-
 export const fetchManifestSchema = z.object({
   pulled: z.number().int().min(0),
   duplicates: z.array(z.string()).default([]),
@@ -144,14 +129,12 @@ export type ParseResumeOutput = z.infer<typeof parseResumeSchema>;
 export type EvaluateResumeOutput = z.infer<typeof evaluateResumeSchema>;
 export type ReviewEvalOutput = z.infer<typeof reviewEvalSchema>;
 export type JdAnalysisOutput = z.infer<typeof jdAnalysisSchema>;
-export type InterviewPlanOutput = z.infer<typeof interviewPlanSchema>;
 
 export const SCHEMAS = {
   parse_resume: parseResumeSchema,
   evaluate_resume: evaluateResumeSchema,
   review_eval: reviewEvalSchema,
   jd_analysis: jdAnalysisSchema,
-  interview_plan: interviewPlanSchema,
   fetch_manifest: fetchManifestSchema,
 } as const;
 

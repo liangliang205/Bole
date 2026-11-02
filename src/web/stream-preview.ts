@@ -83,7 +83,6 @@ function titleFor(chunk: StreamToken, parsed: Rec | null): string {
   }
   if (chunk.agent === 'auditor') return `${prefix}证据核查`;
   if (chunk.agent === 'profiler') return '岗位画像';
-  if (chunk.agent === 'advisor') return `${prefix}面试建议`;
   return `${prefix}生成中`;
 }
 
@@ -173,21 +172,6 @@ function jdPreview(parsed: Rec): StreamPreviewLine[] {
   return lines;
 }
 
-function advisorPreview(parsed: Rec): StreamPreviewLine[] {
-  const lines: StreamPreviewLine[] = [];
-  const questions = arr(parsed.questions);
-  questions.slice(0, 4).forEach((item, index) => {
-    const question = rec(item);
-    if (!question) return;
-    const content = text(question.question);
-    if (content) lines.push(line(`问题 ${index + 1}`, content));
-  });
-  if (questions.length === 0) lines.push(line('状态', '正在生成面试建议…', 'muted'));
-  const risk = text(arr(parsed.risks)[0]);
-  if (risk) lines.push(line('风险', risk, 'warn'));
-  return lines;
-}
-
 export function formatStreamPreview(parsed: unknown, chunk: StreamToken): StreamPreview {
   const object = rec(parsed);
   const title = titleFor(chunk, object);
@@ -197,7 +181,6 @@ export function formatStreamPreview(parsed: unknown, chunk: StreamToken): Stream
   else if (chunk.agent === 'assessor') lines = evalPreview(object);
   else if (chunk.agent === 'auditor') lines = reviewPreview(object);
   else if (chunk.agent === 'profiler') lines = jdPreview(object);
-  else if (chunk.agent === 'advisor') lines = advisorPreview(object);
   else {
     lines = [];
     const resumeId = text(object.resumeId);

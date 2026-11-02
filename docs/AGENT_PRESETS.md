@@ -3,7 +3,7 @@
 > 清单元数据：`config/agents.json`；角色提示词：`config/prompts/*.md`；运行时校验：`src/core/registry.ts`。
 > 角色 = 配置。换模型档、改工具集、加版本都只改配置，不改编排代码。
 
-## 1. 七个 Agent
+## 1. 六个 Agent
 
 | id | 名称 | 档位 | maxDepth | 输出 schema | 工具集 | 提示词 |
 |---|---|---|---|---|---|---|
@@ -13,7 +13,6 @@
 | `parser` | 录事 | flash | 0 | `parse_resume` | read_resume / span_locate | `parser.md` |
 | `assessor` | 相马官 | flash（初筛）/ pro（深评） | 0 | `evaluate_resume` | rag_search / scorecard_compute / span_locate | `assessor.md` |
 | `auditor` | 监军 | pro | 0 | `review_eval` | span_verify / fairness_scan / ledger_query | `auditor.md` |
-| `advisor` | 谋士 | pro | 0 | `interview_plan` | rag_search / scorecard_compute | `advisor.md` |
 
 协作硬约束：
 
@@ -42,7 +41,6 @@
 | `parse_resume` | `fields[{value,confidence,spans[{field,quote}]}]` / `anomalies` / `summary` | 字段值非空则至少一条 quote；quote 必须能在原文定位 |
 | `evaluate_resume` | `dimensions[{key,score,rationale,evidence[]}]` / `uncertainties` / `redFlags` | 必须覆盖评分卡全部维度且不得新增；每维度至少一条 quote 可定位 |
 | `review_eval` | `verdict` / `checks[{claim,verdict,note,quote?}]` / `compliance` / `requiredFixes` | 逐条 verdict 非空；pass 不得含非 supported；re_eval 必须有可执行 fixes |
-| `interview_plan` | `questions[{question,target,evidenceHint}]` / `risks` / `recommendation` | 4–6 个问题；不得使用受保护属性 |
 | `fetch_manifest` | `pulled` / `duplicates` / `failed` / `resumes` | 计数必须来自实际处理 |
 
 schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSchema` 生成 JSON Schema 附在系统提示词后，并用 JSON mode 约束输出。
@@ -53,7 +51,8 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 - **证据纪律**：parser/assessor 的 prompt 明确"quote 必须逐字来自原文，offset 由平台计算"；auditor 明确"逐条举证，禁止只输出整体通过"。
 - **公平性红线**：profiler/assessor/auditor 都写明禁止使用受保护属性；但真正的兜底是 `src/tools/fairness.ts` 的规则与运行时的强制覆盖。
 - **返工纪律**：assessor 收到驳回意见后逐条修正、保留未驳回部分，并在 `revisionNotes` 写明修改。
-- **不作决定**：advisor 只给问题/风险/建议；报告不生成 offer/拒信。
+- **不作决定**：平台只给筛选建议；面试问题/风险提示改为完成后对话中的按需 skill，不自动生成。
+- **面试建议 skill**：`src/chat/interview-skill.ts`；只有 HR 明确询问“面试怎么问/追问/注意什么”时才加载，不注册 Agent，不进入流水线。
 
 ## 4. 版本与可审计
 
