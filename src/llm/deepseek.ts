@@ -29,7 +29,11 @@ interface RawUsage {
 }
 
 interface RawResponse {
-  choices?: { message?: { content?: string }; delta?: { content?: string }; finish_reason?: string }[];
+  choices?: {
+    message?: { content?: string | null; tool_calls?: import('../types.ts').ToolCall[] };
+    delta?: { content?: string };
+    finish_reason?: string;
+  }[];
   output_text?: string;
   output?: { type?: string; content?: { type?: string; text?: string }[] }[];
   content?: { type?: string; text?: string }[];
@@ -243,10 +247,12 @@ export class DeepSeekProvider implements LlmProvider {
       headers,
       body: {
         model,
-        messages: [
-          { role: 'system', content: req.system },
-          { role: 'user', content },
-        ],
+        messages: req.messages?.length
+          ? req.messages
+          : [
+              { role: 'system', content: req.system },
+              { role: 'user', content },
+            ],
         ...(this.deepseekStyle
           ? {
               thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
@@ -254,7 +260,8 @@ export class DeepSeekProvider implements LlmProvider {
             }
           : { temperature: req.temperature ?? 0 }),
         max_tokens: req.maxTokens ?? 4096,
-        ...(req.schemaName && this.deepseekStyle ? { response_format: { type: 'json_object' } } : {}),
+        ...(req.tools?.length ? { tools: req.tools, tool_choice: req.toolChoice ?? 'auto' } : {}),
+        ...(req.schemaName && this.deepseekStyle && !req.tools?.length ? { response_format: { type: 'json_object' } } : {}),
         ...(qwen ? { enable_thinking: false } : {}),
         stream: streaming,
         ...(streaming && this.deepseekStyle ? { stream_options: { include_usage: true } } : {}),
@@ -267,6 +274,7 @@ export class DeepSeekProvider implements LlmProvider {
     if (data.error?.message) throw new Error(data.error.message);
     let text = '';
     let finish: string | undefined;
+    let toolCalls: import('../types.ts').ToolCall[] | undefined;
     if (this.protocol === 'openai-responses') {
       text = textFromResponses(data);
       if (data.status === 'incomplete') finish = 'max_output_tokens';
@@ -275,12 +283,15 @@ export class DeepSeekProvider implements LlmProvider {
       text = textFromAnthropic(data);
       finish = data.stop_reason;
     } else {
-      text = data.choices?.[0]?.message?.content ?? '';
+      const message = data.choices?.[0]?.message;
+      text = message?.content ?? '';
+      toolCalls = message?.tool_calls;
       finish = data.choices?.[0]?.finish_reason;
     }
     const usage = usageOf(this.protocol, data.usage, req, text);
     return {
       text,
+      toolCalls,
       usage,
       stopReason: mapFinishReason(finish),
       model,

@@ -3,6 +3,7 @@ import type { ChatRequest, StopReason } from '../types.ts';
 export interface ProviderResult {
   text: string;
   json?: unknown;
+  toolCalls?: import('../types.ts').ToolCall[];
   usage: {
     promptTokens: number;
     completionTokens: number;

@@ -740,6 +740,28 @@ export class FakeProvider implements LlmProvider {
         cacheHit: false,
       };
     }
+    if (req.tools?.length) {
+      const turns = req.messages ?? [];
+      const toolResults = turns.filter((turn) => turn.role === 'tool');
+      const exported = toolResults.some((turn) => String(turn.content || '').includes('已生成 Word'));
+      const text = exported ? '已按需求导出 Word 报告。' : '';
+      const toolCalls = exported
+        ? undefined
+        : [{ id: `call_${toolResults.length + 1}`, type: 'function' as const, function: { name: 'export_word', arguments: '{}' } }];
+      const promptText = `${req.system}\n${JSON.stringify(turns)}`;
+      const promptTokens = estimateTokens(promptText);
+      const cachedPromptTokens = req.sharedPrefix ? Math.min(promptTokens, estimateTokens(req.sharedPrefix)) : 0;
+      return {
+        text,
+        toolCalls,
+        usage: { promptTokens, completionTokens: estimateTokens(text), cachedPromptTokens },
+        stopReason: 'completed',
+        model: req.model ?? `mock-${req.tier}`,
+        latencyMs: Math.round(performance.now() - started),
+        cacheHit: cachedPromptTokens > 0,
+      };
+    }
+
     const handler = handlerFor(req.schemaName);
     let json: unknown = handler ? handler(meta) : { ok: true };
 

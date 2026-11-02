@@ -103,6 +103,7 @@ export class LlmRouter {
     const call: ChatResult = {
       text: result.text,
       json: result.json ?? extractJson(result.text),
+      toolCalls: result.toolCalls,
       usage: { ...usage, costUsd },
       stopReason: result.stopReason as StopReason,
       model,
