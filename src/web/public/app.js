@@ -45,6 +45,101 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     }[char]));
   }
+
+  /** 安全的轻量 Markdown：先转义 HTML，再渲染常见块/行内语法。 */
+  function renderChatMarkdown(source) {
+    const blocks = [];
+    let text = String(source ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    text = text.replace(/```[^\n]*\n([\s\S]*?)```/g, (_match, code) => {
+      const index = blocks.length;
+      blocks.push(`<pre><code>${esc(String(code).replace(/\n$/, ''))}</code></pre>`);
+      return `\n\u0002BLOCK${index}\u0002\n`;
+    });
+
+    const inline = (value) => {
+      const codes = [];
+      let result = esc(value);
+      result = result.replace(/`([^`\n]+)`/g, (_match, code) => {
+        const index = codes.length;
+        codes.push(`<code>${code}</code>`);
+        return `\u0001CODE${index}\u0001`;
+      });
+      result = result.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+      result = result.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+      result = result.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+      result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      result = result.replace(/\u0001CODE(\d+)\u0001/g, (_match, index) => codes[Number(index)] ?? '');
+      return result;
+    };
+
+    const html = [];
+    let paragraph = [];
+    let listType = '';
+    let listItems = [];
+    const flushParagraph = () => {
+      if (paragraph.length === 0) return;
+      html.push(`<p>${paragraph.join('<br>')}</p>`);
+      paragraph = [];
+    };
+    const flushList = () => {
+      if (!listType || listItems.length === 0) return;
+      html.push(`<${listType}>${listItems.map((item) => `<li>${item}</li>`).join('')}</${listType}>`);
+      listType = '';
+      listItems = [];
+    };
+    const flush = () => {
+      flushParagraph();
+      flushList();
+    };
+
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) { flush(); continue; }
+      const block = /^\u0002BLOCK(\d+)\u0002$/.exec(trimmed);
+      if (block) {
+        flush();
+        html.push(blocks[Number(block[1])] ?? '');
+        continue;
+      }
+      const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+      if (heading) {
+        flush();
+        html.push(`<h4>${inline(heading[2])}</h4>`);
+        continue;
+      }
+      if (/^([-*_])\1{2,}$/.test(trimmed)) {
+        flush();
+        html.push('<hr>');
+        continue;
+      }
+      const unordered = /^[-*•]\s+(.+)$/.exec(trimmed);
+      if (unordered) {
+        flushParagraph();
+        if (listType && listType !== 'ul') flushList();
+        listType = 'ul';
+        listItems.push(inline(unordered[1]));
+        continue;
+      }
+      const ordered = /^\d+[.)]\s+(.+)$/.exec(trimmed);
+      if (ordered) {
+        flushParagraph();
+        if (listType && listType !== 'ol') flushList();
+        listType = 'ol';
+        listItems.push(inline(ordered[1]));
+        continue;
+      }
+      const quote = /^>\s?(.*)$/.exec(trimmed);
+      if (quote) {
+        flush();
+        html.push(`<blockquote>${inline(quote[1])}</blockquote>`);
+        continue;
+      }
+      flushList();
+      paragraph.push(inline(trimmed));
+    }
+    flush();
+    return html.join('') || '<p></p>';
+  }
   function fmtTime(value) {
     if (!value) return '—';
     const date = new Date(value);
@@ -564,7 +659,7 @@
         message.role === 'user' ? 'user' : 'assistant',
         message.role === 'user' ? 'HR' : '伯乐',
         fmtTime(message.created_ts),
-        `<div class="msg-text chat-text">${esc(message.content)}</div>`,
+        `<div class="msg-text chat-markdown">${renderChatMarkdown(message.content)}</div>`,
       ));
     }
     if (state.sending && state.run?.status === 'completed' && !state.run?.pendingHitl) {

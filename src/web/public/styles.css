@@ -232,6 +232,18 @@ b, strong { color: var(--text); }
 .msg-text { white-space: pre-wrap; word-break: break-word; color: var(--text); }
 .msg.user .msg-text { background: var(--chat-user); border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; }
 .msg.assistant .msg-text strong { color: var(--text); }
+.chat-markdown { white-space: normal; }
+.chat-markdown p { margin: 0 0 8px; }
+.chat-markdown p:last-child { margin-bottom: 0; }
+.chat-markdown h4 { margin: 0 0 7px; font-size: 13px; color: var(--text); }
+.chat-markdown ul, .chat-markdown ol { margin: 4px 0 8px; padding-left: 20px; }
+.chat-markdown li { margin: 2px 0; }
+.chat-markdown code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 4px; padding: 1px 4px; }
+.chat-markdown pre { margin: 6px 0; padding: 10px; border-radius: 8px; overflow: auto; background: var(--surface-2); border: 1px solid var(--line-soft); }
+.chat-markdown pre code { border: 0; background: transparent; padding: 0; }
+.chat-markdown blockquote { margin: 6px 0; padding: 4px 10px; border-left: 2px solid var(--line-strong); color: var(--muted); }
+.chat-markdown hr { border: 0; border-top: 1px solid var(--line-soft); margin: 10px 0; }
+.chat-markdown a { color: var(--accent); text-decoration: underline; }
 .msg-tools { margin-top: 6px; }
 .msg-tools summary { cursor: pointer; font-size: 11px; color: var(--dim); }
 .tool-row { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 12px; align-items: baseline; }
