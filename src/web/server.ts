@@ -370,7 +370,12 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     return run;
   };
 
-  const server = createServer(async (req, res) => {
+  /**
+   * 请求处理：抽取成显式 async 函数，再由 createServer 用 `void` 调用。
+   * 直接写 `createServer(async ...)` 会得到一个无人接管的 Promise：
+   * 请求处理内部一旦在 catch 之外抛出，Node 只会记录 unhandledRejection，连接会挂住。
+   */
+  const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       if (!req.url) {
         text(res, 400, 'Bad Request');
@@ -1253,6 +1258,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       const status = /上传|不支持的文件|文件内容|超过|知识库|文档|嵌入|地址|名称/.test(message) ? 400 : /插件|MCP/.test(message) ? 400 : 500;
       json(res, status, { ok: false, error: message });
     }
+  };
+
+  const server = createServer((req, res) => {
+    void handleRequest(req, res);
   });
 
   await new Promise<void>((resolve, reject) => {

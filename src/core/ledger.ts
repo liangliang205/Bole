@@ -354,7 +354,6 @@ export class Ledger {
   }): TaskRow {
     const id = newId(kind);
     const ts = nowIso();
-    const table = TASK_TABLE[kind];
     if (kind === 'parse') {
       this.run(
         `INSERT INTO parse_tasks (id,job_id,resume_id,batch_id,status,attempt,worker_id,created_ts,updated_ts)

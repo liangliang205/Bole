@@ -20,7 +20,7 @@ import { runFetcher } from './fetcher.ts';
 import { ParserWorker } from './parser.ts';
 import { AssessorWorker, type AssessorContext } from './assessor.ts';
 import { AuditorWorker } from './auditor.ts';
-import { loadJobAnalysis, loadLatestEval, loadParseResult } from './data.ts';
+import { loadJobAnalysis, loadParseResult } from './data.ts';
 import type { HitlResponder } from './hitl.ts';
 import { buildReport, selectTopCandidates } from '../report/builder.ts';
 import { writeReports, type ReportPaths } from '../report/render.ts';

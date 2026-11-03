@@ -1,5 +1,7 @@
 # 伯乐 BoLe
 
+[![CI](https://github.com/liangliang205/Bole/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/liangliang205/Bole/actions/workflows/ci.yml)
+
 **可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 6 个 Agent 完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查；面试建议改为完成后按需加载的 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
 
 > 当前版本只接真实模型 API，不包含 mock 模型、演示 JD、故障注入或预置黄金简历。没有可用的模型提供商时流水线会明确失败，而不是悄悄回退到模拟数据。
@@ -230,12 +232,18 @@ bole/
 └─ tests/                # 单元 + 集成（测试替身只在 tests/）
 ```
 
-## 测试
+## 测试与静态检查
 
 ```bash
-pnpm typecheck
-pnpm test:all
+pnpm typecheck   # tsc --noEmit（strict）
+pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
+pnpm test:all    # 111 个测试
+pnpm check       # 以上三项串行跑一遍
 ```
+
+ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规则外，启用了三条类型感知规则（`no-floating-promises`、`no-misused-promises`、`await-thenable`），并把「零 `any`、零 `ts-ignore`」写成可执行约束；不做格式化，避免代码风格改动掩盖真实变更。
+
+CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
 当前 **111 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 

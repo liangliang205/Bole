@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { DeepSeekProvider } from '../../src/llm/deepseek.ts';
+import { voidHandler } from '../helpers/http.ts';
 
 test('DeepSeek streaming 解析 SSE：token 回调、usage、finish_reason', async () => {
   const server = createServer((req, res) => {
@@ -55,7 +56,7 @@ test('DeepSeek 无 Key 时明确报错', async () => {
 
 test('DeepSeek Vision：图片以 user content image_url 发送，detail=high', async () => {
   let captured: Record<string, unknown> = {};
-  const server = createServer(async (req, res) => {
+  const server = createServer(voidHandler(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     captured = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
@@ -64,7 +65,7 @@ test('DeepSeek Vision：图片以 user content image_url 发送，detail=high', 
       choices: [{ message: { content: '姓名：李娜' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1200, completion_tokens: 5 },
     }));
-  });
+  }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
@@ -98,7 +99,7 @@ test('DeepSeek Vision：图片以 user content image_url 发送，detail=high', 
 });
 test('DeepSeek 档位映射：flash→deepseek-flash，pro→deepseek-v4-pro + thinking high', async () => {
   const bodies: Record<string, unknown>[] = [];
-  const server = createServer(async (req, res) => {
+  const server = createServer(voidHandler(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
@@ -107,7 +108,7 @@ test('DeepSeek 档位映射：flash→deepseek-flash，pro→deepseek-v4-pro + t
       choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 10, completion_tokens: 2 },
     }));
-  });
+  }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
@@ -135,7 +136,7 @@ test('DeepSeek 档位映射：flash→deepseek-flash，pro→deepseek-v4-pro + t
 test('OpenAI Responses：请求 /responses，解析 output_text 与 input_tokens_details', async () => {
   let capturedUrl = '';
   let captured: Record<string, unknown> = {};
-  const server = createServer(async (req, res) => {
+  const server = createServer(voidHandler(async (req, res) => {
     capturedUrl = req.url ?? '';
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
@@ -147,7 +148,7 @@ test('OpenAI Responses：请求 /responses，解析 output_text 与 input_tokens
       usage: { input_tokens: 12, output_tokens: 3, input_tokens_details: { cached_tokens: 4 } },
       status: 'completed',
     }));
-  });
+  }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
@@ -177,7 +178,7 @@ test('Anthropic Messages：请求 /v1/messages，x-api-key 与 content 解析', 
   let capturedUrl = '';
   let capturedHeaders: Record<string, string | string[] | undefined> = {};
   let captured: Record<string, unknown> = {};
-  const server = createServer(async (req, res) => {
+  const server = createServer(voidHandler(async (req, res) => {
     capturedUrl = req.url ?? '';
     capturedHeaders = req.headers;
     const chunks: Buffer[] = [];
@@ -189,7 +190,7 @@ test('Anthropic Messages：请求 /v1/messages，x-api-key 与 content 解析', 
       usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 3 },
       stop_reason: 'end_turn',
     }));
-  });
+  }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
@@ -217,7 +218,7 @@ test('Anthropic Messages：请求 /v1/messages，x-api-key 与 content 解析', 
 
 test('Qwen Responses：关闭默认 thinking，避免推理 token 吃满输出预算', async () => {
   let captured: Record<string, unknown> = {};
-  const server = createServer(async (req, res) => {
+  const server = createServer(voidHandler(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     captured = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
@@ -227,7 +228,7 @@ test('Qwen Responses：关闭默认 thinking，避免推理 token 吃满输出�
       usage: { input_tokens: 20, output_tokens: 5, input_tokens_details: { cached_tokens: 0 } },
       status: 'completed',
     }));
-  });
+  }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address();
   assert.ok(address && typeof address === 'object');

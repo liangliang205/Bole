@@ -128,7 +128,7 @@ test('单服务启动失败只标记该服务，不影响其它服务', async ()
 });
 
 test('enabled=false 不启动，close 不改变禁用状态', async () => {
-  const { manager, cleanup } = await createManager({
+  const { manager } = await createManager({
     off: { command: process.execPath, args: [fixture], enabled: false },
   });
   try {

@@ -52,16 +52,15 @@ export class CapacityPool {
     this.peak = Math.max(this.peak, this.active);
     const id = `${this.name}#${this.acquired}`;
     let released = false;
-    const self = this;
     return {
       id,
       label,
-      release() {
+      release: () => {
         if (released) return;
         released = true;
-        self.active -= 1;
-        self.released += 1;
-        self.wakeWaiters();
+        this.active -= 1;
+        this.released += 1;
+        this.wakeWaiters();
       },
     };
   }

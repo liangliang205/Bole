@@ -18,6 +18,9 @@
     "test": "node --test --test-isolation=none tests/unit/*.test.ts tests/integration/*.test.ts",
     "test:all": "node --test --test-isolation=none tests/unit/*.test.ts tests/integration/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "check": "pnpm typecheck && pnpm lint && pnpm test:all",
     "ocr:download": "node scripts/download-ocr.ts",
     "report:cost": "node src/cli/index.ts cost",
     "setup": "pnpm install && pnpm ocr:download",
@@ -42,7 +45,11 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^24.10.0",
-    "typescript": "^5.9.3"
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1"
   }
 }

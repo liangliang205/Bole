@@ -26,11 +26,15 @@
 ## 2. 复跑命令
 
 ```bash
-pnpm typecheck
-pnpm test:all
+pnpm typecheck   # 类型检查（strict）
+pnpm lint        # ESLint 9 flat config + typescript-eslint
+pnpm test:all    # 单元 + 集成测试
+pnpm check       # 以上三项串行
 ```
 
-当前结果：**81 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。
+
+当前结果：**111 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -71,7 +75,9 @@ pnpm web
 ## 6. 验收清单（提交前）
 
 - [ ] `pnpm typecheck` 通过
-- [ ] `pnpm test:all` 81/81 通过
+- [ ] `pnpm lint` 通过（零 error / 零 warning）
+- [ ] `pnpm test:all` 111/111 通过
+- [ ] CI 在 `master` / `dev` 上为绿
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`
 - [ ] 运行中 SSE 有 `token` 事件

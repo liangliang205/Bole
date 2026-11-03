@@ -1,4 +1,4 @@
-import type { ChatRequest, StopReason } from '../../src/types.ts';
+import type { ChatRequest } from '../../src/types.ts';
 import type { LlmProvider, ProviderResult } from '../../src/llm/provider.ts';
 import { estimateTokens, locateQuote, normalizeText, splitSentences, tokenOverlap, truncate } from '../../src/util/text.ts';
 import { sleep } from '../../src/util/time.ts';

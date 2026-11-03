@@ -222,6 +222,7 @@ export async function normalizeDocument(buffer: Buffer, filename: string, conten
   }
 
   const cleaned = text
+    // eslint-disable-next-line no-control-regex -- NUL 是 PDF/DOCX 文本层常见残留，必须主动剥掉
     .replace(/\u0000/g, '')
     .replace(/\r\n?/g, '\n')
     .trim();

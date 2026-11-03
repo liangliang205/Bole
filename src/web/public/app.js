@@ -70,6 +70,7 @@
       result = result.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
       result = result.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
       result = result.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      // eslint-disable-next-line no-control-regex -- 控制字符是代码块占位符，避免渲染顺序互相污染
       result = result.replace(/\u0001CODE(\d+)\u0001/g, (_match, index) => codes[Number(index)] ?? '');
       return result;
     };
@@ -97,6 +98,7 @@
     for (const line of text.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) { flush(); continue; }
+      // eslint-disable-next-line no-control-regex -- 同上：代码块占位符
       const block = /^\u0002BLOCK(\d+)\u0002$/.exec(trimmed);
       if (block) {
         flush();
@@ -786,7 +788,6 @@
     const cards = files.map((file) => {
       const name = String(file).split(/[\\/]/).pop();
       const isPdf = /\.pdf$/i.test(name);
-      const label = isPdf ? 'PDF' : 'DOCX';
       const icon = isPdf ? 'PDF' : 'W';
       const desc = isPdf ? '只读文件，适合分发与归档' : '可编辑文档，适合修改与签字';
       const href = `/api/run/${encodeURIComponent(state.jobId)}/files/${encodeURIComponent(name)}`;
@@ -1300,15 +1301,6 @@
         state.attachments = state.attachments.filter((file) => file.id !== button.getAttribute('data-remove'));
         renderAttachments();
       });
-    });
-  }
-
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
-      reader.onerror = () => reject(new Error('读取文件失败'));
-      reader.readAsDataURL(file);
     });
   }
 

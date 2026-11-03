@@ -45,6 +45,7 @@ export class UploadError extends Error {
 }
 
 export function sanitizeFilename(input: string): string {
+  // eslint-disable-next-line no-control-regex -- 文件名清洗必须覆盖 C0 控制字符，否则会写出不可见文件名
   const base = path.basename(String(input || 'resume')).replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').trim();
   const safe = base.slice(0, 120) || 'resume';
   return safe;

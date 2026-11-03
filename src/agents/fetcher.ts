@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { ensureDir } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
 import { attachmentFingerprint, dedupKeyFromText } from '../ingest/dedup.ts';
-import { detectFormat, imageMimeType, normalizeDocument } from '../ingest/normalize.ts';
+import { detectFormat, normalizeDocument } from '../ingest/normalize.ts';
 import { acquireOcr, ocrImage, releaseOcr } from '../ingest/ocr.ts';
 import { supportsVision, visionOcr } from '../ingest/vision-ocr.ts';
 import type { FetchManifest, ResumeRow, UploadedFile } from '../types.ts';

@@ -11,7 +11,7 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   installPrimaryRuntime,
