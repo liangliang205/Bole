@@ -16,7 +16,8 @@
 | 模型接口 | schema 违规同轮重试；流式回调；三种协议（OpenAI Chat/Responses、Anthropic Messages）；成本/缓存记账 | `tests/unit/structured.test.ts`、`tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
 | Vision OCR | 图片以 `image_url` 发送；OCR usage 计入 fetcher；本地回退可配置 | `tests/unit/deepseek-stream.test.ts`、`tests/integration/pipeline.test.ts` |
 | 知识库 | 默认空/禁用不召回；启用后分块检索；autoRecall 开关 | `tests/unit/knowledge.test.ts` |
-| 完成后对话 | 多轮消息持久化；稳定 system 前缀；只调用主 Agent | `tests/unit/chat.test.ts` |
+| 完成后对话 | 主 Agent 直答 + 工具调用；按任务复杂度选择 flash/pro；多轮消息持久化 | `tests/unit/chat.test.ts` |
+| Agent 注册表 | 工具声明必须可执行（未知工具启动失败）；能力标签独立 | `tests/unit/registry.test.ts` |
 | 成本 | 官方 peak/off-peak 价格与缓存命中 | `tests/unit/cost.test.ts` |
 | 流式预览 | 未完成 JSON → 人类可读字段/分数/裁决；不泄露原始 JSON | `tests/unit/stream-preview.test.ts` |
 | 报告 | 对话内汇总；内部 JSON；不生成 HTML、不提供下载 | `tests/integration/pipeline.test.ts` |
@@ -34,7 +35,7 @@ pnpm check       # 以上三项串行
 
 以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。CI 已在 `dev` 分支跑通（首次运行全绿）。
 
-当前结果：**111 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**114 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话档位选择（flash/pro）、注册表工具一致性、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -76,7 +77,7 @@ pnpm web
 
 - [ ] `pnpm typecheck` 通过
 - [ ] `pnpm lint` 通过（零 error / 零 warning）
-- [ ] `pnpm test:all` 111/111 通过
+- [ ] `pnpm test:all` 114/114 通过
 - [ ] CI 在 `master` / `dev` 上为绿
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`

@@ -8,7 +8,10 @@ export interface AgentPreset {
   nameZh: string;
   role: string;
   tier: ModelTier;
+  /** 可执行的 Function Calling 工具（仅声明真实存在的工具；流水线角色通常为空）。 */
   tools: string[];
+  /** 声明式能力标签：说明该角色在代码里实际调用哪些能力，不参与工具绑定。 */
+  capabilities?: string[];
   /**
    * 可用的外接 MCP 工具白名单：'*'、'server'、'server:tool'、'server:*'。
    * 缺省或空数组 = 该 Agent 不允许调用任何外接 MCP 工具。

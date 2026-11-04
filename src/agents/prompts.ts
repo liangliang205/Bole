@@ -22,10 +22,10 @@ export function sharedPrefix(deps: AgentDeps, id: AgentId, stableParts: string[]
   const preset = deps.registry.get(id);
   return [
     systemPrompt(deps, id),
-    `【工具池】${preset.tools.join(', ')}`,
+    preset.tools.length ? `【工具池】${preset.tools.join(', ')}` : '',
     `【深度预算】maxDepth=${preset.maxDepth}，禁止再委派`,
     ...stableParts,
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 export function taskBook(input: {

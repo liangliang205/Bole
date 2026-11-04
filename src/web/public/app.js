@@ -2501,7 +2501,7 @@
     try {
       if (tool === 'agents') {
         const data = await api('/api/agents');
-        output.innerHTML = `<div class="info-card"><h3>Agent preset 注册表</h3><p class="muted">${esc(data.version)} · ${esc(data.fingerprint)}</p><div class="table-wrap"><table><thead><tr><th>id</th><th>名称</th><th>档位</th><th>深度</th><th>schema</th><th>工具</th></tr></thead><tbody>${data.agents.map((agent) => `<tr><td>${esc(agent.id)}</td><td>${esc(agent.nameZh)}</td><td>${esc(agent.tier)}</td><td>${esc(agent.maxDepth)}</td><td>${esc(agent.outputSchema)}</td><td>${esc(agent.tools.join(', '))}</td></tr>`).join('')}</tbody></table></div></div>`;
+        output.innerHTML = `<div class="info-card"><h3>Agent preset 注册表</h3><p class="muted">${esc(data.version)} · ${esc(data.fingerprint)}</p><div class="table-wrap"><table><thead><tr><th>id</th><th>名称</th><th>档位</th><th>深度</th><th>schema</th><th>工具</th><th>能力</th></tr></thead><tbody>${data.agents.map((agent) => `<tr><td>${esc(agent.id)}</td><td>${esc(agent.nameZh)}</td><td>${esc(agent.tier)}</td><td>${esc(agent.maxDepth)}</td><td>${esc(agent.outputSchema)}</td><td>${esc((agent.tools || []).join(', '))}</td><td>${esc((agent.capabilities || []).join(', '))}</td></tr>`).join('')}</tbody></table></div></div>`;
       } else if (tool === 'doctor') {
         const data = await api('/api/doctor');
         output.innerHTML = `<div class="info-card"><h3>环境自检</h3><ul>${data.checks.map((check) => `<li><span class="tag ${check.status === 'ok' ? 'ok' : check.status === 'warn' ? 'warn' : 'danger'}">${esc(check.status)}</span> ${esc(check.name)} — ${esc(check.detail)}</li>`).join('')}</ul></div>`;

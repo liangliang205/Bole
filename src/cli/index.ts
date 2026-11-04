@@ -455,9 +455,9 @@ function cmdCost(args: Args): void {
 function cmdAgents(): void {
   const registry = AgentRegistry.load();
   process.stdout.write(`${bold('Agent preset 注册表')} version=${registry.version} fingerprint=${registry.fingerprint}\n\n`);
-  process.stdout.write('id\t名称\t档位\tmaxDepth\t输出 schema\t工具\n');
+  process.stdout.write('id\t名称\t档位\tmaxDepth\t输出 schema\t工具\t能力\n');
   for (const agent of registry.list()) {
-    process.stdout.write(`${agent.id}\t${agent.nameZh}\t${agent.tier}\t${agent.maxDepth}\t\t${agent.outputSchema}\t${agent.tools.join(',')}\n`);
+    process.stdout.write(`${agent.id}\t${agent.nameZh}\t${agent.tier}\t${agent.maxDepth}\t\t${agent.outputSchema}\t${agent.tools.join(',')}\t${(agent.capabilities ?? []).join(',')}\n`);
   }
 }
 

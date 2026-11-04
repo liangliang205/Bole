@@ -57,7 +57,7 @@
    - 取 Top40% 进入相马官（pro）深评；
    - 监军（pro）逐条核查。
 4. **验真环**：核查不通过 → 打回重评（复用原评估 Worker 与档位），最多 2 轮；仍不足 → `quarantine` 转人工。
-5. **按需面试建议**：不再由流水线自动生成。筛选完成后的对话中，只有 HR 明确询问“面试怎么问、追问什么、注意什么”时，才加载 `src/chat/interview-skill.ts` 的 skill 指令回答；不注册 Agent，也不改变相马官结论。
+5. **完成后对话（主 Agent 直答 + 档位路由）**：筛选完成后 `coordinator` 作为主 Agent 直接回答，或按需调用导出/MCP 工具；对话档位由 `src/chat/tier.ts` 按任务复杂度在 flash/pro 间选择（寒暄/短问答 flash，比较/复盘/长问题 pro）。**对话链路不派生额外子 Agent**；多 Agent 扇出只发生在多简历筛选批次。面试建议 skill 只在相关提问时加载，不进入筛选流水线。
 6. **按需导出**：报告落盘后不会自动生成文件。筛选完成后的主 Agent 对话中，只有 HR 明确要求生成/导出 Word、PDF 或其他文件时，模型才通过 OpenAI Function Calling 调用 `src/tools/tools-call.ts` 注册的工具（`load_workspace_dependencies` 来自 DeepSeek 官方 DSH 包；`export_word` 基于 docx 库；`office_export_pdf` 基于官方 `@deepseek-ai/libreoffice-kit`；`python_exec` 在子进程执行 Python）。产物写入运行目录，对话中返回下载链接。
 7. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML，不提供下载。
 8. **知识库（可选）**：原生 SQLite；创建并启用后才生效。画像完成后用 JD + 评分卡生成检索词，**只有相马官评估阶段**会召回 Top-K 片段并注入上下文；未配置 embedding 时退化为关键词检索。
@@ -135,7 +135,7 @@
 | 提供商与 Key | `src/settings/{provider-store,key-store}.ts` |
 | 知识库 | `src/knowledge/service.ts` |
 | MCP 插件 | `src/mcp/*` |
-| 完成后对话 / 面试 skill | `src/chat/*`、`src/tools/tools-call.ts` |
+| 完成后对话 / 面试 skill | `src/chat/{orchestrator,tier,context,service,interview-skill}.ts`、`src/tools/tools-call.ts` |
 | 报告 | `src/report/{builder,render}.ts` |
 | Web/SSE | `src/web/{server,data,ops}.ts`、`src/web/public/*` |
 | 测试 | `tests/unit/*`、`tests/integration/*`、`tests/fixtures/*` |

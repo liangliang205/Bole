@@ -3,23 +3,29 @@
 > 清单元数据：`config/agents.json`；角色提示词：`config/prompts/*.md`；运行时校验：`src/core/registry.ts`。
 > 角色 = 配置。换模型档、改工具集、加版本都只改配置，不改编排代码。
 
-## 1. 六个 Agent
+## 1. 六个 preset（5 个 LLM 角色 + 1 个确定性接入器）
 
-| id | 名称 | 档位 | maxDepth | 输出 schema | 工具集（声明） | 提示词 |
-|---|---|---|---|---|---|---|
-| `coordinator` | 伯乐（唯一编排者） | pro | 1 | `coordinator_plan` | dispatch / send_message / stop / query_workspace / hitl | `coordinator.md` |
-| `profiler` | 需求画像师 | pro | 0 | `jd_analysis` | rag_search / fairness_scan / scorecard_validate | `profiler.md` |
-| `fetcher` | 探马 | flash | 0 | `fetch_manifest` | upload_read / dedup / normalize / ocr | `fetcher.md` |
-| `parser` | 录事 | flash | 0 | `parse_resume` | read_resume / span_locate | `parser.md` |
-| `assessor` | 相马官 | flash（初筛）/ pro（深评） | 0 | `evaluate_resume` | rag_search / scorecard_compute / span_locate | `assessor.md` |
-| `auditor` | 监军 | pro | 0 | `review_eval` | span_verify / fairness_scan / ledger_query | `auditor.md` |
+| id | 名称 | 档位 | maxDepth | 输出 schema | 可执行工具 | 能力标签 | 提示词 |
+|---|---|---|---|---|---|---|---|
+| `coordinator` | 伯乐（主 Agent / 编排者） | pro（对话按复杂度覆盖为 flash/pro） | 1 | `coordinator_plan` | export_word / office_export_pdf / load_workspace_dependencies / python_exec | pipeline_orchestration / dispatch / hitl / aggregate / chat_tiering | `coordinator.md` |
+| `profiler` | 需求画像师 | pro | 0 | `jd_analysis` | — | rag_search / fairness_scan / scorecard_validate | `profiler.md` |
+| `fetcher` | 探马 | flash | 0 | `fetch_manifest` | — | upload_read / dedup / normalize / ocr | `fetcher.md` |
+| `parser` | 录事 | flash | 0 | `parse_resume` | — | read_resume / span_locate | `parser.md` |
+| `assessor` | 相马官 | flash（初筛）/ pro（深评） | 0 | `evaluate_resume` | — | rag_search / scorecard_compute / span_locate | `assessor.md` |
+| `auditor` | 监军 | pro | 0 | `review_eval` | — | span_verify / fairness_scan / ledger_query | `auditor.md` |
 
-> **工具列是声明式能力标签，不是 Function Calling 绑定。** 当前只有"完成后对话"的主 Agent 真正持有可执行工具（`export_word` / `office_export_pdf` / `load_workspace_dependencies` / `python_exec` + 白名单内 MCP 工具）；流水线里的 span 定位、评分重算、去重、检索都由代码直接调用。初稿中的 `dispatch` / `send_message` / `stop` / `query_workspace` 没有对应的运行时工具，也不存在显式的子 Agent 派生 API。
+> **`tools` 与 `capabilities` 是两件事。** `tools` 必须是真实可执行的 Function Calling 工具：注册表用 `KNOWN_TOOLS` 校验，声明未实现的名字会**启动失败**（测试见 `tests/unit/registry.test.ts`）。`capabilities` 只是声明式能力标签，说明代码在该角色里实际调用了什么；流水线里的 span 定位、评分重算、去重、检索都由代码直接调用，不经过模型选择工具。
+
+### 多 Agent 扇出与档位
+
+- **扇出只发生在筛选流水线**：多简历按批派发 parser/assessor/auditor（Batch 内并发、批间流动），原因是子 Agent 上下文有限、单份简历不值得再派生。
+- **完成后对话不派生额外 Agent**：由 `coordinator`（主 Agent）直接回答或调用导出/MCP 工具；对话档位由 `src/chat/tier.ts` 按任务复杂度选择（寒暄/短问答 flash，比较/复盘/长问题 pro）。
+- 控制台/配置里的 `tier` 是默认值；实际使用档位记录在 `usage.tier` 与 `eval_tasks.tier`，可审计。
 
 协作硬约束：
 
-1. 只有 `coordinator` 允许委派（`canDelegate=true`）；注册表在加载时校验子角色 `canDelegate=false`、`maxDepth=0`，配置违规直接启动失败。`src/core/depth.ts` 提供了 `ExecutionContext.assertMayDelegate()`，但当前编排路径没有调用它——实际生效的是注册表校验与"代码里不存在子角色派生 API"。
-2. 子角色之间不直接通信；一切经台账与编排代码。
+1. 只有 `coordinator` 允许委派（`canDelegate=true`）；注册表在加载时校验子角色 `canDelegate=false`、`maxDepth=0`，配置违规直接启动失败。
+2. 子角色之间不直接通信；一切经台账与编排代码，对话链路只由主 Agent 访问工具。
 3. 监军对相马官有否决/打回权；二者 preset 严格分离，禁止同一 preset 既评又核。
 4. 子任务结果必须落盘为结构化 JSON；汇总只消费摘要 + 引用。
 
@@ -61,14 +67,16 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 - `config/agents.json` 有整体 `version`，每个 preset 也有 `version`；`config/pipeline.json` 也有 `version`。
 - 启动时注册表计算 `fingerprint`（agents.json + pipeline.json 的 sha256 前 12 位），写入 `runs/<runId>/run.json` 与 `run.created` 事件。
 - 改 prompt 文本不会改变 fingerprint（prompt 未参与哈希）——这是当前实现的已知小缺口；P1 会把 prompt 内容纳入指纹。
-- `bole agents` 打印当前版本、指纹与工具集，便于演示"角色=配置"。
+- `bole agents` 打印当前版本、指纹、可执行工具与能力标签，便于演示"角色=配置"。
 
 ## 5. 模型档位与路由
 
 | 档位 | 默认模型 | 用途 | 覆盖方式 |
 |---|---|---|---|
 | flash | `deepseek-flash` | 接入、解析、评估初筛（thinking disabled） | `BOLE_FLASH_MODEL` 或 `config/pipeline.json#models.flash` |
-| pro | `deepseek-v4-pro` | 画像、评估深评、核查、完成后对话（thinking high） | `BOLE_PRO_MODEL` 或配置 |
+| pro | `deepseek-v4-pro` | 画像、评估深评、核查、完成后对话中的复杂问题（thinking high） | `BOLE_PRO_MODEL` 或配置 |
+
+完成后对话由 `src/chat/tier.ts` 做**启发式档位路由**：寒暄/短问答走 flash；比较、复盘、面试、长问题、附件或文件操作走 pro。选择结果写入 `usage.tier`，成本页可审计。
 
 深评比例与档位在 `config/pipeline.json`：
 

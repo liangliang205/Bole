@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/liangliang205/Bole/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/liangliang205/Bole/actions/workflows/ci.yml)
 
-**可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 **6 个角色（4 个 LLM 角色 + 2 个确定性模块）**完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查；面试建议改为完成后按需加载的 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
+**可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 **6 个 preset（5 个 LLM 角色 + 1 个确定性接入器）**完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查。多 Agent 扇出只发生在**多简历筛选**（上下文与成本原因，单简历不做无谓派生）；筛选完成后的追问由主 Agent 直接回答或调用工具，并按任务复杂度在 **flash/pro** 间选档；面试建议按需加载 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
 
 > 当前版本只接真实模型 API，不包含 mock 模型、演示 JD、故障注入或预置黄金简历。没有可用的模型提供商时流水线会明确失败，而不是悄悄回退到模拟数据。
 
@@ -32,7 +32,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 续跑：从批次检查点恢复未完成任务，不重新上传。
 - 暂停：运行中点击右上角「⏸ 暂停」，在当前批次/阶段边界安全退出并保留已提交结果；状态变为「已暂停」后可「▶ 续跑」。
 - 会话管理：右键会话或点「⋯」打开 DSH 风格菜单；支持置顶、重命名、归档/取消归档、复制会话 ID、删除（删除不可恢复）。「归档」按钮可切换查看归档会话。
-- 完成后对话：筛选完成后可以继续追问伯乐；只调用主 Agent，复用同一岗位的稳定前缀与历史，不重新运行筛选项。
+- 完成后对话：筛选完成后可以继续追问伯乐；主 Agent 直接回答或调用导出/MCP 工具，**按问题复杂度自动选择 flash 或 pro**（寒暄/短问答走 flash，比较与复盘走 pro），复用同一岗位的稳定前缀与历史，不重新运行筛选项。
 
 ## 流水线
 
@@ -237,7 +237,7 @@ bole/
 ```bash
 pnpm typecheck   # tsc --noEmit（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
-pnpm test:all    # 111 个测试
+pnpm test:all    # 114 个测试
 pnpm check       # 以上三项串行跑一遍
 ```
 
@@ -245,7 +245,7 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
-当前 **111 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+当前 **114 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 
 ## 文档
 
@@ -253,7 +253,7 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 设计原则、组件、流水线、状态与失败处理 |
 | [docs/MODULES.md](docs/MODULES.md) | 逐模块实现说明（编排/接入/解析/评估/核查/报告/Web/知识库/MCP） |
-| [docs/AGENT_PRESETS.md](docs/AGENT_PRESETS.md) | 6 个 preset、schema、提示词纪律、档位路由 |
+| [docs/AGENT_PRESETS.md](docs/AGENT_PRESETS.md) | 6 个 preset、schema、提示词纪律、档位与能力标签 |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | 可复跑的验证项与验收清单 |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | 当前真实限制与已知失败模式 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本机/Docker 部署、OCR、环境变量、排障 |

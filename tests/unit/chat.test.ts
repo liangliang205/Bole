@@ -126,6 +126,25 @@ test('外接 MCP 工具进入主 Agent 工具池，工具调用被路由到 MCP 
   }
 });
 
+test('对话档位按任务复杂度选择：寒暄走 flash，比较/复盘走 pro', async () => {
+  const ledger = new Ledger(':memory:');
+  try {
+    const job = ledger.createJob({ title: '后端工程师', requirements: '3 年以上 Java 经验。' });
+    const tiers: string[] = [];
+    const llm = {
+      chat: async (req: { tier: string }) => {
+        tiers.push(req.tier);
+        return { text: '回答', usage: { promptTokens: 10, completionTokens: 2, cachedPromptTokens: 0 }, stopReason: 'completed', model: 'fake', latencyMs: 1, cacheHit: false };
+      },
+    } as unknown as LlmRouter;
+    await chatWithJob({ job, report: null, ledger, llm, message: '你好' });
+    await chatWithJob({ job, report: null, ledger, llm, message: '帮我比较 R01 和 R02，为什么 R02 不推荐？' });
+    assert.deepEqual(tiers, ['flash', 'pro']);
+  } finally {
+    ledger.close();
+  }
+});
+
 test('筛选完成后的主 Agent 对话：持久化多轮消息并复用稳定上下文前缀', async () => {
   const ledger = new Ledger(':memory:');
   try {

@@ -105,17 +105,18 @@
 - `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像完成后用 `buildProfileSearchQuery()` 生成检索词，**只有相马官评估阶段**会按该画像查询并注入 Top K 命中片段；画像生成前不注入，面试建议/完成后对话不查知识库。
 - 管理台按知识库返回统计（来源/解析/分块/Token/字符/向量化/维度），文档列表展示类型、状态与更新时间。
 
-## 15. 完成后对话（`src/chat/service.ts`）
+## 15. 完成后对话（`src/chat/*`）
 
-- 筛选完成后，`/api/run/:jobId/chat` 只调用主 Agent（coordinator/pro），不触发解析、评估、核查子 Agent。
-- `chat_messages` 追加式保存多轮消息；`buildJobChatContext` 把岗位、结论、转人工/失败明细组成稳定 system 前缀，历史消息追加在尾部，保证 DeepSeek prompt cache 可复用同一前缀。
+- 筛选完成后，`/api/run/:jobId/chat` 进入**主 Agent 对话循环**（`orchestrator.ts`）：coordinator 直接回答或调用导出/MCP 工具，不触发解析、评估、核查流水线，也不派生额外子 Agent。
+- 对话档位由 `tier.ts` 按任务复杂度选择：寒暄/短问答 → flash；比较、复盘、面试、长问题、附件或文件操作 → pro。`meta.tierReason` 记录原因，`usage.tier` 可审计。
+- `chat_messages` 追加式保存多轮消息；`buildJobChatContext`（`context.ts`）把岗位、结论、转人工/失败明细组成稳定 system 前缀，历史消息追加在尾部，保证 DeepSeek prompt cache 可复用同一前缀。
 - 只允许筛选完成后的会话继续追问；运行中的会话拒绝聊天。HITL 输入与普通追问共用底部输入框。
 - 对话附件：输入区「＋」上传图片/PDF/DOCX/Markdown/TXT/HTML 到 `/api/uploads`；服务端用 `normalizeDocument` 抽取文本，保存到 `chat_messages.attachments_json` 并注入主 Agent，API 回传时只保留附件名。
 
 ## 16. 测试（`tests/*`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、cost、stream-preview、key-store、provider-store、tools-call、mcp-config、mcp-schema、mcp-manager、mcp-plugins、mcp-plugin-service、mcp-bridge。
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、registry、cost、stream-preview、key-store、provider-store、tools-call、mcp-config、mcp-schema、mcp-manager、mcp-plugins、mcp-plugin-service、mcp-bridge。
 - `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
 - `fixtures/documents.ts`：生成 DOCX/PDF 测试文件；`fixtures/mcp/echo-server.mjs`：stdio MCP 测试服务。
-- 质量护栏：`pnpm typecheck` + `pnpm lint` + `pnpm test:all`（111 个）；CI 见 `.github/workflows/ci.yml`。
+- 质量护栏：`pnpm typecheck` + `pnpm lint` + `pnpm test:all`（114 个）；CI 见 `.github/workflows/ci.yml`。

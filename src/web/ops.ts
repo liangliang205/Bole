@@ -23,6 +23,7 @@ export function getAgents(): {
     tier: string;
     maxDepth: number;
     tools: string[];
+    capabilities: string[];
     mcp: string[];
     outputSchema: string;
     version: string;
@@ -39,6 +40,7 @@ export function getAgents(): {
       tier: agent.tier,
       maxDepth: agent.maxDepth,
       tools: agent.tools,
+      capabilities: agent.capabilities ?? [],
       mcp: agent.mcp ?? [],
       outputSchema: agent.outputSchema,
       version: agent.version,

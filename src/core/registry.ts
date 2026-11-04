@@ -23,6 +23,18 @@ export const KNOWN_SCHEMAS = new Set([
   'review_eval',
 ]);
 
+/**
+ * 可执行的 Function Calling 工具白名单。
+ * tools 字段里出现未知名字会让注册表启动失败——防止"配置声明了但代码里不存在"的幽灵工具。
+ * 新增真实工具时同步这里，并补对应注册表测试。
+ */
+export const KNOWN_TOOLS = new Set([
+  'export_word',
+  'office_export_pdf',
+  'load_workspace_dependencies',
+  'python_exec',
+]);
+
 export class RegistryValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -59,8 +71,20 @@ export class AgentRegistry {
       if (!KNOWN_SCHEMAS.has(preset.outputSchema)) {
         throw new RegistryValidationError(`preset ${id} 的 outputSchema 未注册: ${preset.outputSchema}`);
       }
-      if (!Array.isArray(preset.tools) || preset.tools.length === 0) {
-        throw new RegistryValidationError(`preset ${id} 未声明工具集`);
+      if (!Array.isArray(preset.tools) || preset.tools.some((item) => typeof item !== 'string')) {
+        throw new RegistryValidationError(`preset ${id} 的 tools 必须是字符串数组`);
+      }
+      for (const tool of preset.tools) {
+        if (!KNOWN_TOOLS.has(tool)) {
+          throw new RegistryValidationError(
+            `preset ${id} 声明了未实现的工具: ${tool}（已注册：${[...KNOWN_TOOLS].join(', ')}）`,
+          );
+        }
+      }
+      if (preset.capabilities !== undefined) {
+        if (!Array.isArray(preset.capabilities) || preset.capabilities.some((item) => typeof item !== 'string')) {
+          throw new RegistryValidationError(`preset ${id} 的 capabilities 必须是字符串数组`);
+        }
       }
       if (preset.mcp !== undefined && (!Array.isArray(preset.mcp) || preset.mcp.some((item) => typeof item !== 'string'))) {
         throw new RegistryValidationError(`preset ${id} 的 mcp 白名单必须是字符串数组`);
