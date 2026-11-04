@@ -1668,7 +1668,7 @@
     $('#provider-editor').classList.add('hidden');
     closePluginEditor();
     state.editingProvider = null;
-    switchSettingsTab(tab === 'plugins' ? 'plugins' : 'models');
+    switchSettingsTab(tab);
   }
 
   function closeSettings() {
@@ -1688,17 +1688,20 @@
     disabled: { label: '已停用', dot: 'idle' },
   };
 
+  const SETTINGS_TABS = ['models', 'plugins', 'tools'];
+
   function switchSettingsTab(tab) {
-    state.settingsTab = tab === 'plugins' ? 'plugins' : 'models';
+    state.settingsTab = SETTINGS_TABS.includes(tab) ? tab : 'models';
     $$('.settings-nav-item').forEach((button) => {
       button.classList.toggle('active', button.dataset.settingsTab === state.settingsTab);
     });
     $('#settings-models').classList.toggle('hidden', state.settingsTab !== 'models');
     $('#settings-plugins').classList.toggle('hidden', state.settingsTab !== 'plugins');
+    $('#settings-tools').classList.toggle('hidden', state.settingsTab !== 'tools');
     if (state.settingsTab === 'models') {
       renderProviders();
       loadProviders();
-    } else {
+    } else if (state.settingsTab === 'plugins') {
       loadPlugins();
     }
   }
@@ -1732,7 +1735,6 @@
       $('#plugin-summary').textContent = `${enabled}/${plugins.length} 启用 · ${state.pluginStatus?.tools || 0} 个工具可用${state.pluginLoadError ? ' · 插件库异常' : ''}`;
     }
     if ($('#plugin-count')) $('#plugin-count').textContent = plugins.length ? `${plugins.length} 个` : '';
-    if ($('#plugin-enabled-count')) $('#plugin-enabled-count').textContent = enabled ? `${enabled}` : '';
 
     if (state.pluginLoadError) {
       list.innerHTML = `<div class="empty-note">${esc(state.pluginLoadError)}</div>`;
@@ -2493,9 +2495,6 @@
     }
   }
 
-  function openTools() { $('#tools-modal').classList.remove('hidden'); }
-  function closeTools() { $('#tools-modal').classList.add('hidden'); }
-
   async function runTool(tool) {
     const output = $('#tool-output');
     output.innerHTML = '<div class="empty-note">执行中…</div>';
@@ -2506,15 +2505,6 @@
       } else if (tool === 'doctor') {
         const data = await api('/api/doctor');
         output.innerHTML = `<div class="info-card"><h3>环境自检</h3><ul>${data.checks.map((check) => `<li><span class="tag ${check.status === 'ok' ? 'ok' : check.status === 'warn' ? 'warn' : 'danger'}">${esc(check.status)}</span> ${esc(check.name)} — ${esc(check.detail)}</li>`).join('')}</ul></div>`;
-      } else if (tool === 'reset') {
-        const phrase = window.prompt('这会删除台账、运行产物与上传缓存。输入 RESET 确认：');
-        if (phrase !== 'RESET') return;
-        await api('/api/reset', { method: 'POST', body: JSON.stringify({ confirm: 'RESET' }) });
-        state.jobs = [];
-        showNewView();
-        await loadJobs();
-        output.innerHTML = '<div class="info-card"><h3>已清空</h3><p class="muted">台账、运行产物与上传缓存已删除。</p></div>';
-        toast('已清空', 'ok');
       }
     } catch (error) {
       output.innerHTML = `<div class="info-card"><p class="muted">${esc(error.message)}</p></div>`;
@@ -2692,10 +2682,8 @@
         $('#provider-base').value = defaults[api] ?? '';
       }
     });
-    $('#open-tools').addEventListener('click', openTools);
-    $('#tools-close').addEventListener('click', closeTools);
+    $('#tools-close').addEventListener('click', closeSettings);
     $('#open-knowledge').addEventListener('click', openKnowledge);
-    $('#open-plugins').addEventListener('click', () => openSettings('plugins'));
     $('#knowledge-close').addEventListener('click', closeKnowledge);
     $('#knowledge-new').addEventListener('click', () => {
       $('#knowledge-create-form').classList.remove('hidden');
@@ -2760,7 +2748,7 @@
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') { closeSettings(); closeTools(); closeKnowledge(); closeDrawer(); }
+      if (event.key === 'Escape') { closeSettings(); closeKnowledge(); closeDrawer(); }
       if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
         event.preventDefault();
         $('#job-search').focus();

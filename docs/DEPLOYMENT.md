@@ -33,7 +33,7 @@ pnpm web
 
 ## 3. 页面操作
 
-1. 打开「设置与模型 → 模型」：DeepSeek 内置（不可删除，首次使用会定位到密钥）；添加自定义模型 API（三种协议），获取/维护模型目录并选择 Flash/Pro，选择当前使用项。
+1. 打开「设置 → 模型」：DeepSeek 内置（不可删除，首次使用会定位到密钥）；添加自定义模型 API（三种协议），获取/维护模型目录并选择 Flash/Pro，选择当前使用项。
 2. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / GIF / BMP / TIFF，单文件 ≤25MB）。
 3. 填写招聘需求 → 开始筛选。
 4. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
@@ -118,5 +118,5 @@ CI（`.github/workflows/ci.yml`）在 Node 24 上执行同样的 `typecheck → 
 | PDF 失败，提示无文本层 | 扫描件导出为 PNG/JPG 后上传 |
 | SSE 不显示 token | 检查反向代理是否缓冲 SSE（关闭 `proxy_buffering`）；本机直连正常 |
 | 端口被占用 | `pnpm bole web --port 8788` |
-| 台账需要清空 | `pnpm bole reset --yes` 或页面「工具与环境 → 清空台账」 |
+| 台账需要清空 | `pnpm bole reset --yes`（CLI；页面已不提供清空入口） |
 | 旧运行报告仍存在 | 报告按 `jobId` 关联；reset 会删 `runs/`，或手工删除对应目录 |

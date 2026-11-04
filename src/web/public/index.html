@@ -33,10 +33,8 @@
     </div>
     <div id="job-list" class="job-list"></div>
     <div class="side-footer">
-      <button class="btn ghost block" id="open-settings">⚙ 设置与模型</button>
+      <button class="btn ghost block" id="open-settings">⚙ 设置</button>
       <button class="btn ghost block" id="open-knowledge">▤ 知识库 <span id="knowledge-enabled-count" class="muted"></span></button>
-      <button class="btn ghost block" id="open-plugins">◈ 插件 <span id="plugin-enabled-count" class="muted"></span></button>
-      <button class="btn ghost block" id="open-tools">⌘ 工具与环境</button>
     </div>
   </aside>
   <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" tabindex="0" title="拖拽调整侧栏宽度"></div>
@@ -156,6 +154,7 @@
         <div class="settings-nav-title">设置</div>
         <button class="settings-nav-item active" data-settings-tab="models">模型</button>
         <button class="settings-nav-item" data-settings-tab="plugins">插件</button>
+        <button class="settings-nav-item" data-settings-tab="tools">工具与环境</button>
       </aside>
       <section class="settings-content" id="settings-models">
         <div class="modal-head"><h2>模型</h2><button class="btn ghost" id="settings-close">✕</button></div>
@@ -271,6 +270,16 @@
           <div id="plugin-list" class="plugin-list"></div>
         </div>
       </section>
+
+      <section class="settings-content hidden" id="settings-tools">
+        <div class="modal-head"><h2>工具与环境</h2><button class="btn ghost" id="tools-close">✕</button></div>
+        <p class="muted settings-sub">运行时自检与 Agent 配置查看。清空台账等破坏性操作只保留在 CLI（<code>pnpm bole reset --yes</code>）。</p>
+        <div class="tools-grid">
+          <div class="tool-card"><h3>Agent 注册表</h3><p>查看 6 个 preset 的档位、工具声明与深度预算。</p><button class="btn ghost" data-tool="agents">查看</button></div>
+          <div class="tool-card"><h3>环境自检</h3><p>Node、配置、知识库、台账、Key 与 OCR。</p><button class="btn ghost" data-tool="doctor">运行自检</button></div>
+        </div>
+        <div id="tool-output" class="tool-output"></div>
+      </section>
     </div>
   </div>
 </div>
@@ -280,7 +289,7 @@
     <div class="modal-head">
       <div>
         <h2>知识库</h2>
-        <p class="muted knowledge-sub">默认不启用。启用后会参与画像、评估与面试建议的自动检索。</p>
+        <p class="muted knowledge-sub">默认不启用。启用后只在评估阶段参与自动检索（画像与完成后对话不查知识库）。</p>
         <p class="knowledge-notice hidden" id="knowledge-embedding-notice">未配置嵌入模型：知识库仍可创建和使用，当前仅关键词检索。</p>
       </div>
       <button class="btn ghost" id="knowledge-close">✕</button>
@@ -379,18 +388,6 @@
   </div>
 </div>
 <input id="knowledge-file" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
-
-<div id="tools-modal" class="modal hidden">
-  <div class="modal-card">
-    <div class="modal-head"><h2>工具与环境</h2><button class="btn ghost" id="tools-close">✕</button></div>
-    <div class="tools-grid">
-      <div class="tool-card"><h3>Agent 注册表</h3><p>查看 7 个 preset 的档位、工具与深度预算。</p><button class="btn ghost" data-tool="agents">查看</button></div>
-      <div class="tool-card"><h3>环境自检</h3><p>Node、配置、知识库、台账、Key 与 OCR。</p><button class="btn ghost" data-tool="doctor">运行自检</button></div>
-      <div class="tool-card danger"><h3>清空台账</h3><p>删除台账、运行产物与上传缓存，不可恢复。</p><button class="btn danger" data-tool="reset">清空</button></div>
-    </div>
-    <div id="tool-output" class="tool-output"></div>
-  </div>
-</div>
 
 <input id="chat-file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>
 <input id="file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff" hidden>

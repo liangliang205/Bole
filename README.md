@@ -18,7 +18,7 @@ pnpm web                   # http://127.0.0.1:8787
 
 ### 页面里能做什么
 
-- 设置：DSH 风格的「模型」页；DeepSeek 为内置提供商（不可删除），自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；支持获取可用模型、模型目录、手动添加和 Flash/Pro 选择。
+- 设置：侧栏「⚙ 设置」打开，内含「模型 / 插件 / 工具与环境」三个页签。模型页管理提供商与 Key（DeepSeek 为内置提供商，不可删除；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；支持获取可用模型、模型目录、手动添加和 Flash/Pro 选择）；插件页管理 MCP；工具与环境页提供 Agent 注册表查看与环境自检。清空台账只在 CLI 提供。
 - 知识库：原生 SQLite 本地知识库（`data/knowledge.db`）；默认没有知识库，创建并启用后，画像完成后用 JD + 评分卡生成检索词，**只有评估阶段**会注入命中的相关片段（面试建议走对话 skill，不查知识库）。支持文档上传、Markdown 智能分块、Ollama/OpenAI 兼容 embedding、可选 rerank、Top K 和上下文预算。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
@@ -74,7 +74,7 @@ HR 上传文件 + 招聘需求
 
 ### 安装与编辑
 
-入口：侧栏「◈ 插件」，或「设置 → 插件」。
+入口：「设置 → 插件」。
 
 | 操作 | 入口 |
 |---|---|
@@ -182,7 +182,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | POST | `/api/mcp/plugins/:id/enabled` | 启停插件；`{enabled:true|false}`，即时重连 |
 | POST | `/api/mcp/plugins/:id/test` | 临时连接该插件并列出工具 |
 | POST | `/api/mcp/reload` | 从磁盘重读插件库并重建连接 |
-| POST | `/api/reset` | `{confirm:"RESET"}` |
+| POST | `/api/reset` | `{confirm:"RESET"}`；UI 已移除清空入口，仅供脚本/自动化使用 |
 
 ## 环境变量
 
