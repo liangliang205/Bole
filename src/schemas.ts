@@ -129,6 +129,8 @@ export const screeningPlanSchema = z.object({
   mode: z.enum(['single', 'batch']),
   batchSize: z.number().int().min(1).max(16),
   maxBatchesInFlight: z.number().int().min(1).max(4),
+  /** 统一子 Agent 总并发上限（跨解析/评估/核查共享）。 */
+  maxActiveAgents: z.number().int().min(1).max(12),
   deepEval: z.object({
     enabled: z.boolean(),
     percent: z.number().min(0).max(100),

@@ -26,7 +26,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 文件预览：对话内生成的 DOCX/PDF 可点击卡片，在右侧分栏用 PDF.js 预览；DOCX 先经 LibreOffice Kit 转 PDF，支持拖拽调宽和原文件下载。
 - 对话附件：输入区左侧「＋」可上传图片、PDF、Word（DOCX）、Markdown/TXT/HTML；服务端抽取文本注入主 Agent，界面只显示附件名，不上传原文。
 - HITL：JD 有歧义、预算/地点冲突、证据不足、核查打回时，在对话内选择推荐项或输入自定义回答。
-- 筛选计划：上传/接入完成后，**主 Agent 阅读 `config/skills/screening-plan.md` 决定是否扇出**（single/batch）、批大小、在途批数、各阶段并发与是否深评；代码只做边界校验与执行，不按简历数量硬编码。
+- 筛选计划：上传/接入完成后，**主 Agent 阅读 `config/skills/screening-plan.md` 决定是否扇出**（single/batch）、批大小、在途批数、**统一子 Agent 总上限（默认 8，跨阶段共享）**、各阶段并发与是否深评；代码只做边界校验与执行，不按简历数量硬编码。
 - 证据审计：每位候选人的解析字段、评估维度、逐条核查 verdict、原文 span 与区间。
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
 - 报告：完成后直接在对话里汇总 Top 候选人、推荐理由、合规与成本摘要；不提供 Markdown/JSON 下载；需要文件时可在完成后对话中按需导出 Word/PDF。
@@ -209,6 +209,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | `BOLE_MCP_CONFIG` | `config/mcp.json` | 旧式 MCP 配置文件（仅在首次导入插件库时读取；插件库优先） |
 | `BOLE_BATCH_SIZE` | 8 | 批大小 |
 | `BOLE_MAX_BATCHES_IN_FLIGHT` | 2 | 在途批上限 |
+| `BOLE_MAX_ACTIVE_AGENTS` | 8 | 统一子 Agent 总并发上限（跨阶段共享） |
 | `BOLE_DEEP_EVAL_PERCENT` | 40 | 深评短名单比例 |
 
 ## 目录
@@ -241,7 +242,7 @@ bole/
 ```bash
 pnpm typecheck   # tsc --noEmit（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
-pnpm test:all    # 115 个测试
+pnpm test:all    # 116 个测试
 pnpm check       # 以上三项串行跑一遍
 ```
 
@@ -249,7 +250,7 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
-当前 **115 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+当前 **116 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 
 ## 文档
 

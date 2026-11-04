@@ -140,6 +140,46 @@ export async function withSlot<T>(pool: CapacityPool, label: string, opts: Admis
   }
 }
 
+/**
+ * 统一子 Agent 总预算：同时拿到"全局名额 + 阶段名额"才执行，避免持有一边空等另一边。
+ * 全局池限制任何时刻活跃的模型 Agent 总数（跨解析/评估/核查共享）；阶段池仍限制单阶段并发。
+ */
+export async function withAgentSlot<T>(
+  budget: CapacityPool,
+  pool: CapacityPool,
+  label: string,
+  opts: AdmissionOptions,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const deadline = Date.now() + (opts.timeoutMs ?? 30_000);
+  let attempts = 0;
+  for (;;) {
+    const agent = budget.tryAcquire(label);
+    if (agent) {
+      const slot = pool.tryAcquire(label);
+      if (slot) {
+        try {
+          return await fn();
+        } finally {
+          slot.release();
+          agent.release();
+        }
+      }
+      agent.release();
+    }
+    attempts += 1;
+    if (attempts > opts.maxRefusalRetries || Date.now() > deadline) {
+      throw new PoolFullError(
+        `${budget.name}+${pool.name}`,
+        Math.min(budget.capacity, pool.capacity),
+        budget.stats().refused + pool.stats().refused,
+      );
+    }
+    const backoff = Math.min(opts.maxBackoffMs, opts.baseBackoffMs * 2 ** Math.min(attempts, 6));
+    await sleep(backoff + Math.random() * Math.min(backoff, 10));
+  }
+}
+
 export async function delay(ms: number): Promise<void> {
   await sleep(ms);
 }

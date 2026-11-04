@@ -25,10 +25,11 @@
 | `mode` | `single`（单批串行，不扇出）/ `batch`（按批并发） |
 | `batchSize` / `maxBatchesInFlight` | 批大小与在途批数 |
 | `pools.parse` / `assess` / `review` | 各阶段并发 |
+| `maxActiveAgents` | 统一子 Agent 总上限（解析/初筛/深评/核查共享），默认 8 |
 | `deepEval` | 是否深评及比例 |
 | `reason` | 必须结合可用/重复/失败/格式，不能套固定值 |
 
-代码只做边界钳制（batch 1–16、在途 1–4、池 1–8/1–4）并执行；失败时回退配置默认值。计划写入 `screening.plan` 事件与 `artifacts/plan/screening_plan.json`，可审计。单份简历不会为了“看起来多 Agent”而强行扇出。
+代码只做边界钳制（batch 1–16、在途 1–4、**总上限 1–12**、池 1–8/1–4）并执行；失败时回退配置默认值。计划写入 `screening.plan` 事件与 `artifacts/plan/screening_plan.json`，可审计。单份简历不会为了“看起来多 Agent”而强行扇出。
 
 ### 多 Agent 扇出与档位
 

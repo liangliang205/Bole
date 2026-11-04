@@ -33,6 +33,8 @@ export interface PipelineConfig {
   version: string;
   batchSize: number;
   maxBatchesInFlight: number;
+  /** 统一子 Agent 总并发上限（跨解析/评估/核查共享）。 */
+  maxActiveAgents: number;
   pools: { parse: number; assess: number; review: number };
   admission: { maxRefusalRetries: number; baseBackoffMs: number; maxBackoffMs: number };
   selfLoop: { maxLoops: number };
@@ -85,8 +87,10 @@ export function resolvePaths(root = projectRoot()): BolePaths {
 export function loadPipelineConfig(root = projectRoot()): PipelineConfig {
   const file = path.join(root, 'config', 'pipeline.json');
   const cfg = readJsonFile<PipelineConfig>(file);
+  cfg.maxActiveAgents ??= 8;
   if (process.env.BOLE_BATCH_SIZE) cfg.batchSize = Number(process.env.BOLE_BATCH_SIZE);
   if (process.env.BOLE_MAX_BATCHES_IN_FLIGHT) cfg.maxBatchesInFlight = Number(process.env.BOLE_MAX_BATCHES_IN_FLIGHT);
+  if (process.env.BOLE_MAX_ACTIVE_AGENTS) cfg.maxActiveAgents = Number(process.env.BOLE_MAX_ACTIVE_AGENTS);
   if (process.env.BOLE_DEEP_EVAL_PERCENT) cfg.deepEval.percent = Number(process.env.BOLE_DEEP_EVAL_PERCENT);
   return cfg;
 }

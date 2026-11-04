@@ -15,6 +15,7 @@ function inventory(usable: number): ScreeningInventory {
     defaults: {
       batchSize: 8,
       maxBatchesInFlight: 2,
+      maxActiveAgents: 8,
       pools: { parse: 4, assess: 2, review: 1 },
       deepEval: { enabled: true, percent: 40 },
     },
@@ -29,6 +30,7 @@ test('规划 Agent 决定扇出与并发：单简历 single，多简历 batch', 
     assert.equal(single.source, 'agent');
     assert.equal(single.mode, 'single');
     assert.equal(single.maxBatchesInFlight, 1);
+    assert.equal(single.maxActiveAgents, 1);
     assert.deepEqual(single.pools, { parse: 1, assess: 1, review: 1 });
     assert.equal(single.deepEval.enabled, false);
 
@@ -36,6 +38,7 @@ test('规划 Agent 决定扇出与并发：单简历 single，多简历 batch', 
     assert.equal(multi.source, 'agent');
     assert.equal(multi.mode, 'batch');
     assert.equal(multi.batchSize, 8);
+    assert.equal(multi.maxActiveAgents, 8);
     assert.deepEqual(multi.pools, { parse: 4, assess: 2, review: 1 });
     assert.equal(multi.deepEval.enabled, true);
   } finally {

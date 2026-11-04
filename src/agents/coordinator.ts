@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { chunk, flowBatches, mapSettled } from '../core/pipeline.ts';
-import { CapacityPool, withSlot, admissionOptions } from '../core/pool.ts';
+import { CapacityPool, withAgentSlot, admissionOptions } from '../core/pool.ts';
 import { combineStopReasons } from '../core/state.ts';
 import { writeJson } from '../util/fsx.ts';
 import type {
@@ -187,6 +187,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     defaults: {
       batchSize: deps.config.batchSize,
       maxBatchesInFlight: deps.config.maxBatchesInFlight,
+      maxActiveAgents: deps.config.maxActiveAgents,
       pools: deps.config.pools,
       deepEval: { enabled: deps.config.deepEval.enabled, percent: deps.config.deepEval.percent },
     },
@@ -197,6 +198,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     mode: plan.mode,
     batchSize: plan.batchSize,
     maxBatchesInFlight: plan.maxBatchesInFlight,
+    maxActiveAgents: plan.maxActiveAgents,
     pools: plan.pools,
     deepEval: plan.deepEval,
     source: plan.source,
@@ -208,6 +210,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   const parsePool = new CapacityPool('parse', plan.pools.parse);
   const assessPool = new CapacityPool('assess', plan.pools.assess);
   const reviewPool = new CapacityPool('review', plan.pools.review);
+  const agentPool = new CapacityPool('agents', plan.maxActiveAgents);
   const admission = admissionOptions(deps.config.admission);
 
   deps.events.emit(deps.jobId, 'coordinator', 'pipeline.started', {
@@ -215,7 +218,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     workItems: workItems.length,
     batchSize: plan.batchSize,
     maxBatchesInFlight: plan.maxBatchesInFlight,
-    pools: plan.pools,
+    pools: { ...plan.pools, agents: plan.maxActiveAgents },
     deepEval: plan.deepEval,
     planSource: plan.source,
     resumeOnly: !!opts.resumeOnly,
@@ -247,7 +250,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     if (!parsed) throw new Error('解析结果缺失');
     const worker = new AssessorWorker(deps, assessPool.stats().acquired + 1, assessorCtx);
     const tier = deps.registry.get('assessor').tier;
-    const result = await withSlot(assessPool, `screen:${resume.id}`, admission, () =>
+    const result = await withAgentSlot(agentPool, assessPool, `screen:${resume.id}`, admission, () =>
       worker.evaluate({ resume, parsed, batchId, loopIndex: 0, tier, phase: 'screen' }),
     );
     if (!result.ok || !result.evaluation) {
@@ -291,7 +294,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     if (!resume) return;
     const worker = new AssessorWorker(deps, assessPool.stats().acquired + 1, assessorCtx, 'assessor-deep');
     const tier = deps.config.deepEval.tier;
-    const result = await withSlot(assessPool, `deep:${candidate.resumeId}`, admission, () =>
+    const result = await withAgentSlot(agentPool, assessPool, `deep:${candidate.resumeId}`, admission, () =>
       worker.evaluate({
         resume,
         parsed: candidate.parsed,
@@ -335,7 +338,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       const resume = deps.ledger.getResume(candidate.resumeId);
       if (!resume) return { status: 'missing' };
       const auditor = new AuditorWorker(deps, reviewPool.stats().acquired + 1);
-      const review = await withSlot(reviewPool, `review:${candidate.resumeId}`, admission, () =>
+      const review = await withAgentSlot(agentPool, reviewPool, `review:${candidate.resumeId}`, admission, () =>
         auditor.review({
           resume,
           parsed: candidate.parsed,
@@ -359,7 +362,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         fixes: review.review.requiredFixes.length,
         tier: candidate.evalTier,
       });
-      const revised = await withSlot(assessPool, `revise:${candidate.resumeId}`, admission, () =>
+      const revised = await withAgentSlot(agentPool, assessPool, `revise:${candidate.resumeId}`, admission, () =>
         candidate.worker.revise({
           resume,
           parsed: candidate.parsed,
@@ -421,7 +424,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         const resume = deps.ledger.getResume(item.resumeId);
         if (!resume) throw new Error(`简历不存在: ${item.resumeId}`);
         const worker = new ParserWorker(deps, parsePool.stats().acquired + 1);
-        const result = await withSlot(parsePool, `parse:${resume.id}`, admission, () =>
+        const result = await withAgentSlot(agentPool, parsePool, `parse:${resume.id}`, admission, () =>
           worker.parse({ resume, batchId }),
         );
         if (!result.ok) throw new Error(`解析失败: ${result.errors.join('；')}`);
@@ -549,7 +552,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   const jobStatus = finalStatus === 'final' ? 'completed' : 'draft';
 
   const reportData = await buildReport(deps, analysis, {
-    pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats()],
+    pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats(), agentPool.stats()],
     startedMs,
     topN: deps.config.topN,
     interviewPlans,
@@ -575,7 +578,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     status: finalStatus,
     counts: deps.ledger.resumeCounts(deps.jobId),
     selfLoop: deps.ledger.selfLoopStats(deps.jobId),
-    pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats()],
+    pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats(), agentPool.stats()],
     top: top.map((candidate) => ({
       label: candidate.label,
       totalScore: candidate.totalScore,

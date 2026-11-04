@@ -94,7 +94,7 @@ docker compose up
 ```bash
 pnpm typecheck
 pnpm lint              # ESLint 9，零 warning
-pnpm test:all          # 115 个测试
+pnpm test:all          # 116 个测试
 pnpm check             # 以上三项串行
 curl -s http://127.0.0.1:8787/api/doctor
 ```

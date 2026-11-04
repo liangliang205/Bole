@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CapacityPool, PoolFullError, admissionOptions } from '../../src/core/pool.ts';
+import { CapacityPool, PoolFullError, admissionOptions, withAgentSlot } from '../../src/core/pool.ts';
 
 test('容量池满载直接拒绝，不维护排队队列', () => {
   const pool = new CapacityPool('parse', 2);
@@ -55,4 +55,28 @@ test('admission 在超限时抛出 PoolFullError', async () => {
     PoolFullError,
   );
   held.release();
+});
+
+test('withAgentSlot：跨阶段共享统一总上限，实际活跃数不超过 maxActiveAgents', async () => {
+  const budget = new CapacityPool('agents', 2);
+  const parse = new CapacityPool('parse', 5);
+  const assess = new CapacityPool('assess', 5);
+  const opts = admissionOptions({ timeoutMs: 3000, baseBackoffMs: 1, maxBackoffMs: 5, maxRefusalRetries: 5000 });
+  let active = 0;
+  let peak = 0;
+  const run = (pool: CapacityPool, label: string) =>
+    withAgentSlot(budget, pool, label, opts, async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+    });
+  await Promise.all([
+    ...Array.from({ length: 4 }, (_, i) => run(parse, `p${i}`)),
+    ...Array.from({ length: 4 }, (_, i) => run(assess, `a${i}`)),
+  ]);
+  assert.equal(peak, 2);
+  assert.equal(budget.stats().peak, 2);
+  assert.equal(active, 0);
+  assert.equal(budget.stats().active, 0);
 });

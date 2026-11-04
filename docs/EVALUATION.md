@@ -10,7 +10,8 @@
 |---|---|---|
 | 接入 | 真实上传文件可落盘、去重、格式归一（PDF/DOCX/HTML/TXT/图片 OCR） | `tests/unit/ingest.test.ts` |
 | 调度 | 容量池满时拒绝而非排队；批流动无全局 barrier；检查点续跑 | `tests/unit/pool.test.ts`、`tests/integration/*` |
-| 筛选计划 | 主 Agent 读 skill 输出 `screening_plan`（single/batch、并发、深评）；单简历 single、多简历 batch | `tests/unit/planner.test.ts`、`tests/integration/pipeline.test.ts` |
+| 筛选计划 | 主 Agent 读 skill 输出 `screening_plan`（single/batch、并发、总上限、深评）；单简历 single、多简历 batch | `tests/unit/planner.test.ts`、`tests/integration/pipeline.test.ts` |
+| 总并发上限 | `withAgentSlot` 跨阶段共享 `maxActiveAgents`；跨阶段活跃数不超过上限 | `tests/unit/pool.test.ts` |
 | 状态 | 任务两阶段提交、committed 单调守卫、简历生命周期回退 | `tests/unit/state.test.ts`、`tests/unit/structured.test.ts` |
 | 证据 | quote → 字符区间定位；偏移错误能被识别 | `tests/unit/spans.test.ts` |
 | 评分 | 总分由代码按权重重算，不采信模型自报总分 | `tests/unit/scorecard.test.ts` |
@@ -36,7 +37,7 @@ pnpm check       # 以上三项串行
 
 以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。CI 已在 `dev` 分支跑通（首次运行全绿）。
 
-当前结果：**115 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）**、对话档位选择（flash/pro）、注册表工具一致性、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**116 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）**、对话档位选择（flash/pro）、注册表工具一致性、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 
 ## 3. 真实数据验收（需要 Key）
 
@@ -78,7 +79,7 @@ pnpm web
 
 - [ ] `pnpm typecheck` 通过
 - [ ] `pnpm lint` 通过（零 error / 零 warning）
-- [ ] `pnpm test:all` 115/115 通过
+- [ ] `pnpm test:all` 116/116 通过
 - [ ] CI 在 `master` / `dev` 上为绿
 - [ ] `pnpm web` 可打开，无 mock/demo 入口
 - [ ] 上传 TXT/DOCX/PDF/图片均可进入 `resume.fetched`

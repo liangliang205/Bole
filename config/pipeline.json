@@ -1,7 +1,8 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "batchSize": 8,
   "maxBatchesInFlight": 2,
+  "maxActiveAgents": 8,
   "pools": {
     "parse": 4,
     "assess": 2,

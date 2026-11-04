@@ -21,7 +21,7 @@
 ┌──────────────────────────▼─────────────────────────────────┐
 │ 编排层                                                       │
 │  Coordinator：JD → 接入 → 批流动 → 短名单 → 深评 → 核查 → 报告 │
-│  CapacityPool：parse=4 / assess=2 / review=1，满则拒绝+退避     │
+│  CapacityPool：agents=8（总上限）/ parse=4 / assess=2 / review=1，满则拒绝+退避 │
 │  EventLog：append-only 事件；SSE 推送 + 台账回放               │
 └───────┬──────────────┬──────────────┬──────────────────────┘
         │              │              │
@@ -51,7 +51,7 @@
    - 图片 → DeepSeek V4 Flash Vision（JPEG/PNG/GIF/WebP；失败或 BMP/TIFF 回退 Tesseract）；
    - TXT/MD/HTML → 解码/去标签。
    去重：文件 sha256 + 身份指纹；命中标记 `duplicate`，不进入解析。
-3. **筛选计划（主 Agent，pro）**：接入完成后，主 Agent 阅读 `config/skills/screening-plan.md`，输出 `screening_plan`（`single`/`batch`、`batchSize`、`maxBatchesInFlight`、`pools`、`deepEval`、`reason`）。代码只做硬边界钳制并执行；Agent 失败时回退配置默认值。计划写 `screening.plan` 事件与 `artifacts/plan/screening_plan.json`，**不按简历数量硬编码**。
+3. **筛选计划（主 Agent，pro）**：接入完成后，主 Agent 阅读 `config/skills/screening-plan.md`，输出 `screening_plan`（`single`/`batch`、`batchSize`、`maxBatchesInFlight`、`maxActiveAgents`、`pools`、`deepEval`、`reason`）。代码只做硬边界钳制并执行；Agent 失败时回退配置默认值。计划写 `screening.plan` 事件与 `artifacts/plan/screening_plan.json`，**不按简历数量硬编码**。
 4. **批流动**：按 `screening_plan` 的批大小/在途批数；每批：
    - 录事（flash）解析字段 + span；
    - 相马官（flash）初筛；

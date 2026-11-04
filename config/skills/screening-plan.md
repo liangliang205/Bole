@@ -11,19 +11,21 @@
 - `usable`：可进入筛选的简历数（不含重复/失败）；
 - `duplicates` / `failed`：接入阶段去重与失败数量；
 - `formats`：各格式数量（pdf/docx/image/text）；
-- `defaults`：当前配置的默认值（batchSize / maxBatchesInFlight / pools / deepEval）；
+- `defaults`：当前配置的默认值（batchSize / maxBatchesInFlight / **maxActiveAgents** / pools / deepEval）；
 - `bounds`：允许的取值范围（硬边界，超出会被夹紧）。
+
+> `maxActiveAgents` 是**统一子 Agent 总上限**：解析、初筛、深评、核查同一时刻加起来的活跃 Agent 数不超过它。默认 8，跨阶段共享；`pools` 只是各阶段的二级限流，不能突破总上限。
 
 ## 判断原则
 
 1. **先判断“值不值得扇出”**
-   - 只有 1 份可用简历：没有并行收益，选 `single`。单份简历没有横向比较对象，深评通常没有增量价值，`deepEval.enabled=false`；若解析有异常/不确定项，可保留深评。
+   - 只有 1 份可用简历：没有并行收益，选 `single`。单份简历没有横向比较对象，深评通常没有增量价值，`deepEval.enabled=false`；若解析有异常/不确定项，可保留深评。`single` 下总上限固定为 1。
    - 2 份以上：通常选 `batch`；只有当简历极少且你判断串行更稳时，才选 `single`。
    - 重复/失败很多时，先看 `usable`，不要按上传文件数做决定。
 
-2. **上下文与质量**
-   - 子 Agent 上下文有限：批越大，单批内并发越高，越容易触发模型限流/截断；不要为了快把 `pools` 拉到上限。
-   - 解析（parse）是扇出型工作，可以比评估（assess）更宽；核查（review）是串行否决点，默认保持窄并发（1–2），否则会放大成本且难以收敛。
+2. **总上限优先于阶段并发**
+   - 先定 `maxActiveAgents`（默认 8；不要为了快随便拉高），再定各阶段 `pools`；`pool.parse + pool.assess + pool.review` 可以大于总上限，但实际同时活跃数永远不超过 `maxActiveAgents`。
+   - 解析是扇出型工作，可以比评估更宽；核查是串行否决点，默认保持窄并发（1–2）。
    - `deepEval` 只对“需要横向比较/边界候选人”有价值；单简历、证据充分且无不确定项时关闭。
 
 3. **成本**
@@ -44,6 +46,7 @@
 | `mode` | `single`：单批串行，不开扇出；`batch`：按批并发 |
 | `batchSize` | 每批简历数；single 模式会按当前可用量收口 |
 | `maxBatchesInFlight` | 同时在途的批数；single 固定为 1 |
+| `maxActiveAgents` | 统一子 Agent 总上限（跨阶段共享）；single 固定为 1 |
 | `deepEval.enabled` / `percent` | 是否做 pro 深评；percent 只在 batch 模式有意义 |
 | `pools.parse` / `assess` / `review` | 各阶段并发上限；review 建议 1–2 |
 | `reason` | 一句话说明为什么这样开/不开扇出、为什么选这个并发 |
@@ -52,5 +55,6 @@
 
 - 不管几份简历都返回 `batchSize=8, pools=4/2/1`——这是硬编码，不是判断。
 - 1 份简历也开 `batch` + 深评，白花一次 pro。
-- 为了“看起来并发高”把 `review` 调到 4，成本和失败率都会上升。
+- 为了“看起来并发高”把 `maxActiveAgents` 或 `review` 拉满，成本和失败率都会上升。
+- 只写阶段并发、不写总上限——总上限才是跨阶段的硬约束。
 - 理由只写“默认值”——必须结合 `usable`、失败/重复、格式或成本说清楚。
