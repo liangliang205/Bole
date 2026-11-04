@@ -24,6 +24,7 @@ html[data-theme="light"] {
   --hero: linear-gradient(155deg, #ffffff 0%, #f4f4ee 100%);
   --shadow: 0 24px 70px rgba(20, 20, 15, .10);
   --shadow-soft: 0 10px 30px rgba(20, 20, 15, .06);
+  --topbar-shadow: 0 10px 22px -8px rgba(20, 20, 15, .42);
   --glow-1: rgba(0, 0, 0, .03);
   --glow-2: rgba(0, 0, 0, .015);
   --ok: #146c43;
@@ -70,6 +71,7 @@ html[data-theme="dark"] {
   --hero: linear-gradient(155deg, #18181b 0%, #101012 100%);
   --shadow: 0 26px 70px rgba(0, 0, 0, .6);
   --shadow-soft: 0 10px 30px rgba(0, 0, 0, .4);
+  --topbar-shadow: 0 12px 24px -8px rgba(0, 0, 0, .75);
   --glow-1: rgba(255, 255, 255, .035);
   --glow-2: rgba(255, 255, 255, .015);
   --ok: #6ee7a8;
@@ -210,7 +212,8 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !important; user-select: none !important; }
 .topbar {
   display: flex; align-items: center; gap: 16px; padding: 14px 24px;
-  background: transparent;
+  background: var(--main); box-shadow: var(--topbar-shadow);
+  position: relative; z-index: 5;
   justify-content: flex-end;
 }
 .topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }
