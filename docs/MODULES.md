@@ -5,7 +5,7 @@
 - `runPipeline(deps, { requirements, hitl, uploadFiles?, resumeOnly? })`：
   - 非续跑：要求至少一个 `uploadFiles`，调用 `runFetcher`；全部失败则抛错。
   - 续跑：`recoverIncomplete` 从批次检查点恢复。
-  - JD 画像 → 批流动 → 短名单深评 → 核查/自环 → 建议 → 报告。
+  - JD 画像 → 批流动 → 短名单深评 → 核查/自环 → 报告（面试建议不在此链路）。
   - `shouldPause` 在画像/接入/批次/阶段边界检查；暂停抛 `PipelinePausedError`，`flowBatches` 不再启动新批并等待在飞批收尾，已提交结果保留。
 - 批流动：`chunk` + `flowBatches`，`maxBatchesInFlight` 限制在途批；批间无全局 barrier。
 - 容量池：`CapacityPool` + `withSlot`，满时 `PoolFullError` 退避重试，不排队。
@@ -39,7 +39,7 @@
 
 - `AssessorWorker` 有容量池与自环重评能力；`tier/phase` 由 coordinator 指定（screen/deep/revise）。
 - 评分维度必须引用原文；`scorecard` 代码按权重重算总分，不采信模型自报总分。
-- 输出 `EvaluateResult`；写 `eval_tasks`（tier/phase/loop/attempt）。
+- 输出 `EvalResult`；写 `eval_tasks`（tier/phase/loop/attempt）。
 - 深评短名单：批次内按初筛分排序，取 `deepEval.percent`（默认 40%）。
 
 ## 6. 核查（`src/agents/auditor.ts`）
@@ -62,7 +62,7 @@
 
 ## 9. 台账与状态（`src/core/*`）
 
-- `ledger.ts`：jobs/resumes/parse_tasks/eval_tasks/review_tasks/events/llm_calls/decisions/batches。
+- `ledger.ts`：jobs/resumes/parse_tasks/eval_tasks/review_tasks/evidence/events/usage/decisions/chat_messages/batches。
 - `state.ts`：任务状态机、简历生命周期、五类 stop reason、单调守卫。
 - `events.ts`：append-only 事件；Web/CLI 轮询或 SSE。
 - `db.ts`：SQLite schema + `migrate()`（`tier/phase` 等列）。
@@ -81,7 +81,7 @@
 
 ## 12. Web（`src/web/*`）
 
-- `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、agents/doctor/reset、Key 绑定。
+- `server.ts`：HTTP + 静态资源 + SSE；上传、run、HITL、candidates、cost、report、resume、chat、文件预览/下载、agents/doctor/reset、模型提供商与 Key、知识库、MCP 插件。
 - `stream-preview.ts`：用 `partial-json` 解析未完成 JSON，按 agent/phase 转成字段、维度分数、核查裁决；token 事件带 `preview`，前端不展示原始 JSON。
 - 文件预览：`/api/run/:jobId/files/:name/preview` 对 PDF 直接内联返回，对 DOCX 用 LibreOffice Kit 转 PDF 后内联；转换结果按源文件 mtime 缓存在运行目录 `.preview/`。前端用 PDF.js 画布渲染在右侧分栏，支持滚动、拖拽调宽和原文件下载。
 - `data.ts`：jobs/snapshot/candidates/events/cost 查询。
@@ -98,11 +98,11 @@
 
 ## 14. 知识库（`src/knowledge/service.ts`）
 
-- 本地 SQLite `data/knowledge.db`；知识库默认 `enabled=0`，没有启用知识库时画像/评估/建议不检索。
+- 本地 SQLite `data/knowledge.db`；知识库默认 `enabled=0`，没有启用知识库时**只有评估阶段**不检索（画像与完成后对话本来就不查知识库）。
 - `knowledge_bases`、`knowledge_documents`、`knowledge_chunks`、`knowledge_settings` 四张表；文档用 `normalizeDocument` 归一化，按 Markdown 标题/自然段分块并保留重叠。
 - 支持 Ollama 或 OpenAI 兼容 embedding；向量随分块存 SQLite。未配置 embedding 时退化为中英混合 token 关键词检索。
 - 可选 rerank（OpenAI 兼容 `/rerank`）、Top K、上下文预算和“自动检索”开关。
-- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像完成后用 `buildProfileSearchQuery()` 生成检索词，相马官与按需面试建议按该画像查询并只注入 Top K 命中片段，画像生成前不注入知识库内容。
+- `recall()` 只在有启用知识库且 autoRecall 开启时返回结果；画像完成后用 `buildProfileSearchQuery()` 生成检索词，**只有相马官评估阶段**会按该画像查询并注入 Top K 命中片段；画像生成前不注入，面试建议/完成后对话不查知识库。
 - 管理台按知识库返回统计（来源/解析/分块/Token/字符/向量化/维度），文档列表展示类型、状态与更新时间。
 
 ## 15. 完成后对话（`src/chat/service.ts`）
@@ -114,7 +114,8 @@
 
 ## 16. 测试（`tests/*`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、cost、stream-preview、key-store、provider-store。
-- `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商标失败。
+- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、cost、stream-preview、key-store、provider-store、tools-call、mcp-config、mcp-schema、mcp-manager、mcp-plugins、mcp-plugin-service、mcp-bridge。
+- `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
-- `fixtures/documents.ts`：生成 DOCX/PDF 测试文件。
+- `fixtures/documents.ts`：生成 DOCX/PDF 测试文件；`fixtures/mcp/echo-server.mjs`：stdio MCP 测试服务。
+- 质量护栏：`pnpm typecheck` + `pnpm lint` + `pnpm test:all`（111 个）；CI 见 `.github/workflows/ci.yml`。

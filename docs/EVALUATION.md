@@ -32,7 +32,7 @@ pnpm test:all    # 单元 + 集成测试
 pnpm check       # 以上三项串行
 ```
 
-以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。
+以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。CI 已在 `dev` 分支跑通（首次运行全绿）。
 
 当前结果：**111 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
 

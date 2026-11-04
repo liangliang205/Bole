@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/liangliang205/Bole/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/liangliang205/Bole/actions/workflows/ci.yml)
 
-**可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 6 个 Agent 完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查；面试建议改为完成后按需加载的 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
+**可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 **6 个角色（4 个 LLM 角色 + 2 个确定性模块）**完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查；面试建议改为完成后按需加载的 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
 
 > 当前版本只接真实模型 API，不包含 mock 模型、演示 JD、故障注入或预置黄金简历。没有可用的模型提供商时流水线会明确失败，而不是悄悄回退到模拟数据。
 
@@ -19,7 +19,7 @@ pnpm web                   # http://127.0.0.1:8787
 ### 页面里能做什么
 
 - 设置：DSH 风格的「模型」页；DeepSeek 为内置提供商（不可删除），自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；支持获取可用模型、模型目录、手动添加和 Flash/Pro 选择。
-- 知识库：原生 SQLite 本地知识库（`data/knowledge.db`）；默认没有知识库，创建并启用后，画像完成后用 JD + 评分卡生成检索词，评估与面试建议只注入命中的相关片段。支持文档上传、Markdown 智能分块、Ollama/OpenAI 兼容 embedding、可选 rerank、Top K 和上下文预算。
+- 知识库：原生 SQLite 本地知识库（`data/knowledge.db`）；默认没有知识库，创建并启用后，画像完成后用 JD + 评分卡生成检索词，**只有评估阶段**会注入命中的相关片段（面试建议走对话 skill，不查知识库）。支持文档上传、Markdown 智能分块、Ollama/OpenAI 兼容 embedding、可选 rerank、Top K 和上下文预算。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
 - 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
@@ -28,7 +28,7 @@ pnpm web                   # http://127.0.0.1:8787
 - HITL：JD 有歧义、预算/地点冲突、证据不足、核查打回时，在对话内选择推荐项或输入自定义回答。
 - 证据审计：每位候选人的解析字段、评估维度、逐条核查 verdict、原文 span 与区间。
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
-- 报告：完成后直接在对话里汇总 Top 候选人、推荐理由、合规与成本摘要；不提供 Markdown/JSON 下载，后续可通过 MCP 由 Agent 输出。
+- 报告：完成后直接在对话里汇总 Top 候选人、推荐理由、合规与成本摘要；不提供 Markdown/JSON 下载；需要文件时可在完成后对话中按需导出 Word/PDF。
 - 续跑：从批次检查点恢复未完成任务，不重新上传。
 - 暂停：运行中点击右上角「⏸ 暂停」，在当前批次/阶段边界安全退出并保留已提交结果；状态变为「已暂停」后可「▶ 续跑」。
 - 会话管理：右键会话或点「⋯」打开 DSH 风格菜单；支持置顶、重命名、归档/取消归档、复制会话 ID、删除（删除不可恢复）。「归档」按钮可切换查看归档会话。
@@ -43,7 +43,7 @@ HR 上传文件 + 招聘需求
 画像师（pro）── 结构化 JD / 评分卡 / 受保护属性剥离 ── HITL
    │
    ▼
-探马（flash）── 上传 → 去重（sha256 + 身份指纹）→ 归一化（PDF.js / DOCX / OCR / HTML）
+探马（确定性代码）── 上传 → 去重（sha256 + 身份指纹）→ 归一化（PDF.js / DOCX / OCR / HTML）
    │
    ▼
 按批流动（batch=8，最多 2 批在途）
@@ -53,7 +53,7 @@ HR 上传文件 + 招聘需求
    └─ 监军（pro）逐条核查证据；打回重评 ≤2 轮；仍不足转人工
    │
    ▼
-报告（Markdown + JSON）+ 成本/收敛数据 + 面试建议（pro）
+报告（Markdown + JSON，内部落盘）+ 成本/收敛数据
    │
    ▼
 伯乐按需工具（pro）── 仅在 HR 明确要求时调用 export_word / office_export_pdf ── 对话内下载链接
@@ -246,6 +246,20 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
 当前 **111 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 设计原则、组件、流水线、状态与失败处理 |
+| [docs/MODULES.md](docs/MODULES.md) | 逐模块实现说明（编排/接入/解析/评估/核查/报告/Web/知识库/MCP） |
+| [docs/AGENT_PRESETS.md](docs/AGENT_PRESETS.md) | 6 个 preset、schema、提示词纪律、档位路由 |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | 可复跑的验证项与验收清单 |
+| [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | 当前真实限制与已知失败模式 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本机/Docker 部署、OCR、环境变量、排障 |
+| [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | 8–10 分钟演示流程 |
+
+> 需求规格与 MVP 方案在工作区根目录（`伯乐BoLe-需求文档.md`、`BoLe_MVP开发方案.md`、`BoLe_记忆管理设计.md`），已同步为 v1.1/实现对齐版；本仓库 `docs/` 是实现的权威说明。
 
 ## 已知边界
 

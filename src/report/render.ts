@@ -381,7 +381,7 @@ export function renderCostReport(data: ReportData): string {
     ),
   );
   lines.push('');
-  lines.push('说明：基线 = 同一批调用在"系统提示词/评分卡/工具池完全重复发送、无缓存"下的成本；本次 = 共享常量前缀 + 请求末尾差异内容的实测成本。Mock 模式下缓存 token 由前缀长度确定性估算，DeepSeek 模式取 API 返回的 `prompt_cache_hit_tokens`。');
+  lines.push('说明：基线 = 同一批调用在"系统提示词/评分卡/工具池完全重复发送、无缓存"下的成本；本次 = 共享常量前缀 + 请求末尾差异内容的实测成本。缓存命中取 API 返回的 `prompt_cache_hit_tokens`；网关未返回 usage 时按 `estimateTokens` 估算。');
   lines.push('');
   lines.push('## 4. 调度资源');
   lines.push('');

@@ -5,7 +5,7 @@
 
 ## 1. 六个 Agent
 
-| id | 名称 | 档位 | maxDepth | 输出 schema | 工具集 | 提示词 |
+| id | 名称 | 档位 | maxDepth | 输出 schema | 工具集（声明） | 提示词 |
 |---|---|---|---|---|---|---|
 | `coordinator` | 伯乐（唯一编排者） | pro | 1 | `coordinator_plan` | dispatch / send_message / stop / query_workspace / hitl | `coordinator.md` |
 | `profiler` | 需求画像师 | pro | 0 | `jd_analysis` | rag_search / fairness_scan / scorecard_validate | `profiler.md` |
@@ -14,12 +14,14 @@
 | `assessor` | 相马官 | flash（初筛）/ pro（深评） | 0 | `evaluate_resume` | rag_search / scorecard_compute / span_locate | `assessor.md` |
 | `auditor` | 监军 | pro | 0 | `review_eval` | span_verify / fairness_scan / ledger_query | `auditor.md` |
 
+> **工具列是声明式能力标签，不是 Function Calling 绑定。** 当前只有"完成后对话"的主 Agent 真正持有可执行工具（`export_word` / `office_export_pdf` / `load_workspace_dependencies` / `python_exec` + 白名单内 MCP 工具）；流水线里的 span 定位、评分重算、去重、检索都由代码直接调用。初稿中的 `dispatch` / `send_message` / `stop` / `query_workspace` 没有对应的运行时工具，也不存在显式的子 Agent 派生 API。
+
 协作硬约束：
 
-1. 只有 `coordinator` 能委派；子 Agent 的 `canDelegate=false`、`maxDepth=0`，运行时 `ExecutionContext.assertMayDelegate()` 直接抛 `DepthExceededError`。
-2. 子 Agent 之间不直接通信；一切经台账与主 Agent 裁决。
+1. 只有 `coordinator` 允许委派（`canDelegate=true`）；注册表在加载时校验子角色 `canDelegate=false`、`maxDepth=0`，配置违规直接启动失败。`src/core/depth.ts` 提供了 `ExecutionContext.assertMayDelegate()`，但当前编排路径没有调用它——实际生效的是注册表校验与"代码里不存在子角色派生 API"。
+2. 子角色之间不直接通信；一切经台账与编排代码。
 3. 监军对相马官有否决/打回权；二者 preset 严格分离，禁止同一 preset 既评又核。
-4. 子 Agent 结果必须落盘为结构化 JSON；主 Agent 只消费摘要 + 引用。
+4. 子任务结果必须落盘为结构化 JSON；汇总只消费摘要 + 引用。
 
 ### 档位覆盖：assessor 的双阶段
 
@@ -66,7 +68,7 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 | 档位 | 默认模型 | 用途 | 覆盖方式 |
 |---|---|---|---|
 | flash | `deepseek-flash` | 接入、解析、评估初筛（thinking disabled） | `BOLE_FLASH_MODEL` 或 `config/pipeline.json#models.flash` |
-| pro | `deepseek-v4-pro` | 画像、评估深评、核查、汇总/面试（thinking high） | `BOLE_PRO_MODEL` 或配置 |
+| pro | `deepseek-v4-pro` | 画像、评估深评、核查、完成后对话（thinking high） | `BOLE_PRO_MODEL` 或配置 |
 
 深评比例与档位在 `config/pipeline.json`：
 
@@ -86,7 +88,7 @@ schema 用 zod 定义在 `src/schemas.ts`；真实模型调用时由 `z.toJSONSc
 4. 在 `src/agents/` 实现 Worker（复用 `runStructuredTask` 获得两阶段提交、重试、落盘）。
 5. 在 `src/core/registry.ts` 的 `AGENT_IDS` 与 `KNOWN_SCHEMAS` 注册。
 6. 若参与批流水线，在 `coordinator.ts` 增加 stage，并为它配置容量池与准入参数。
-7. 增加单测/集成断言（至少覆盖 schema 失败重试与状态迁移）。
+7. 增加单测/集成断言（至少覆盖 schema 失败重试与状态迁移），并跑 `pnpm typecheck && pnpm lint && pnpm test:all`。
 8. 更新本文件与 README 的角色表。
 
 > 新增 Agent 不需要改模型路由、台账 schema 或报告渲染骨架；这也是"preset 注册表"选型的直接收益。

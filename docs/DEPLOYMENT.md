@@ -4,8 +4,8 @@
 
 | 项 | 要求 |
 |---|---|
-| Node.js | **≥ 22.6**（推荐 24；项目直接运行 `.ts`，依赖 type stripping） |
-| 包管理 | pnpm 10 |
+| Node.js | **24**（开发 / CI / Dockerfile 均为 24；项目直接运行 `.ts`，且使用 `node:sqlite`。22.13+ 理论可用但未验证） |
+| 包管理 | pnpm 10（`packageManager` 锁定 10.25.0） |
 | 网络 | 真实 DeepSeek API；默认图片 OCR 也走 DeepSeek Vision |
 | 磁盘 | 运行产物 + 上传缓存；本地回退 OCR 语言数据约 31MB |
 | 浏览器 | Chromium / Edge / Firefox 现代版本（EventSource、FileReader） |
@@ -21,7 +21,7 @@ pnpm web
 
 首次进入页面会自动检查模型提供商；没有可用 Key 时打开设置并定位到 DeepSeek 密钥。DeepSeek 是内置提供商（不可删除）；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；可「获取可用模型」、维护模型目录并选择 Flash/Pro 模型。Key 使用 AES-256-GCM 加密写入 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重复输入。CLI 不会读取环境变量；需要时用 `--key` 临时覆盖当前提供商的 Key。
 
-知识库默认没有数据，入口在左侧「知识库」。创建知识库并勾选「启用自动检索」后，画像完成后会用 JD + 评分卡生成检索词，评估与面试建议只注入命中的相关片段；未启用时不召回。知识库存放在 `data/knowledge.db`，可配置 Ollama/OpenAI 兼容 embedding 与可选 rerank。
+知识库默认没有数据，入口在左侧「知识库」。创建知识库并勾选「启用自动检索」后，画像完成后会用 JD + 评分卡生成检索词，**只有评估阶段**会注入命中的相关片段（面试建议/完成后对话不查知识库）；未启用时不召回。知识库存放在 `data/knowledge.db`，可配置 Ollama/OpenAI 兼容 embedding 与可选 rerank。
 
 ### OCR 说明
 
@@ -68,7 +68,7 @@ docker compose up
 - Key 绑定持久化在 `bole-data` 卷的 `providers.json`（主密钥 `keyring.key`）；容器重启后仍然有效。不要通过环境变量注入 Key。
 - 镜像构建时执行 `pnpm ocr:download`，OCR 数据位于 `/app/ocr`（`BOLE_OCR_DIR`），不会被 `/app/data` 数据卷覆盖。
 - `bole-data` 卷保存台账与上传缓存；`bole-runs` 保存运行产物。
-- 容器内监听 `0.0.0.0:8787`；生产环境请在前面加反向代理与鉴权，当前应用本身没有登录。
+- 容器内监听 `0.0.0.0:8787`，compose 会把端口发布到宿主机。**当前应用没有登录鉴权**：只在本机使用时建议把 compose 端口改成 `127.0.0.1:8787:8787`；需要给他人访问时，必须在前置反向代理上做鉴权与 TLS。
 
 ## 6. 环境变量
 
@@ -93,9 +93,13 @@ docker compose up
 
 ```bash
 pnpm typecheck
-pnpm test:all          # 81 个测试
+pnpm lint              # ESLint 9，零 warning
+pnpm test:all          # 111 个测试
+pnpm check             # 以上三项串行
 curl -s http://127.0.0.1:8787/api/doctor
 ```
+
+CI（`.github/workflows/ci.yml`）在 Node 24 上执行同样的 `typecheck → lint → test:all`，测试不需要 API Key。
 
 手工冒烟：
 1. 上传一份 TXT + 一份 DOCX + 一张图片简历，确认均进入批次；

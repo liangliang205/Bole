@@ -442,12 +442,12 @@ export async function buildReport(
     convergence,
     eventsCount: deps.ledger.countEvents(deps.jobId),
     limitations: [
-      'P0 邮箱为本地 mock MCP（扫描 inbox/*.eml），真实 IMAP/Exchange 在 P1，客户端接口不变。',
-      '检查点恢复仅支持批次粒度重跑，事务级恢复在 P1。',
+      '简历来源为 HR 上传（Web/CLI），不支持邮箱 IMAP/Exchange 接入。',
+      '检查点恢复为批次/任务粒度；不做事务级崩溃一致性保证。',
       '反歧视合规为规则 + LLM 双检，不构成法律意见；终稿必须 HR 签字确认。',
       'PDF 仅做文本层尽力提取，扫描件与 CID 字体中文 PDF 可能失败（会在失败明细中如实列出）。',
-      'Mock 模式为确定性规则模拟，无 API Key 也可复现；接入 DeepSeek 后同一 schema 与流水线保持不变。',
-      '模型非确定性：主路径温度=0，但 LLM-as-judge 评测允许 ±1 分波动。',
+      '模型输出非确定性：温度=0 仍可能有 ±1 分波动；核查/深评可能因 max-tokens 截断失败并进入失败或转人工。',
+      '平台只给建议、不做自动录用/淘汰；不含质量基准评测，结论需 HR 复核。',
     ],
   };
 }
