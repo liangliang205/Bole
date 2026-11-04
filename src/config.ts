@@ -57,6 +57,7 @@ export interface BolePaths {
   runsDir: string;
   dbPath: string;
   promptsDir: string;
+  skillsDir: string;
 }
 
 function readJsonFile<T>(file: string): T {
@@ -77,6 +78,7 @@ export function resolvePaths(root = projectRoot()): BolePaths {
     runsDir: process.env.BOLE_RUNS ?? path.join(root, 'runs'),
     dbPath: process.env.BOLE_DB ?? path.join(dataDir, 'ledger.db'),
     promptsDir: path.join(root, 'config', 'prompts'),
+    skillsDir: path.join(root, 'config', 'skills'),
   };
 }
 
@@ -96,6 +98,13 @@ export function loadAgentRegistry(root = projectRoot()): AgentRegistryFile {
 export function loadPrompt(preset: AgentPreset, paths = resolvePaths()): string {
   const file = path.join(paths.promptsDir, path.basename(preset.prompt));
   if (!existsSync(file)) throw new Error(`缺少提示词文件: ${file}`);
+  return readFileSync(file, 'utf8');
+}
+
+/** 加载 skill：放在 config/skills/<name>.md，作为角色提示词的补充说明（可测试、可版本化）。 */
+export function loadSkill(name: string, paths = resolvePaths()): string {
+  const file = path.join(paths.skillsDir, `${name}.md`);
+  if (!existsSync(file)) throw new Error(`缺少 skill 文件: ${file}`);
   return readFileSync(file, 'utf8');
 }
 

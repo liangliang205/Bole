@@ -5,10 +5,11 @@
 - `runPipeline(deps, { requirements, hitl, uploadFiles?, resumeOnly? })`：
   - 非续跑：要求至少一个 `uploadFiles`，调用 `runFetcher`；全部失败则抛错。
   - 续跑：`recoverIncomplete` 从批次检查点恢复。
-  - JD 画像 → 批流动 → 短名单深评 → 核查/自环 → 报告（面试建议不在此链路）。
+  - JD 画像 → **筛选计划（Agent）** → 批流动 → 短名单深评 → 核查/自环 → 报告（面试建议不在此链路）。
   - `shouldPause` 在画像/接入/批次/阶段边界检查；暂停抛 `PipelinePausedError`，`flowBatches` 不再启动新批并等待在飞批收尾，已提交结果保留。
-- 批流动：`chunk` + `flowBatches`，`maxBatchesInFlight` 限制在途批；批间无全局 barrier。
-- 容量池：`CapacityPool` + `withSlot`，满时 `PoolFullError` 退避重试，不排队。
+- 筛选计划：`planner.ts` 读 `config/skills/screening-plan.md`，由主 Agent 输出 `screening_plan`（single/batch、批大小、在途批数、各阶段并发、deepEval、理由）；代码只钳制边界并执行，失败回退配置默认值；事件 `screening.plan` + artifact 可审计。
+- 批流动：`chunk` + `flowBatches`，批大小/在途批数来自 `screening_plan`；批间无全局 barrier。
+- 容量池：`CapacityPool` + `withSlot`，容量来自 `screening_plan.pools`，满时 `PoolFullError` 退避重试，不排队。
 - 报告：`buildReport` + `selectTopCandidates` + `writeReports`。
 - 按需导出：报告落盘不自动生成文件；完成后对话中 HR 明确要求时，主 Agent 才通过 Function Calling 调用 `src/tools/tools-call.ts` 注册的工具。
 
@@ -115,8 +116,8 @@
 
 ## 16. 测试（`tests/*`）
 
-- `unit/`：pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、registry、cost、stream-preview、key-store、provider-store、tools-call、mcp-config、mcp-schema、mcp-manager、mcp-plugins、mcp-plugin-service、mcp-bridge。
+- `unit/`：planner、pool、state、spans、scorecard、ingest、structured、dedup-rag、deepseek-stream、model-list、knowledge、chat、registry、cost、stream-preview、key-store、provider-store、tools-call、mcp-config、mcp-schema、mcp-manager、mcp-plugins、mcp-plugin-service、mcp-bridge。
 - `integration/`：真实上传端到端、Vision OCR、失败隔离、检查点续跑、无提供商失败。
 - `fixtures/fake-provider.ts`：只用于测试的确定性提供方；产品路径不引用。
 - `fixtures/documents.ts`：生成 DOCX/PDF 测试文件；`fixtures/mcp/echo-server.mjs`：stdio MCP 测试服务。
-- 质量护栏：`pnpm typecheck` + `pnpm lint` + `pnpm test:all`（114 个）；CI 见 `.github/workflows/ci.yml`。
+- 质量护栏：`pnpm typecheck` + `pnpm lint` + `pnpm test:all`（115 个）；CI 见 `.github/workflows/ci.yml`。

@@ -125,6 +125,24 @@ export const fetchManifestSchema = z.object({
     .default([]),
 });
 
+export const screeningPlanSchema = z.object({
+  mode: z.enum(['single', 'batch']),
+  batchSize: z.number().int().min(1).max(16),
+  maxBatchesInFlight: z.number().int().min(1).max(4),
+  deepEval: z.object({
+    enabled: z.boolean(),
+    percent: z.number().min(0).max(100),
+  }),
+  pools: z.object({
+    parse: z.number().int().min(1).max(8),
+    assess: z.number().int().min(1).max(8),
+    review: z.number().int().min(1).max(4),
+  }),
+  reason: z.string().min(4),
+});
+
+export type ScreeningPlanOutput = z.infer<typeof screeningPlanSchema>;
+
 export type ParseResumeOutput = z.infer<typeof parseResumeSchema>;
 export type EvaluateResumeOutput = z.infer<typeof evaluateResumeSchema>;
 export type ReviewEvalOutput = z.infer<typeof reviewEvalSchema>;
@@ -136,6 +154,7 @@ export const SCHEMAS = {
   review_eval: reviewEvalSchema,
   jd_analysis: jdAnalysisSchema,
   fetch_manifest: fetchManifestSchema,
+  screening_plan: screeningPlanSchema,
 } as const;
 
 /** 供真实 LLM 使用的 JSON Schema 描述（放进系统提示词）。 */

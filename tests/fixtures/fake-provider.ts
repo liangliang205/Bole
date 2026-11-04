@@ -675,6 +675,29 @@ function mockInterview(meta: Meta): unknown {
   };
 }
 
+function mockScreeningPlan(meta: Meta): unknown {
+  const inventory = (meta.inventory ?? {}) as { usable?: number };
+  const usable = Number(inventory.usable ?? 0);
+  if (usable <= 1) {
+    return {
+      mode: 'single',
+      batchSize: 1,
+      maxBatchesInFlight: 1,
+      deepEval: { enabled: false, percent: 0 },
+      pools: { parse: 1, assess: 1, review: 1 },
+      reason: '只有 1 份可用简历，串行处理并跳过深评',
+    };
+  }
+  return {
+    mode: 'batch',
+    batchSize: 8,
+    maxBatchesInFlight: 2,
+    deepEval: { enabled: true, percent: 40 },
+    pools: { parse: 4, assess: 2, review: 1 },
+    reason: `${usable} 份可用简历，按批扇出`,
+  };
+}
+
 function handlerFor(schemaName: string | undefined): ((meta: Meta) => unknown) | null {
   switch (schemaName) {
     case 'jd_analysis':
@@ -687,6 +710,8 @@ function handlerFor(schemaName: string | undefined): ((meta: Meta) => unknown) |
       return mockReview;
     case 'interview_plan':
       return mockInterview;
+    case 'screening_plan':
+      return mockScreeningPlan;
     default:
       return null;
   }

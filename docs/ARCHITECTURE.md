@@ -51,24 +51,25 @@
    - 图片 → DeepSeek V4 Flash Vision（JPEG/PNG/GIF/WebP；失败或 BMP/TIFF 回退 Tesseract）；
    - TXT/MD/HTML → 解码/去标签。
    去重：文件 sha256 + 身份指纹；命中标记 `duplicate`，不进入解析。
-3. **批流动**：`batch=8`，`maxBatchesInFlight=2`；每批：
+3. **筛选计划（主 Agent，pro）**：接入完成后，主 Agent 阅读 `config/skills/screening-plan.md`，输出 `screening_plan`（`single`/`batch`、`batchSize`、`maxBatchesInFlight`、`pools`、`deepEval`、`reason`）。代码只做硬边界钳制并执行；Agent 失败时回退配置默认值。计划写 `screening.plan` 事件与 `artifacts/plan/screening_plan.json`，**不按简历数量硬编码**。
+4. **批流动**：按 `screening_plan` 的批大小/在途批数；每批：
    - 录事（flash）解析字段 + span；
    - 相马官（flash）初筛；
-   - 取 Top40% 进入相马官（pro）深评；
+   - 取 Top40% 进入相马官（pro）深评（是否深评由 plan 决定）；
    - 监军（pro）逐条核查。
-4. **验真环**：核查不通过 → 打回重评（复用原评估 Worker 与档位），最多 2 轮；仍不足 → `quarantine` 转人工。
-5. **完成后对话（主 Agent 直答 + 档位路由）**：筛选完成后 `coordinator` 作为主 Agent 直接回答，或按需调用导出/MCP 工具；对话档位由 `src/chat/tier.ts` 按任务复杂度在 flash/pro 间选择（寒暄/短问答 flash，比较/复盘/长问题 pro）。**对话链路不派生额外子 Agent**；多 Agent 扇出只发生在多简历筛选批次。面试建议 skill 只在相关提问时加载，不进入筛选流水线。
-6. **按需导出**：报告落盘后不会自动生成文件。筛选完成后的主 Agent 对话中，只有 HR 明确要求生成/导出 Word、PDF 或其他文件时，模型才通过 OpenAI Function Calling 调用 `src/tools/tools-call.ts` 注册的工具（`load_workspace_dependencies` 来自 DeepSeek 官方 DSH 包；`export_word` 基于 docx 库；`office_export_pdf` 基于官方 `@deepseek-ai/libreoffice-kit`；`python_exec` 在子进程执行 Python）。产物写入运行目录，对话中返回下载链接。
-7. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML，不提供下载。
-8. **知识库（可选）**：原生 SQLite；创建并启用后才生效。画像完成后用 JD + 评分卡生成检索词，**只有相马官评估阶段**会召回 Top-K 片段并注入上下文；未配置 embedding 时退化为关键词检索。
-9. **外接 MCP（插件化）**：插件库存 `data/mcp/plugins.json`（凭据加密），支持 stdio/HTTP、启停、allow/deny 工具；**只在筛选完成后的主 Agent 对话中生效**，不进入批次关键路径。单个插件失败只标记自身。
+5. **验真环**：核查不通过 → 打回重评（复用原评估 Worker 与档位），最多 2 轮；仍不足 → `quarantine` 转人工。
+6. **完成后对话（主 Agent 直答 + 档位路由）**：筛选完成后 `coordinator` 作为主 Agent 直接回答，或按需调用导出/MCP 工具；对话档位由 `src/chat/tier.ts` 按任务复杂度在 flash/pro 间选择（寒暄/短问答 flash，比较/复盘/长问题 pro）。**对话链路不派生额外子 Agent**；面试建议 skill 只在相关提问时加载，不进入筛选流水线。
+7. **按需导出**：报告落盘后不会自动生成文件。筛选完成后的主 Agent 对话中，只有 HR 明确要求生成/导出 Word、PDF 或其他文件时，模型才通过 OpenAI Function Calling 调用 `src/tools/tools-call.ts` 注册的工具（`load_workspace_dependencies` 来自 DeepSeek 官方 DSH 包；`export_word` 基于 docx 库；`office_export_pdf` 基于官方 `@deepseek-ai/libreoffice-kit`；`python_exec` 在子进程执行 Python）。产物写入运行目录，对话中返回下载链接。
+8. **报告**：Markdown + JSON + 成本报表 + 收敛 SVG；不生成 HTML，不提供下载。
+9. **知识库（可选）**：原生 SQLite；创建并启用后才生效。画像完成后用 JD + 评分卡生成检索词，**只有相马官评估阶段**会召回 Top-K 片段并注入上下文；未配置 embedding 时退化为关键词检索。
+10. **外接 MCP（插件化）**：插件库存 `data/mcp/plugins.json`（凭据加密），支持 stdio/HTTP、启停、allow/deny 工具；**只在筛选完成后的主 Agent 对话中生效**，不进入批次关键路径。单个插件失败只标记自身。
 
 ## 4. 档位与路由
 
 - 配置：`config/agents.json` 每个 preset 的 `tier`；`config/pipeline.json` 的 `models`、`deepEval`。
 - `LlmRouter` 负责 tier→model、温度 0、token 记账、成本、缓存前缀；`DeepSeekProvider` 负责 HTTP/streaming（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages）。`ProviderStore` 管理多个提供商，当前使用项在设置页切换。
 - `eval_tasks` 记录 `tier`（flash/pro）与 `phase`（screen/deep/revise），报告按 `${schema}@${tier}` 聚合成本。
-- 深评短名单：批次内按初筛分排序取前 `deepEval.percent`（默认 40%），异常/边界样本可进入深评。
+- 深评短名单：由 `screening_plan.deepEval` 决定是否启用与比例（默认 40%），异常/边界样本可进入深评。
 
 ## 5. 证据与审计
 
@@ -126,6 +127,7 @@
 | 主题 | 文件 |
 |---|---|
 | 编排 | `src/agents/coordinator.ts` |
+| 筛选计划 | `src/agents/planner.ts`、`config/skills/screening-plan.md` |
 | 接入 | `src/agents/fetcher.ts`、`src/ingest/{uploads,normalize,ocr,dedup,pii}.ts` |
 | 解析/评估/核查 | `src/agents/{parser,assessor,auditor}.ts` |
 | 结构化提交 | `src/core/structured.ts`、`src/core/state.ts` |

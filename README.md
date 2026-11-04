@@ -26,6 +26,7 @@ pnpm web                   # http://127.0.0.1:8787
 - 文件预览：对话内生成的 DOCX/PDF 可点击卡片，在右侧分栏用 PDF.js 预览；DOCX 先经 LibreOffice Kit 转 PDF，支持拖拽调宽和原文件下载。
 - 对话附件：输入区左侧「＋」可上传图片、PDF、Word（DOCX）、Markdown/TXT/HTML；服务端抽取文本注入主 Agent，界面只显示附件名，不上传原文。
 - HITL：JD 有歧义、预算/地点冲突、证据不足、核查打回时，在对话内选择推荐项或输入自定义回答。
+- 筛选计划：上传/接入完成后，**主 Agent 阅读 `config/skills/screening-plan.md` 决定是否扇出**（single/batch）、批大小、在途批数、各阶段并发与是否深评；代码只做边界校验与执行，不按简历数量硬编码。
 - 证据审计：每位候选人的解析字段、评估维度、逐条核查 verdict、原文 span 与区间。
 - 合规与成本：受保护属性剥离、去重/失败明细、HITL 决策记录、按 Agent/阶段的 token 与成本。
 - 报告：完成后直接在对话里汇总 Top 候选人、推荐理由、合规与成本摘要；不提供 Markdown/JSON 下载；需要文件时可在完成后对话中按需导出 Word/PDF。
@@ -46,7 +47,10 @@ HR 上传文件 + 招聘需求
 探马（确定性代码）── 上传 → 去重（sha256 + 身份指纹）→ 归一化（PDF.js / DOCX / OCR / HTML）
    │
    ▼
-按批流动（batch=8，最多 2 批在途）
+主 Agent（pro）── 读 screening-plan skill → 决定 single/batch、批大小、并发、是否深评
+   │
+   ▼
+按 screening_plan 流动（默认 batch=8、2 批在途，可被 Agent 覆盖）
    ├─ 录事（flash）   解析字段 + 证据 span
    ├─ 相马官（flash） 初筛评分
    ├─ Top40% 短名单 → 相马官（pro）深评
@@ -225,7 +229,7 @@ bole/
 │  ├─ mcp/               # 外接 MCP 客户端：配置校验、连接、工具适配、白名单路由
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
-├─ config/               # agents.json、pipeline.json、prompts/
+├─ config/               # agents.json、pipeline.json、prompts/、skills/
 ├─ data/                 # ledger.db、uploads/、ocr/、knowledge/
 ├─ runs/                 # 每次运行的原始文件、归一化文本、报告、事件
 ├─ scripts/download-ocr.ts
@@ -237,7 +241,7 @@ bole/
 ```bash
 pnpm typecheck   # tsc --noEmit（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
-pnpm test:all    # 114 个测试
+pnpm test:all    # 115 个测试
 pnpm check       # 以上三项串行跑一遍
 ```
 
@@ -245,7 +249,7 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
-当前 **114 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+当前 **115 个测试通过**：容量池拒绝而非排队、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 
 ## 文档
 
@@ -258,6 +262,7 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | 当前真实限制与已知失败模式 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本机/Docker 部署、OCR、环境变量、排障 |
 | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | 8–10 分钟演示流程 |
+| [config/skills/screening-plan.md](config/skills/screening-plan.md) | 上传后由主 Agent 决定扇出/并发/深评的 skill |
 
 > 需求规格与 MVP 方案在工作区根目录（`伯乐BoLe-需求文档.md`、`BoLe_MVP开发方案.md`、`BoLe_记忆管理设计.md`），已同步为 v1.1/实现对齐版；本仓库 `docs/` 是实现的权威说明。
 

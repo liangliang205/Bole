@@ -7,7 +7,7 @@
 
 | id | 名称 | 档位 | maxDepth | 输出 schema | 可执行工具 | 能力标签 | 提示词 |
 |---|---|---|---|---|---|---|---|
-| `coordinator` | 伯乐（主 Agent / 编排者） | pro（对话按复杂度覆盖为 flash/pro） | 1 | `coordinator_plan` | export_word / office_export_pdf / load_workspace_dependencies / python_exec | pipeline_orchestration / dispatch / hitl / aggregate / chat_tiering | `coordinator.md` |
+| `coordinator` | 伯乐（主 Agent / 编排者） | pro（对话按复杂度覆盖为 flash/pro） | 1 | `coordinator_plan` | export_word / office_export_pdf / load_workspace_dependencies / python_exec | pipeline_orchestration / screening_plan / dispatch / hitl / aggregate / chat_tiering | `coordinator.md` |
 | `profiler` | 需求画像师 | pro | 0 | `jd_analysis` | — | rag_search / fairness_scan / scorecard_validate | `profiler.md` |
 | `fetcher` | 探马 | flash | 0 | `fetch_manifest` | — | upload_read / dedup / normalize / ocr | `fetcher.md` |
 | `parser` | 录事 | flash | 0 | `parse_resume` | — | read_resume / span_locate | `parser.md` |
@@ -16,9 +16,23 @@
 
 > **`tools` 与 `capabilities` 是两件事。** `tools` 必须是真实可执行的 Function Calling 工具：注册表用 `KNOWN_TOOLS` 校验，声明未实现的名字会**启动失败**（测试见 `tests/unit/registry.test.ts`）。`capabilities` 只是声明式能力标签，说明代码在该角色里实际调用了什么；流水线里的 span 定位、评分重算、去重、检索都由代码直接调用，不经过模型选择工具。
 
+### 上传后的筛选计划（Agent 决策，不硬编码）
+
+接入完成、解析开始前，主 Agent 会读 `config/skills/screening-plan.md`，输出 `screening_plan`：
+
+| 字段 | 含义 |
+|---|---|
+| `mode` | `single`（单批串行，不扇出）/ `batch`（按批并发） |
+| `batchSize` / `maxBatchesInFlight` | 批大小与在途批数 |
+| `pools.parse` / `assess` / `review` | 各阶段并发 |
+| `deepEval` | 是否深评及比例 |
+| `reason` | 必须结合可用/重复/失败/格式，不能套固定值 |
+
+代码只做边界钳制（batch 1–16、在途 1–4、池 1–8/1–4）并执行；失败时回退配置默认值。计划写入 `screening.plan` 事件与 `artifacts/plan/screening_plan.json`，可审计。单份简历不会为了“看起来多 Agent”而强行扇出。
+
 ### 多 Agent 扇出与档位
 
-- **扇出只发生在筛选流水线**：多简历按批派发 parser/assessor/auditor（Batch 内并发、批间流动），原因是子 Agent 上下文有限、单份简历不值得再派生。
+- **扇出由上面的 `screening_plan` 决定**：多简历通常 `batch`，单简历 `single`（跳过深评）；不再是固定按 8 切批。
 - **完成后对话不派生额外 Agent**：由 `coordinator`（主 Agent）直接回答或调用导出/MCP 工具；对话档位由 `src/chat/tier.ts` 按任务复杂度选择（寒暄/短问答 flash，比较/复盘/长问题 pro）。
 - 控制台/配置里的 `tier` 是默认值；实际使用档位记录在 `usage.tier` 与 `eval_tasks.tier`，可审计。
 

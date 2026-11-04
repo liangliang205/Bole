@@ -1,6 +1,8 @@
+import path from 'node:path';
 import { chunk, flowBatches, mapSettled } from '../core/pipeline.ts';
 import { CapacityPool, withSlot, admissionOptions } from '../core/pool.ts';
 import { combineStopReasons } from '../core/state.ts';
+import { writeJson } from '../util/fsx.ts';
 import type {
   PoolStats,
   Jd,
@@ -21,6 +23,7 @@ import { ParserWorker } from './parser.ts';
 import { AssessorWorker, type AssessorContext } from './assessor.ts';
 import { AuditorWorker } from './auditor.ts';
 import { loadJobAnalysis, loadParseResult } from './data.ts';
+import { planScreening } from './planner.ts';
 import type { HitlResponder } from './hitl.ts';
 import { buildReport, selectTopCandidates } from '../report/builder.ts';
 import { writeReports, type ReportPaths } from '../report/render.ts';
@@ -159,11 +162,6 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   }
   checkpoint();
 
-  const parsePool = new CapacityPool('parse', deps.config.pools.parse);
-  const assessPool = new CapacityPool('assess', deps.config.pools.assess);
-  const reviewPool = new CapacityPool('review', deps.config.pools.review);
-  const admission = admissionOptions(deps.config.admission);
-
   const pending = deps.ledger
     .listResumes(deps.jobId)
     .filter((resume) => resume.status === 'queued' || resume.status === 'parsed');
@@ -173,13 +171,53 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     parsed: resume.status === 'parsed' ? loadParseResult(deps.ledger, resume.id) : null,
   }));
 
+  // 扇出与并发不由代码按数量硬编码：上传/接入完成后交给主 Agent 读 skill 决策。
+  const counts = deps.ledger.resumeCounts(deps.jobId);
+  const formats: Record<string, number> = {};
+  for (const resume of deps.ledger.listResumes(deps.jobId)) {
+    const format = resume.format || 'unknown';
+    formats[format] = (formats[format] ?? 0) + 1;
+  }
+  const plan = await planScreening(deps, {
+    usable: workItems.length,
+    duplicates: counts.duplicate ?? 0,
+    failed: counts.failed ?? 0,
+    formats,
+    resumeOnly: !!opts.resumeOnly,
+    defaults: {
+      batchSize: deps.config.batchSize,
+      maxBatchesInFlight: deps.config.maxBatchesInFlight,
+      pools: deps.config.pools,
+      deepEval: { enabled: deps.config.deepEval.enabled, percent: deps.config.deepEval.percent },
+    },
+  });
+  const planArtifact = path.join(deps.runDir, 'artifacts', 'plan', 'screening_plan.json');
+  await writeJson(planArtifact, { ...plan, inventory: { usable: workItems.length, duplicates: counts.duplicate ?? 0, failed: counts.failed ?? 0, formats, resumeOnly: !!opts.resumeOnly } });
+  deps.events.emit(deps.jobId, 'coordinator', 'screening.plan', {
+    mode: plan.mode,
+    batchSize: plan.batchSize,
+    maxBatchesInFlight: plan.maxBatchesInFlight,
+    pools: plan.pools,
+    deepEval: plan.deepEval,
+    source: plan.source,
+    reason: plan.reason,
+    usable: workItems.length,
+    artifact: planArtifact,
+  });
+
+  const parsePool = new CapacityPool('parse', plan.pools.parse);
+  const assessPool = new CapacityPool('assess', plan.pools.assess);
+  const reviewPool = new CapacityPool('review', plan.pools.review);
+  const admission = admissionOptions(deps.config.admission);
+
   deps.events.emit(deps.jobId, 'coordinator', 'pipeline.started', {
     resumes: deps.ledger.listResumes(deps.jobId).length,
     workItems: workItems.length,
-    batchSize: deps.config.batchSize,
-    maxBatchesInFlight: deps.config.maxBatchesInFlight,
-    pools: { parse: parsePool.capacity, assess: assessPool.capacity, review: reviewPool.capacity },
-    deepEval: deps.config.deepEval,
+    batchSize: plan.batchSize,
+    maxBatchesInFlight: plan.maxBatchesInFlight,
+    pools: plan.pools,
+    deepEval: plan.deepEval,
+    planSource: plan.source,
     resumeOnly: !!opts.resumeOnly,
   });
 
@@ -232,7 +270,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
    * 对应方案 §7.3「按复杂度分配 effort」。
    */
   const selectDeepShortlist = (screened: ScreenedCandidate[]): ScreenedCandidate[] => {
-    const config = deps.config.deepEval;
+    const config = plan.deepEval;
     if (!config.enabled || screened.length === 0) return [];
     const sorted = [...screened].sort((a, b) => b.evaluation.totalScore - a.evaluation.totalScore);
     const count = Math.max(1, Math.ceil((sorted.length * config.percent) / 100));
@@ -343,14 +381,14 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     return { status, score: candidate.evaluation.totalScore };
   };
 
-  const batches = chunk(workItems, deps.config.batchSize);
+  const batches = chunk(workItems, plan.batchSize);
   let parseFailures = 0;
   let evalFailures = 0;
 
   checkpoint();
   await flowBatches<WorkItem, { batchId: number; parsed: number; evaluated: number }>({
     batches,
-    maxInFlight: deps.config.maxBatchesInFlight,
+    maxInFlight: plan.maxBatchesInFlight,
     shouldStop: () => opts.shouldPause?.() ?? false,
     stopOnError: (error) => error instanceof PipelinePausedError,
     onBatchStart: (index, size) => {
@@ -437,7 +475,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
         deps.events.emit(deps.jobId, 'coordinator', 'deep_eval.shortlist', {
           batchId,
           count: shortlist.length,
-          percent: deps.config.deepEval.percent,
+          percent: plan.deepEval.percent,
           tier: deps.config.deepEval.tier,
           labels: shortlist.map((candidate) => candidate.label),
         });

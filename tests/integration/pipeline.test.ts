@@ -119,6 +119,10 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
 
     const events = boot.deps.ledger.listEvents({ jobId: boot.job.id, limit: 2000 });
     assert.ok(events.some((event) => event.type === 'fetch.completed'));
+    const planEvent = events.find((event) => event.type === 'screening.plan');
+    assert.ok(planEvent, '应记录 Agent 产出的 screening.plan');
+    assert.equal(JSON.parse(planEvent.payload_json).mode, 'batch');
+    assert.equal(JSON.parse(planEvent.payload_json).source, 'agent');
     assert.ok(events.some((event) => event.type === 'deep_eval.shortlist'));
     assert.ok(events.some((event) => event.type === 'selfloop.revise'), '伪造结论应被验真环打回');
     assert.ok(events.some((event) => event.type === 'report.generated'));
