@@ -1,4 +1,5 @@
 import { loadSkill } from '../config.ts';
+import { roleKnowledge } from './knowledge.ts';
 import { screeningPlanSchema, type ScreeningPlanOutput } from '../schemas.ts';
 import type { AgentDeps } from './deps.ts';
 import { sharedPrefix, systemPrompt } from './prompts.ts';
@@ -99,7 +100,7 @@ export async function planScreening(deps: AgentDeps, inventory: ScreeningInvento
     schemaName: 'screening_plan',
     schema: screeningPlanSchema,
     system: `${systemPrompt(deps, 'coordinator')}\n\n${skill}`,
-    user,
+    user: user + await roleKnowledge(deps, 'coordinator', deps.ledger.getJob(deps.jobId)?.requirements ?? ''),
     sharedPrefix: sharedPrefix(deps, 'coordinator', [skill]),
     phase: 'screening_plan',
     label: '筛选计划',

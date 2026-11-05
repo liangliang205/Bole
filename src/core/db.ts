@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { MEMORY_SCHEMA } from '../memory/schema.ts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -191,6 +192,24 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS execution_policies (
+  job_id TEXT PRIMARY KEY,
+  mode TEXT NOT NULL CHECK(mode IN ('default','strict'))
+);
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  request_key TEXT NOT NULL UNIQUE,
+  actor TEXT,
+  created_ts TEXT NOT NULL,
+  decided_ts TEXT,
+  result_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_job ON approvals(job_id,status);
 `;
 
 export function openDatabase(dbPath: string): DatabaseSync {
@@ -198,6 +217,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);
   migrate(db);
+  db.exec(MEMORY_SCHEMA);
   return db;
 }
 

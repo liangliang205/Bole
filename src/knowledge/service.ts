@@ -28,11 +28,17 @@ export interface PublicKnowledgeSettings extends Omit<KnowledgeSettings, 'embedd
   hasRerankKey: boolean;
 }
 
+export const KNOWLEDGE_ROLES = { coordinator: '伯乐 · 主 Agent', profiler: '画像师', parser: '录事 · 解析', assessor: '相马官 · 评估', auditor: '监军 · 核查' };
+function validateRoles(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some((role) => typeof role !== 'string' || !Object.hasOwn(KNOWLEDGE_ROLES, role))) throw new Error('知识库角色必须为受支持的 Agent ID 数组');
+  return [...new Set(value)];
+}
 export interface KnowledgeBase {
   id: string;
   name: string;
   description: string;
   enabled: boolean;
+  agentRoles: string[];
   documentCount: number;
   chunkCount: number;
   createdAt: string;
@@ -299,6 +305,10 @@ export class KnowledgeService {
     if (dbPath !== ':memory:') mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec(SCHEMA);
+    const columns = this.db.prepare('PRAGMA table_info(knowledge_bases)').all() as { name: string }[];
+    if (!columns.some((column) => column.name === 'agent_roles_json')) {
+      this.db.exec(`ALTER TABLE knowledge_bases ADD COLUMN agent_roles_json TEXT NOT NULL DEFAULT '["assessor"]'`);
+    }
     this.ensureSettings();
   }
 
@@ -408,6 +418,7 @@ export class KnowledgeService {
       name: String(row.name),
       description: String(row.description ?? ''),
       enabled: Number(row.enabled ?? 0) === 1,
+      agentRoles: JSON.parse(String(row.agent_roles_json)) as string[],
       documentCount: Number(row.document_count ?? 0),
       chunkCount: Number(row.chunk_count ?? 0),
       createdAt: String(row.created_at),
@@ -430,7 +441,7 @@ export class KnowledgeService {
     return this.getBase(id)!;
   }
 
-  updateBase(id: string, patch: { name?: string; description?: string; enabled?: boolean }): KnowledgeBase {
+  updateBase(id: string, patch: { name?: string; description?: string; enabled?: boolean; agentRoles?: unknown }): KnowledgeBase {
     const base = this.getBase(id);
     if (!base) throw new Error('知识库不存在');
     let name = base.name;
@@ -440,8 +451,9 @@ export class KnowledgeService {
     }
     const description = patch.description !== undefined ? String(patch.description).trim().slice(0, 2000) : base.description;
     const enabled = patch.enabled !== undefined ? Boolean(patch.enabled) : base.enabled;
-    this.db.prepare('UPDATE knowledge_bases SET name=?,description=?,enabled=?,updated_at=? WHERE id=?')
-      .run(name, description, enabled ? 1 : 0, nowIso(), id);
+    const roles = patch.agentRoles === undefined ? base.agentRoles : validateRoles(patch.agentRoles);
+    this.db.prepare('UPDATE knowledge_bases SET name=?,description=?,enabled=?,agent_roles_json=?,updated_at=? WHERE id=?')
+      .run(name, description, enabled ? 1 : 0, JSON.stringify(roles), nowIso(), id);
     return this.getBase(id)!;
   }
 
@@ -599,17 +611,19 @@ export class KnowledgeService {
   }
 
   /** 画像/评估/建议阶段调用：必须至少启用一个知识库，且开启自动召回。 */
-  async recall(query: string, topK?: number): Promise<KnowledgeHit[]> {
+  async recall(query: string, topK?: number, agentId = 'assessor'): Promise<KnowledgeHit[]> {
     if (!this.settings().autoRecall || !this.hasEnabledBases()) return [];
-    return this.search(query, { topK });
+    return this.search(query, { topK, agentId });
   }
 
-  async search(query: string, options: { topK?: number; baseIds?: string[] } = {}): Promise<KnowledgeHit[]> {
+  async search(query: string, options: { topK?: number; baseIds?: string[]; agentId?: string } = {}): Promise<KnowledgeHit[]> {
     const text = String(query ?? '').trim();
     if (text.length < 2) return [];
     const settings = this.settings();
     const topK = clamp(Math.trunc(options.topK ?? settings.topK), 1, 50);
     const allowed = options.baseIds?.length ? new Set(options.baseIds) : null;
+    const roleBases = options.agentId === undefined ? null : this.listBases().filter((b) => b.enabled && b.agentRoles.includes(options.agentId!) && (!allowed || allowed.has(b.id))).map((b) => b.id);
+    if (roleBases?.length === 0) return [];
     const rows = this.db.prepare(`
       SELECT c.id,c.doc_id,c.base_id,c.heading,c.text,c.embedding_json,c.embed_model,
              d.title,b.name AS base_name
@@ -617,9 +631,10 @@ export class KnowledgeService {
       JOIN knowledge_documents d ON d.id=c.doc_id
       JOIN knowledge_bases b ON b.id=c.base_id
       WHERE b.enabled=1
+      ${roleBases ? `AND b.id IN (${roleBases.map(() => '?').join(',')})` : ''}
       ORDER BY c.ordinal ASC
       LIMIT 12000
-    `).all() as ChunkRow[];
+    `).all(...(roleBases ?? [])) as ChunkRow[];
     const candidates = allowed ? rows.filter((row) => allowed.has(row.base_id)) : rows;
     if (candidates.length === 0) return [];
     const queryTokens = new Set(tokenize(text));

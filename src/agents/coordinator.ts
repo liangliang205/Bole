@@ -1,4 +1,8 @@
 import path from 'node:path';
+import { MemoryService } from '../memory/service.ts';
+import { createHash } from 'node:crypto';
+import { loadPrompt, loadSkill } from '../config.ts';
+import { ApprovalStore, requireApproval } from '../core/approvals.ts';
 import { chunk, flowBatches, mapSettled } from '../core/pipeline.ts';
 import { CapacityPool, withAgentSlot, admissionOptions } from '../core/pool.ts';
 import { combineStopReasons } from '../core/state.ts';
@@ -23,7 +27,7 @@ import { ParserWorker } from './parser.ts';
 import { AssessorWorker, type AssessorContext } from './assessor.ts';
 import { AuditorWorker } from './auditor.ts';
 import { loadJobAnalysis, loadParseResult } from './data.ts';
-import { planScreening } from './planner.ts';
+import { planScreening, type ScreeningPlan } from './planner.ts';
 import type { HitlResponder } from './hitl.ts';
 import { buildReport, selectTopCandidates } from '../report/builder.ts';
 import { writeReports, type ReportPaths } from '../report/render.ts';
@@ -35,6 +39,8 @@ export interface PipelineRunOptions {
   resumeOnly?: boolean;
   /** Web 控制台暂停信号：在批次/阶段边界安全退出，已提交结果保留。 */
   shouldPause?: () => boolean;
+  /** CLI 使用交互审批；Web 将等待状态持久化后释放执行资源。 */
+  approvalResponder?: HitlResponder;
 }
 
 /** 暂停不是失败：携带这个类型让 Web 层把运行标记为 paused 而不是 failed。 */
@@ -125,6 +131,7 @@ async function recoverIncomplete(deps: AgentDeps): Promise<void> {
 }
 
 export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Promise<RunSummary> {
+  const approvals = new ApprovalStore(deps.ledger);
   const startedMs = Date.now();
   const job = deps.ledger.getJob(deps.jobId);
   if (!job) throw new Error(`任务不存在: ${deps.jobId}`);
@@ -143,6 +150,10 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   checkpoint();
   const jd: Jd = analysis.jd;
   const scorecard: Scorecard = analysis.scorecard;
+  const memory = new MemoryService(deps.ledger);
+  const previousBinding = memory.binding(deps.jobId);
+  const frozenThresholds = previousBinding ? JSON.parse(previousBinding.snapshot_json).thresholds : deps.config.conclusionScale;
+  memory.bindJob(deps.jobId, { jd, scorecard, thresholds: frozenThresholds }, previousBinding?.version_id ?? null);
   const knowledgeQuery = buildProfileSearchQuery(analysis);
 
   if (!opts.resumeOnly) {
@@ -178,7 +189,9 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
     const format = resume.format || 'unknown';
     formats[format] = (formats[format] ?? 0) + 1;
   }
-  const plan = await planScreening(deps, {
+  const savedPlan = approvals.mode(deps.jobId) === 'strict'
+    ? approvals.list(deps.jobId).find((a) => a.kind === 'screening-plan') : undefined;
+  const plan: ScreeningPlan = savedPlan ? JSON.parse(savedPlan.payload_json).plan : await planScreening(deps, {
     usable: workItems.length,
     duplicates: counts.duplicate ?? 0,
     failed: counts.failed ?? 0,
@@ -192,6 +205,13 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
       deepEval: { enabled: deps.config.deepEval.enabled, percent: deps.config.deepEval.percent },
     },
   });
+  await requireApproval(approvals, deps.jobId, 'screening-plan', {
+    plan, jd, scorecard, registry: deps.registry.fingerprint,
+    revisionBudget: deps.config.selfLoop,
+    materials: deps.ledger.listResumes(deps.jobId).map((r) => ({ id: r.id, sha256: r.sha256 })),
+    promptHash: createHash('sha256').update(deps.registry.list().map((p) => loadPrompt(p, deps.paths)).join('\n') + loadSkill('screening-plan', deps.paths)).digest('hex'),
+    scope: '本岗位已接入材料；解析、初筛、深评、核查及配置预算内的重评。外部工具另行审批。',
+  }, 'screening-plan', opts.approvalResponder);
   const planArtifact = path.join(deps.runDir, 'artifacts', 'plan', 'screening_plan.json');
   await writeJson(planArtifact, { ...plan, inventory: { usable: workItems.length, duplicates: counts.duplicate ?? 0, failed: counts.failed ?? 0, formats, resumeOnly: !!opts.resumeOnly } });
   deps.events.emit(deps.jobId, 'coordinator', 'screening.plan', {
@@ -227,7 +247,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   const assessorCtx: AssessorContext = {
     jd,
     scorecard,
-    thresholds: deps.config.conclusionScale as unknown as RatingThresholds,
+    thresholds: frozenThresholds as RatingThresholds,
     knowledgeQuery,
   };
 
@@ -528,7 +548,18 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   const interviewPlans = new Map<string, InterviewPlan>();
 
   checkpoint();
-  const confirmation = await opts.hitl.ask({
+  const strict = approvals.mode(deps.jobId) === 'strict';
+  let reportData = strict ? await buildReport(deps, analysis, {
+    pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats(), agentPool.stats()],
+    startedMs, topN: deps.config.topN, interviewPlans, status: 'draft',
+  }) : null;
+  if (strict) {
+    // 等待期间保存完整候选报告；续跑不以时间戳变化替换用户审阅的内容。
+    const saved = approvals.list(deps.jobId).find((a) => a.kind === 'publish-report');
+    if (saved) reportData = JSON.parse(saved.payload_json).report;
+    await requireApproval(approvals, deps.jobId, 'publish-report', { report: reportData }, 'publish-report', opts.approvalResponder);
+  }
+  const confirmation = strict ? { answer: '确认输出终稿（严格审批通过）', actor: 'approval' } : await opts.hitl.ask({
     id: 'final_report',
     node: 'final_confirmation',
     question: `已生成 Top${deps.config.topN} 推荐、证据链与合规报告（${verifiedResumes.length} 人核查通过，${deps.ledger.selfLoopStats(deps.jobId).escalations} 人转人工）。是否确认输出终稿？`,
@@ -551,13 +582,11 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   const finalStatus = /确认输出/.test(confirmation.answer) ? 'final' : 'draft';
   const jobStatus = finalStatus === 'final' ? 'completed' : 'draft';
 
-  const reportData = await buildReport(deps, analysis, {
+  reportData ??= await buildReport(deps, analysis, {
     pools: [parsePool.stats(), assessPool.stats(), reviewPool.stats(), agentPool.stats()],
-    startedMs,
-    topN: deps.config.topN,
-    interviewPlans,
-    status: finalStatus,
+    startedMs, topN: deps.config.topN, interviewPlans, status: finalStatus,
   });
+  reportData.run.status = finalStatus;
   const reports = await writeReports(reportData, deps.runDir);
   // 报告成功落盘后才把 job/简历推进到终态，避免"状态完成但报告缺失"
   deps.ledger.setJobStatus(deps.jobId, jobStatus);

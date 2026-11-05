@@ -28,6 +28,10 @@
 
 ## 2. 复跑命令
 
+记忆管理第一版：`tests/unit/memory.test.ts` 覆盖规则批准前隔离、拒绝与自动授权拦截、哈希校验、幂等发布、事务失败回滚、并发基线冲突、不可变版本、角色边界、摘要水位/来源/脱敏/缓存失效、删除清理和重启持久化；`tests/integration/memory.test.ts` 覆盖“人工发布 → 新任务确认复用 → 快照冻结 → 退役与配置变化后续跑”的完整链路。模型使用测试替身，不据此推断真实筛选质量。
+
+严格模式新增验收：`tests/unit/approvals.test.ts` 验证默认模式兼容、参数变更重新审批、拒绝/自动应答不授权、工具执行至多领取一次、批准后对话续接及工具权限变化失效；`tests/integration/approvals.test.ts` 验证计划审批前不解析、SQLite 重启恢复、发布前不生成终稿及批准后检查点续跑。
+
 ```bash
 pnpm typecheck   # 类型检查（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint
@@ -37,7 +41,7 @@ pnpm check       # 以上三项串行
 
 以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。CI 已在 `dev` 分支跑通（首次运行全绿）。
 
-当前结果：**116 个测试通过，0 失败**（2026-11，Node 24 / Windows）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）**、对话档位选择（flash/pro）、注册表工具一致性、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录（含阿里云 MaaS `/api/v1/models`）与 Vision 图片消息；替身只存在于 `tests/`，不进入产品运行时。产品路径没有 mock 分支。
+当前结果：**127 个测试通过，0 失败**（2026-11-05，Windows，本地 `pnpm check`）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/角色隔离、完成后主 Agent 多轮对话与稳定前缀、Agent 筛选计划、严格审批、评分卡版本与提案事务、长对话提取式摘要、隔离 HTTP 服务、按需工具调用与 Word/PDF 导出等机制。替身只存在于 `tests/`，不进入产品运行时；机制测试不等于真实模型筛选质量评测。
 
 ## 3. 真实数据验收（需要 Key）
 

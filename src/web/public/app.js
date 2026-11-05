@@ -13,10 +13,6 @@
     coordinator: '伯乐', profiler: '画像师', fetcher: '探马', parser: '录事',
     assessor: '相马官', auditor: '监军', advisor: '谋士',
   };
-  const STATUS_LABEL = {
-    running: '运行中', pausing: '暂停中', paused: '已暂停',
-    completed: '已完成', failed: '失败', idle: '未完成',
-  };
   const CONCLUSION_LABELS = {
     strong_yes: '强烈推荐', yes: '推荐', maybe: '待定',
     no: '不推荐', strong_no: '强烈不推荐', pending: '待评估',
@@ -382,14 +378,6 @@
     archivedToggle.textContent = state.showArchived ? '返回' : '归档';
     archivedToggle.classList.toggle('active', state.showArchived);
     archivedToggle.title = state.showArchived ? '返回正常会话' : '显示归档会话';
-    const recent = state.jobs.filter((job) => !job.archived);
-    $('#recent-jobs').innerHTML = recent.length ? recent.slice(0, 8).map((job) => {
-      const status = job.activeStatus || 'idle';
-      return `<button class="recent-card" data-job="${esc(job.id)}">
-        <div class="rc-title">${esc(jobTitle(job))}</div>
-        <div class="rc-meta">${esc(STATUS_LABEL[status] || status)} · ${job.total} 份 · ${esc(fmtDateTime(job.createdTs))}</div>
-      </button>`;
-    }).join('') : '<div class="empty-note">暂无会话</div>';
   }
 
   async function loadJobs() {
@@ -496,9 +484,6 @@
     $('.main').classList.remove('chat-active');
     closeDrawer();
     document.title = '伯乐 BoLe · 对话式招聘筛选';
-    setStatus('idle');
-    $('#pause-btn').classList.add('hidden');
-    $('#resume-btn').classList.remove('hidden');
     renderJobs();
     setTimeout(() => $('#new-requirements')?.focus(), 30);
   }
@@ -509,11 +494,6 @@
     $('.main').classList.add('chat-active');
   }
 
-  function setStatus(status) {
-    const el = $('#status-pill');
-    el.className = `pill ${status}`;
-    el.textContent = STATUS_LABEL[status] || status;
-  }
 
   async function selectJob(jobId) {
     if (!jobId) { showNewView(); return; }
@@ -558,7 +538,6 @@
       else disconnectStream();
     } catch (error) {
       toast(`读取会话失败：${error.message}`, 'error');
-      setStatus('failed');
     }
   }
 
@@ -576,13 +555,10 @@
     if (!state.run || !state.snapshot) return;
     const job = state.snapshot.job || {};
     const run = state.run;
+    const binding = $('#job-policy-view');
+    binding.textContent = run.policyBinding ? `评分标准已冻结 · ${run.policyBinding.version_id ? '复用版本' : '本次岗位'} · 查看来源` : '查看当前任务记忆';
+    binding.dataset.jobId = state.jobId;
     document.title = `${jobTitle(job)} · 伯乐 BoLe`;
-    setStatus(run.status);
-    const active = run.status === 'running' || run.status === 'pausing';
-    $('#pause-btn').classList.toggle('hidden', !active);
-    $('#pause-btn').disabled = run.status === 'pausing';
-    $('#resume-btn').classList.toggle('hidden', active);
-    $('#resume-btn').disabled = active;
     const canChat = run.status === 'completed';
     const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
     $('#reply-hint').textContent = replyHint;
@@ -607,6 +583,7 @@
     syncReplyComposerState();
     renderChat();
     renderHitl(run.pendingHitl);
+    renderApprovals(run);
     if (run.status !== 'running') state.streams.clear();
     renderStreams();
     if (!$('#drawer').classList.contains('hidden')) {
@@ -1123,6 +1100,52 @@
 
   // ---------------------------------------------------------------- HITL / composer
 
+  function renderApprovals(run) {
+    const host = $('#approval-host');
+    const approvals = run.approvals || [];
+    const signature = JSON.stringify([run.jobId, approvals]);
+    if (host.dataset.signature === signature) return;
+    host.dataset.signature = signature;
+    const titles = { 'screening-plan': '批准筛选计划', 'publish-report': '审阅并发布报告', tool: '批准工具操作', 'memory-policy-change': '长期规则修订' };
+    host.innerHTML = (run.executionMode === 'strict' ? '<div class="muted">严格模式 · 计划、工具与发布需审批</div>' : '') +
+      approvals.filter((item) => item.status === 'pending' && item.kind !== 'memory-policy-change').map((item) => {
+        const payload = JSON.parse(item.payload_json);
+        const preview = item.kind === 'tool' ? { tool: payload.name, arguments: payload.arguments } : payload;
+        let summary = '';
+        if (item.kind === 'screening-plan') {
+          const plan = payload.plan;
+          summary = `<p>岗位：${esc(payload.jd?.title || '')}。材料 ${payload.materials?.length || 0} 份。</p>
+            <p>每批 ${esc(plan.batchSize)} 份，同时处理 ${esc(plan.maxBatchesInFlight)} 批；总并发上限 ${esc(plan.maxActiveAgents)}。
+            ${plan.deepEval.enabled ? `初筛后深评前 ${esc(plan.deepEval.percent)}% 及异常项。` : '本轮不启用深评。'}核查打回最多修正 ${esc(payload.revisionBudget.maxLoops)} 次。</p>
+            <p>${esc(plan.reason)}</p>`;
+        } else if (item.kind === 'publish-report') {
+          summary = (payload.report.top || []).map((candidate) => `<p><strong>${esc(candidate.label)}</strong> · ${esc(candidate.totalScore)} 分<br>${esc(candidate.reason || '')}</p>`).join('') || '<p>暂无推荐候选人，请查看完整报告中的失败及转人工明细。</p>';
+        } else {
+          summary = `<p>工具：${esc(payload.name)}</p><pre class="approval-preview">${esc(payload.arguments)}</pre>`;
+        }
+        return `<div class="hitl-card"><h3>${esc(titles[item.kind] || item.kind)}</h3>
+          <p>批准仅适用于下列具体内容。拒绝后不会继续执行；需要修改时请重新发起。</p>
+          ${summary}<details><summary>查看完整审批内容与证据</summary><pre class="approval-preview">${esc(JSON.stringify(preview, null, 2))}</pre></details>
+          <div class="hitl-options"><button class="hitl-option" data-approval="${esc(item.id)}" data-decision="approve">批准${item.kind === 'tool' ? '并执行' : '并继续'}</button>
+          <button class="hitl-option" data-approval="${esc(item.id)}" data-decision="reject">拒绝</button></div></div>`;
+      }).join('') + approvals.filter((item) => ['executing', 'rejected', 'failed'].includes(item.status))
+        .map((item) => `<div class="muted">${esc(titles[item.kind] || item.kind)}：${esc({ executing: '执行中（若服务已重启，请人工核对结果，不会自动重放）', rejected: '已拒绝，未执行', failed: '执行失败，可重新发起' }[item.status])}</div>`).join('');
+    host.querySelectorAll('[data-approval]').forEach((button) => button.addEventListener('click', async () => {
+      if (state.sending) return;
+      state.sending = true;
+      host.querySelectorAll('button').forEach((item) => { item.disabled = true; });
+      try {
+        const data = await api(`/api/run/${encodeURIComponent(state.jobId)}/approvals/${encodeURIComponent(button.dataset.approval)}`, {
+          method: 'POST', body: JSON.stringify({ decision: button.dataset.decision }),
+        });
+        await loadRun(false);
+        if (data.resumeRequired) await resumeCurrent();
+        if (state.run?.status === 'completed') await loadChat();
+      } catch (error) { toast(`审批处理失败：${error.message}`, 'error'); }
+      finally { state.sending = false; host.dataset.signature = ''; await loadRun(false); }
+    }));
+  }
+
   function renderHitl(pending) {
     const host = $('#hitl-host');
     if (!pending) { host.innerHTML = ''; state.hitlId = ''; return; }
@@ -1171,7 +1194,18 @@
     const canSubmit = run.pendingHitl || run.status === 'completed';
     const pending = state.chatAttachments.some((item) => item.status === 'uploading');
     const empty = replyValue() === '' && state.chatAttachments.filter((item) => item.status !== 'error').length === 0;
-    $('#reply-send').disabled = state.sending || pending || empty || !canSubmit;
+    const button = $('#reply-send');
+    const approvalBlocked = (run.approvals || []).some((item) => ['screening-plan', 'publish-report'].includes(item.kind) && ['pending', 'rejected'].includes(item.status));
+    const action = run.pendingHitl ? 'send' : run.status === 'pausing' ? 'waiting' : run.status === 'running' ? 'pause'
+      : ['paused', 'failed', 'idle'].includes(run.status) ? 'resume' : 'send';
+    const label = { send: '发送', pause: '暂停筛选', resume: approvalBlocked ? '请先处理审批；拒绝后需新建会话' : '从检查点续跑', waiting: '正在安全暂停…' }[action];
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.dataset.action = action;
+    const paths = { send: '<path d="M8 13V3m-4 4 4-4 4 4"/>', pause: '<path d="M5 3v10M11 3v10"/>', resume: '<path d="m5 3 8 5-8 5Z"/>', waiting: '<circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1"/>' };
+    button.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[action]}</svg>`;
+    button.disabled = state.sending || state.controlPending || action === 'waiting' || (action === 'resume' && approvalBlocked)
+      || (action === 'send' && (pending || empty || !canSubmit));
     $('#chat-attach-btn').disabled = state.sending || !canSubmit;
   }
 
@@ -1262,6 +1296,7 @@
       });
       state.chat = data.messages || state.chat;
       clearChatAttachments();
+      await loadRun(false);
     } catch (error) {
       await loadChat();
       $('#reply-input').textContent = value;
@@ -1346,7 +1381,7 @@
     try {
       const data = await api('/api/run', {
         method: 'POST',
-        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId) }),
+        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined }),
       });
       state.attachments = [];
       renderAttachments();
@@ -2201,8 +2236,6 @@
       const data = await api('/api/knowledge');
       state.knowledgeBases = data.bases || [];
       state.knowledgeSettings = data.settings || null;
-      const enabled = state.knowledgeBases.filter((base) => base.enabled).length;
-      $('#knowledge-enabled-count').textContent = enabled ? `${enabled} 已启用` : '';
       if (!state.knowledgeBases.some((base) => base.id === state.selectedKnowledgeBaseId)) {
         state.selectedKnowledgeBaseId = state.knowledgeBases[0]?.id ?? '';
       }
@@ -2274,6 +2307,8 @@
       $('#kb-name').value = selected.name;
       $('#kb-description').value = selected.description;
       $('#kb-enabled').checked = selected.enabled;
+      const roles = { coordinator: '伯乐 · 主 Agent', profiler: '画像师', parser: '录事 · 解析', assessor: '相马官 · 评估', auditor: '监军 · 核查' };
+      $('#kb-agent-roles').innerHTML = Object.entries(roles).map(([id, name]) => `<label><input type="checkbox" value="${id}" ${(selected.agentRoles || ['assessor']).includes(id) ? 'checked' : ''}>${name}</label>`).join('');
       renderKnowledgeTags(selected);
       renderKnowledgeStats(state.knowledgeStats || {
         sources: selected.documentCount,
@@ -2363,6 +2398,7 @@
   async function saveKnowledgeBase(enabledOverride) {
     const base = state.knowledgeBases.find((item) => item.id === state.selectedKnowledgeBaseId);
     if (!base) return;
+    const agentRoles = [...$('#kb-agent-roles').querySelectorAll('input:checked')].map((input) => input.value);
     try {
       const data = await api(`/api/knowledge/bases/${encodeURIComponent(base.id)}`, {
         method: 'PATCH',
@@ -2370,10 +2406,15 @@
           name: $('#kb-name').value.trim(),
           description: $('#kb-description').value.trim(),
           enabled: enabledOverride ?? $('#kb-enabled').checked,
+          agentRoles,
         }),
       });
+      if (!Array.isArray(data.base?.agentRoles)) throw new Error('当前后端不支持角色配置，请重启伯乐服务后重试');
+      if (JSON.stringify([...data.base.agentRoles].sort()) !== JSON.stringify([...agentRoles].sort())) {
+        throw new Error('角色配置未保存成功，请重试');
+      }
       await loadKnowledge();
-      setKnowledgeStatus('#kb-status', data.base?.enabled ? '已启用：画像/评估/建议会自动检索' : '已保存（未启用，不参与检索）', 'ok');
+      setKnowledgeStatus('#kb-status', data.base?.enabled ? '已保存：仅适用 Agent 自动检索' : '已保存（未启用，不参与检索）', 'ok');
     } catch (error) {
       setKnowledgeStatus('#kb-status', `保存失败：${error.message}`, 'error');
     }
@@ -2590,26 +2631,61 @@
         handleJobAction('archive');
       }
     });
-    $('#recent-jobs').addEventListener('click', (event) => {
-      const button = event.target.closest('[data-job]');
-      if (button) selectJob(button.getAttribute('data-job'));
+    const modeTrigger = $('#mode-trigger');
+    const modeMenu = $('#mode-menu');
+    const modeItems = [...modeMenu.querySelectorAll('[data-mode]')];
+    const setModeMenu = (open, focus = false) => {
+      modeMenu.classList.toggle('hidden', !open);
+      modeTrigger.setAttribute('aria-expanded', String(open));
+      if (open && focus) modeItems.find((item) => item.getAttribute('aria-checked') === 'true').focus();
+    };
+    modeTrigger.addEventListener('click', () => setModeMenu(modeMenu.classList.contains('hidden'), true));
+    modeItems.forEach((item) => item.addEventListener('click', () => {
+      $('#new-execution-mode').value = item.dataset.mode;
+      $('#mode-label').textContent = item.dataset.mode === 'strict' ? '严格模式' : '默认模式';
+      modeItems.forEach((option) => option.setAttribute('aria-checked', String(option === item)));
+      setModeMenu(false);
+      modeTrigger.focus();
+    }));
+    document.addEventListener('click', (event) => { if (!event.target.closest('.mode-picker')) setModeMenu(false); });
+    document.addEventListener('focusin', (event) => { if (!event.target.closest('.mode-picker')) setModeMenu(false); });
+    modeTrigger.parentElement.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { setModeMenu(false); modeTrigger.focus(); }
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (modeMenu.classList.contains('hidden')) { setModeMenu(true, true); return; }
+        const index = modeItems.indexOf(document.activeElement);
+        modeItems[(index + (event.key === 'ArrowDown' ? 1 : -1) + modeItems.length) % modeItems.length].focus();
+      }
     });
-    $('#resume-btn').addEventListener('click', resumeCurrent);
-    $('#pause-btn').addEventListener('click', pauseCurrent);
-    $('#refresh-btn').addEventListener('click', async () => {
-      if (!state.jobId) { await loadJobs(); return; }
-      await loadRun(false);
-      if (state.drawerTab === 'candidates') await loadCandidates();
-      if (state.drawerTab === 'cost') await loadCost();
-      toast('已刷新', 'ok');
+    const help = $('#help-dialog');
+    $('#help-open').addEventListener('click', () => help.showModal());
+    $('#help-close').addEventListener('click', () => help.close());
+    help.addEventListener('click', (event) => {
+      const rect = help.getBoundingClientRect();
+      if (event.target === help && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) help.close();
     });
+    help.querySelectorAll('[data-help]').forEach((button) => button.addEventListener('click', () => {
+      help.querySelectorAll('[data-help]').forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)); });
+      help.querySelectorAll('[data-help-section]').forEach((section) => section.classList.toggle('hidden', section.dataset.helpSection !== button.dataset.help));
+    }));
     $('#panel-btn').addEventListener('click', () => openDrawer(state.drawerTab || 'candidates'));
     $('#drawer-close').addEventListener('click', closeDrawer);
     $('#drawer-tabs').addEventListener('click', (event) => {
       const button = event.target.closest('[data-drawer-tab]');
       if (button) { state.drawerCandidate = null; openDrawer(button.dataset.drawerTab); }
     });
-    $('#reply-send').addEventListener('click', sendReply);
+    $('#reply-send').addEventListener('click', async () => {
+      const button = $('#reply-send');
+      if (button.disabled) return;
+      state.controlPending = true;
+      button.disabled = true;
+      try {
+        if (button.dataset.action === 'pause') await pauseCurrent();
+        else if (button.dataset.action === 'resume') await resumeCurrent();
+        else if (button.dataset.action === 'send') await sendReply();
+      } finally { state.controlPending = false; syncReplyComposerState(); }
+    });
     $('#chat-attach-btn').addEventListener('click', () => $('#chat-file-input').click());
     $('#chat-file-input').addEventListener('change', async (event) => {
       const files = Array.from(event.target.files || []);
@@ -2700,7 +2776,6 @@
     $('#kb-save').addEventListener('click', () => saveKnowledgeBase());
     $('#kb-delete').addEventListener('click', deleteKnowledgeBase);
     $('#kb-upload').addEventListener('click', () => $('#knowledge-file').click());
-    $('#kb-upload-secondary').addEventListener('click', () => $('#knowledge-file').click());
     $('#knowledge-file').addEventListener('change', async (event) => {
       const files = Array.from(event.target.files || []);
       event.target.value = '';

@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { MemoryService } from './memory/service.ts';
+import { ApprovalStore, parseExecutionMode, type ExecutionMode } from './core/approvals.ts';
 import { randomBytes } from 'node:crypto';
 import { loadPipelineConfig, resolvePaths } from './config.ts';
 import { AgentRegistry } from './core/registry.ts';
@@ -15,6 +17,8 @@ import type { LlmProvider } from './llm/provider.ts';
 import type { JobRow, StreamSink } from './types.ts';
 
 export interface BootstrapOptions {
+  policyVersionId?: string;
+  executionMode?: ExecutionMode;
   requirements: string;
   seed?: string;
   deepseekApiKey?: string;
@@ -90,6 +94,12 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     });
   }
   const seed = opts.seed ?? job.seed ?? 'live';
+  if (!opts.jobId) new ApprovalStore(ledger).setMode(job.id, parseExecutionMode(opts.executionMode));
+  if (opts.policyVersionId) {
+    if (opts.jobId) { ledger.close(); throw new Error('续跑不能更换评分标准'); }
+    try { new MemoryService(ledger).selectPolicy(job.id, opts.policyVersionId); }
+    catch (error) { ledger.deleteJob(job.id); ledger.close(); throw error; }
+  }
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const runId = opts.runId ?? `run_${stamp}_${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runsDir, runId);

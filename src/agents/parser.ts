@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { roleKnowledge } from './knowledge.ts';
 import path from 'node:path';
 import { parseResumeSchema } from '../schemas.ts';
 import { runStructuredTask } from '../core/structured.ts';
@@ -69,7 +70,7 @@ export class ParserWorker {
       schemaName: 'parse_resume',
       schema: parseResumeSchema,
       system: systemPrompt(deps, 'parser'),
-      user,
+      user: user + await roleKnowledge(deps, 'parser', deps.ledger.getJob(deps.jobId)?.requirements ?? ''),
       sharedPrefix: sharedPrefix(deps, 'parser', [`【字段清单】${FIELD_HINT}`]),
       runDir: deps.runDir,
       ledger: deps.ledger,

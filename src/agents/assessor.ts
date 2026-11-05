@@ -83,7 +83,7 @@ export class AssessorWorker {
       ...this.ctx.jd.hardRequirements,
       ...this.ctx.jd.niceToHave,
     ].join(' ');
-    const hits = await deps.knowledge.recall(ragQuery, 4);
+    const hits = await deps.knowledge.recall(ragQuery, 4, 'assessor');
     const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
     if (hits.length > 0) {
       deps.events.emit(deps.jobId, 'assessor', 'knowledge.recalled', {

@@ -1,4 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore, parseExecutionMode } from '../core/approvals.ts';
+import { executeApprovedTool } from '../tools/approved-tool.ts';
+import { runOrchestrator } from '../chat/orchestrator.ts';
+import { memoryRoute } from '../memory/http.ts';
+import { MemoryService } from '../memory/service.ts';
+import type { ChatTurn } from '../types.ts';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { createConverter } from '@deepseek-ai/libreoffice-kit';
@@ -164,6 +170,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
+  '/memory-ui.js': { file: 'memory-ui.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
 };
 const PDFJS_DIR = path.join(import.meta.dirname, '..', '..', 'node_modules', 'pdfjs-dist', 'build');
@@ -172,7 +179,7 @@ const PDFJS_FILES: Record<string, string> = {
   '/vendor/pdfjs/pdf.worker.min.mjs': 'pdf.worker.min.mjs',
 };
 
-export async function startWebServer(options: WebServerOptions = {}): Promise<void> {
+export async function startWebServer(options: WebServerOptions = {}): Promise<Server> {
   const host = options.host ?? '127.0.0.1';
   const port = options.port ?? 8787;
   const runs = new Map<string, ActiveRun>();
@@ -271,7 +278,20 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     if (!snapshot.job) return null;
     const runtime = runs.get(jobId);
     const reportDir = findReportDir(jobId);
+    const reader = new Ledger(paths.dbPath);
+    let executionMode;
+    let approvals;
+    let policyBinding;
+    try {
+      const store = new ApprovalStore(reader);
+      executionMode = store.mode(jobId);
+      approvals = store.list(jobId);
+      policyBinding = new MemoryService(reader).binding(jobId) ?? null;
+    } finally { reader.close(); }
     return {
+      executionMode,
+      approvals,
+      policyBinding,
       jobId,
       runId: runtime?.runId ?? (reportDir ? path.basename(reportDir) : ''),
       provider: runtime?.provider ?? (snapshot.job.status === 'pipeline' ? 'deepseek' : ''),
@@ -338,14 +358,14 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         run.summary = summary;
         run.completedAt = new Date().toISOString();
       } catch (error) {
-        if (error instanceof PipelinePausedError) {
+        if (error instanceof PipelinePausedError || error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError) {
           run.status = 'paused';
           run.pausedAt = new Date().toISOString();
           run.completedAt = run.pausedAt;
           try {
             opts.boot.deps.ledger.setJobStatus(run.jobId, 'paused');
             opts.boot.deps.events.emit(run.jobId, 'coordinator', 'run.paused', {
-              reason: '用户暂停',
+              reason: error.message,
               at: run.pausedAt,
             });
           } catch {
@@ -384,6 +404,15 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
       const url = new URL(req.url, `http://${req.headers.host ?? `${host}:${port}`}`);
       const pathname = url.pathname;
       const method = req.method ?? 'GET';
+      if (pathname === '/api/memory' || pathname.startsWith('/api/memory/')) {
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          const result = memoryRoute(ledger, method, pathname, method === 'GET' ? {} : await readJsonBody(req));
+          json(res, 200, { ok: true, ...(result as object) });
+        } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
+        return;
+      }
 
       const pdfjsFile = PDFJS_FILES[pathname];
       if (method === 'GET' && pdfjsFile) {
@@ -640,6 +669,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
           ...(body.name !== undefined ? { name: String(body.name) } : {}),
           ...(body.description !== undefined ? { description: String(body.description) } : {}),
           ...(typeof body.enabled === 'boolean' ? { enabled: body.enabled } : {}),
+          ...(body.agentRoles !== undefined ? { agentRoles: body.agentRoles } : {}),
         });
         json(res, 200, { ok: true, base });
         return;
@@ -755,6 +785,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
 
       if (method === 'POST' && pathname === '/api/run') {
         const body = await readJsonBody(req);
+        const executionMode = parseExecutionMode(body.executionMode);
         const requirements = String(body.requirements ?? '').trim();
         if (requirements.length < 5) {
           json(res, 400, { ok: false, error: 'requirements 至少 5 个字符' });
@@ -788,11 +819,63 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
         const listeners = new Set<(chunk: StreamToken) => void>();
         const boot = await bootstrap({
           requirements,
+          executionMode,
+          policyVersionId: typeof body.policyVersionId === 'string' && body.policyVersionId ? body.policyVersionId : undefined,
           stream: makeStreamSink(listeners),
         });
         const hitl = new WebHitlResponder();
         const run = launch({ boot, hitl, listeners, requirements, uploadFiles: files, resumeOnly: false });
         json(res, 200, { ok: true, jobId: run.jobId, runId: run.runId, status: run.status });
+        return;
+      }
+
+      const approvalMatch = /^\/api\/run\/([^/]+)\/approvals\/([^/]+)$/.exec(pathname);
+      if (method === 'POST' && approvalMatch) {
+        const jobId = decodeURIComponent(approvalMatch[1]);
+        const id = decodeURIComponent(approvalMatch[2]);
+        const body = await readJsonBody(req);
+        if (body.decision !== 'approve' && body.decision !== 'reject') {
+          json(res, 400, { ok: false, error: 'decision 必须为 approve 或 reject' });
+          return;
+        }
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          const store = new ApprovalStore(ledger);
+          if (store.get(id, jobId)?.kind === 'memory-policy-change') throw new Error('长期规则请在岗位与评分标准页面审批');
+          const approval = store.decide(id, jobId, body.decision === 'approve', 'HR(web)');
+          ledger.addDecision({ jobId, node: approval.kind, question: approval.payload_json,
+            answer: approval.status, actor: 'HR(web)' });
+          if (approval.kind === 'tool' && approval.status === 'approved') {
+            const result = await executeApprovedTool(store, id, jobId, mcpPlugins.managerRef());
+            const payload = JSON.parse(approval.payload_json) as {
+              report: Parameters<typeof runOrchestrator>[0]['report']; runDir: string; dataDir: string;
+              continuation: { message: string; turns: ChatTurn[]; callId: string };
+            };
+            const active = await providers.getActive();
+            const job = ledger.getJob(jobId);
+            if (active?.apiKey && job && payload.continuation) {
+              const llm = new LlmRouter({
+                provider: new DeepSeekProvider({ apiKey: active.apiKey, baseUrl: active.baseUrl,
+                  protocol: active.api, deepseekStyle: active.builtin, name: active.name }),
+                pricing: loadPipelineConfig().pricing,
+                models: { flash: active.flashModel, pro: active.proModel }, ledger, jobId,
+              });
+              const continued = await runOrchestrator({
+                job, ledger, llm, report: payload.report, runDir: payload.runDir, dataDir: payload.dataDir,
+                message: payload.continuation.message, mcp: mcpPlugins.managerRef(), knowledge,
+                continuation: [...payload.continuation.turns, { role: 'tool',
+                  tool_call_id: payload.continuation.callId, content: JSON.stringify(result) }],
+              });
+              ledger.appendChat(jobId, 'assistant', continued.answer, continued.files.map((file) => path.basename(file)));
+            }
+          }
+          if (approval.kind === 'tool' && approval.status === 'rejected') {
+            ledger.appendChat(jobId, 'assistant', '已拒绝工具操作，未执行。可重新描述需求以生成新的操作。');
+          }
+          json(res, 200, { ok: true, resumeRequired: approval.kind !== 'tool' && approval.status === 'approved' });
+        } catch (error) {
+          json(res, 409, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        } finally { ledger.close(); }
         return;
       }
 
@@ -1092,6 +1175,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
             runDir: findReportDir(jobId) ?? undefined,
             dataDir: paths.dataDir,
             mcp: mcpPlugins.managerRef(),
+            knowledge,
           });
           json(res, 200, { ok: true, answer: result.answer, messages: result.messages });
         } catch (error) {
@@ -1273,6 +1357,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     void mcpPlugins.close();
   });
 
-  process.stdout.write(`BoLe Web 已启动: http://${host}:${port}\n`);
+  const address = server.address();
+  process.stdout.write(`BoLe Web 已启动: http://${host}:${typeof address === 'object' && address ? address.port : port}\n`);
   process.stdout.write('对话式控制台：上传简历 → 开始筛选 → 实时事件/流式生成 → 证据审计 → 对话内报告。\n');
+  return server;
 }

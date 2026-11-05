@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { KnowledgeService } from '../knowledge/service.ts';
 import type { Ledger } from '../core/ledger.ts';
 import type { LlmRouter } from '../llm/router.ts';
 import type { ReportData } from '../report/builder.ts';
@@ -29,6 +30,7 @@ export async function chatWithJob(opts: {
   runDir?: string;
   dataDir?: string;
   mcp?: McpManager;
+  knowledge?: KnowledgeService;
 }): Promise<{ answer: string; messages: ChatMessageRow[] }> {
   const attachments = opts.attachments ?? [];
   const message = opts.message.trim() || (attachments.length ? '请查看附件。' : '');
@@ -46,6 +48,7 @@ export async function chatWithJob(opts: {
     runDir: opts.runDir,
     dataDir: opts.dataDir,
     mcp: opts.mcp,
+    knowledge: opts.knowledge,
   });
 
   const names = files.map((file) => path.basename(file));

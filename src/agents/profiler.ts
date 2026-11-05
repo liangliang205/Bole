@@ -1,3 +1,6 @@
+import { roleKnowledge } from './knowledge.ts';
+import { MemoryService } from '../memory/service.ts';
+import type { PolicyProfile } from '../memory/types.ts';
 import { jdAnalysisSchema } from '../schemas.ts';
 import { reviewRequirements } from '../tools/fairness.ts';
 import type { Ambiguity, JdAnalysis } from '../types.ts';
@@ -81,7 +84,7 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
     schemaName: 'jd_analysis',
     schema: jdAnalysisSchema,
     system: systemPrompt(deps, 'profiler'),
-    user: `${user}\n\n【HR 原始需求】\n${input.requirements}`,
+    user: `${user}\n\n【HR 原始需求】\n${input.requirements}${await roleKnowledge(deps, 'profiler', input.requirements)}`,
     sharedPrefix: sharedPrefix(deps, 'profiler'),
     stream: deps.stream,
     phase: 'jd_analysis',
@@ -152,7 +155,25 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
     applyAnswer(analysis, ambiguity, decision.answer);
   }
 
+  const memory = new MemoryService(deps.ledger);
+  const selected = memory.selectedPolicy(deps.jobId);
+  let boundVersion: string | null = null;
+  let thresholds = deps.config.conclusionScale;
+  if (selected) {
+    if (!memory.recallPolicies(selected.family_id).some((v) => v.id === selected.id)) throw new Error('所选评分标准已退役或失效，请重新选择');
+    const profile = JSON.parse(selected.profile_json) as PolicyProfile;
+    const decision = await input.hitl.ask({ id: 'reuse_policy', node: 'policy_selection', blocking: true,
+      question: `当前岗位：${analysis.jd.title}；参考岗位：${profile.jd.title}。是否采用评分标准 v${selected.version}？\n当前：${JSON.stringify(analysis.scorecard.dimensions)}\n参考：${JSON.stringify(profile.scorecard.dimensions)}\n岗位要求以本次确认的 JD 为准。`,
+      options: ['采用所选评分标准', '使用本次生成的评分标准'], recommendedOption: '使用本次生成的评分标准' });
+    if (decision.answer === '采用所选评分标准' && !/auto/i.test(decision.actor)) {
+      analysis.scorecard = profile.scorecard;
+      boundVersion = selected.id;
+      thresholds = { ...(profile.thresholds ?? deps.config.conclusionScale) };
+    }
+    deps.ledger.addDecision({ jobId: deps.jobId, node: 'policy_selection', question: `评分标准 ${selected.id}`, ...decision });
+  }
   deps.ledger.saveJobAnalysis(deps.jobId, analysis.jd, analysis.scorecard, analysis.jd.title, analysis.fairness);
+  memory.bindJob(deps.jobId, { jd: analysis.jd, scorecard: analysis.scorecard, thresholds: thresholds as unknown as import('../tools/scorecard.ts').RatingThresholds }, boundVersion);
   deps.ledger.setJobStatus(deps.jobId, 'pipeline');
   const artifact = path.join(deps.runDir, 'artifacts', 'profile', 'jd_analysis.json');
   await writeJson(artifact, {

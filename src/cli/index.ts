@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore, parseExecutionMode } from '../core/approvals.ts';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { bootstrap } from '../bootstrap.ts';
@@ -96,6 +97,8 @@ function printHelp(): void {
   --jd <text>         招聘需求（run 必填）
   --files <dir>       简历目录（PDF/DOCX/图片/TXT/HTML；run 必填）
   --yes               非交互模式（HITL 自动采纳推荐项）
+  --mode <mode>       default（默认）或 strict；strict 需要交互审批，不能配合 --yes
+  --policy-version <id>  显式选择已批准评分标准，画像后人工确认复用
   --key <sk-...>      临时使用 Key（不持久化；Web 绑定会持久化）
   --host <ip>         web 监听地址（默认 127.0.0.1）
   --port <n>          web 端口（默认 8787）
@@ -223,6 +226,10 @@ function printSummary(summary: RunSummary, job: JobRow): void {
 }
 
 async function cmdRun(args: Args): Promise<void> {
+  const executionMode = parseExecutionMode(str(args, 'mode'));
+  if (executionMode === 'strict' && (bool(args, 'yes') || !process.stdin.isTTY)) {
+    throw new Error('严格模式需要真人交互审批，请使用交互终端或 Web；不能配合 --yes');
+  }
   const requirements = str(args, 'jd') ?? args.positionals.join(' ');
   const filesDir = str(args, 'files');
   if (!requirements || requirements.trim().length < 5) throw new Error('请用 --jd "招聘需求..." 提供 HR 需求');
@@ -244,13 +251,18 @@ async function cmdRun(args: Args): Promise<void> {
   if (!active) throw new Error('尚未配置模型提供商：请先运行 pnpm web 在「设置与模型」中添加。');
   const apiKey = str(args, 'key') ?? active.apiKey;
   if (!apiKey) throw new Error(`模型提供商「${active.name}」未绑定 API Key：请先在 Web 设置中填写，或用 --key 传入。`);
-  const boot = await bootstrap({ requirements, deepseekApiKey: apiKey });
+  const policyVersionId = str(args, 'policy-version');
+  if (policyVersionId && (bool(args, 'yes') || !process.stdin.isTTY)) throw new Error('复用评分标准需要交互确认，请使用 Web 或交互终端');
+  const boot = await bootstrap({ requirements, deepseekApiKey: apiKey, executionMode, policyVersionId });
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, boot.job.id);
   try {
-    const summary = await runPipeline(boot.deps, { requirements, hitl, uploadFiles: files });
+    const summary = await runPipeline(boot.deps, { requirements, hitl, uploadFiles: files, approvalResponder: hitl });
     unsubscribe();
     printSummary(summary, boot.job);
+  } catch (error) {
+    if (error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError) boot.deps.ledger.setJobStatus(boot.job.id, 'paused');
+    throw error;
   } finally {
     unsubscribe();
     close?.();
@@ -272,12 +284,19 @@ async function cmdResume(args: Args): Promise<void> {
   const apiKey = str(args, 'key') ?? active.apiKey;
   if (!apiKey) throw new Error(`模型提供商「${active.name}」未绑定 API Key：请先在 Web 设置中填写，或用 --key 传入。`);
   const boot = await bootstrap({ requirements: job.requirements, jobId, seed: job.seed ?? 'resume', deepseekApiKey: apiKey });
+  if (new ApprovalStore(boot.deps.ledger).mode(jobId) === 'strict' && (bool(args, 'yes') || !process.stdin.isTTY)) {
+    boot.close();
+    throw new Error('严格模式续跑需要真人交互审批，请使用交互终端或 Web');
+  }
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, jobId);
   try {
-    const summary = await runPipeline(boot.deps, { requirements: job.requirements, hitl, resumeOnly: true });
+    const summary = await runPipeline(boot.deps, { requirements: job.requirements, hitl, resumeOnly: true, approvalResponder: hitl });
     unsubscribe();
     printSummary(summary, boot.job);
+  } catch (error) {
+    if (error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError) boot.deps.ledger.setJobStatus(jobId, 'paused');
+    throw error;
   } finally {
     unsubscribe();
     close?.();

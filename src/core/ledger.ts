@@ -228,7 +228,12 @@ export class Ledger {
     if (!this.getJob(jobId)) return false;
     this.db.exec('BEGIN');
     try {
-      for (const table of ['chat_messages', 'usage', 'decisions', 'evidence', 'review_tasks', 'eval_tasks', 'parse_tasks', 'resumes']) {
+      // 长期规则保留脱敏业务说明；来源任务消失后明确失效，停止供新任务使用。
+      this.run("UPDATE scorecard_versions SET status='needs_review' WHERE id IN (SELECT published_version_id FROM memory_proposals WHERE source_job_id=?)", jobId);
+      this.run("UPDATE memory_proposals SET status='withdrawn' WHERE source_job_id=? AND status='pending'", jobId);
+      this.run('UPDATE memory_proposals SET source_job_id=NULL WHERE source_job_id=?', jobId);
+      for (const table of ['job_policy_bindings', 'job_policy_selections', 'memory_summaries', 'chat_message_order']) this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
+      for (const table of ['approvals', 'execution_policies', 'chat_messages', 'usage', 'decisions', 'evidence', 'review_tasks', 'eval_tasks', 'parse_tasks', 'resumes']) {
         this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
       }
       this.run('DELETE FROM jobs WHERE id=?', jobId);

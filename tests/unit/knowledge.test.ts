@@ -3,7 +3,37 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { KnowledgeService, chunkKnowledgeText, formatKnowledgeReferences } from '../../src/knowledge/service.ts';
+
+test('知识库角色绑定：旧库迁移、跨角色隔离、多角色、清空、禁用与重启持久化', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bole-kb-roles-'));
+  const file = path.join(dir, 'knowledge.db');
+  const legacy = new DatabaseSync(file);
+  legacy.exec(`CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+    INSERT INTO knowledge_bases VALUES ('old','旧知识库','',1,'2026','2026');`);
+  legacy.close();
+  let service = new KnowledgeService(file);
+  try {
+    assert.deepEqual(service.getBase('old')?.agentRoles, ['assessor']);
+    await service.addDocument('old', { filename: 'rules.txt', contentType: 'text/plain', buffer: Buffer.from('Java 后端：核查项目证据，关注支付系统经验。') });
+    assert.ok((await service.recall('Java 支付系统', 4, 'assessor')).length);
+    assert.deepEqual(await service.recall('Java 支付系统', 4, 'profiler'), []);
+    service.updateBase('old', { agentRoles: ['profiler', 'auditor', 'profiler'] });
+    assert.deepEqual(service.getBase('old')?.agentRoles, ['profiler', 'auditor']);
+    service.close();
+    service = new KnowledgeService(file);
+    for (const role of ['profiler', 'auditor']) assert.ok((await service.recall('Java 支付系统', 4, role)).length);
+    for (const role of ['assessor', 'parser', 'coordinator', 'unknown']) assert.deepEqual(await service.recall('Java 支付系统', 4, role), []);
+    assert.throws(() => service.updateBase('old', { agentRoles: ['fetcher'] }));
+    assert.throws(() => service.updateBase('old', { agentRoles: 'profiler' }));
+    service.updateBase('old', { enabled: false });
+    assert.deepEqual(await service.recall('Java 支付系统', 4, 'auditor'), []);
+    service.updateBase('old', { enabled: true, agentRoles: [] });
+    assert.deepEqual(await service.recall('Java 支付系统', 4, 'auditor'), []);
+    assert.ok((await service.search('Java 支付系统')).length, '管理页面手动检索仍可测试已启用的知识库');
+  } finally { service.close(); await rm(dir, { recursive: true, force: true }); }
+});
 
 test('知识库默认空、禁用时不召回，启用后按关键词检索', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bole-kb-'));

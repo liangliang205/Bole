@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { roleKnowledge } from './knowledge.ts';
 import { reviewEvalSchema } from '../schemas.ts';
 import { runStructuredTask } from '../core/structured.ts';
 import { verifySpan } from '../util/text.ts';
@@ -139,7 +140,7 @@ export class AuditorWorker {
       schemaName: 'review_eval',
       schema: reviewEvalSchema,
       system: systemPrompt(deps, 'auditor'),
-      user,
+      user: user + await roleKnowledge(deps, 'auditor', evaluation.dimensions.map((d) => `${d.name} ${d.rationale}`).join(' ')),
       sharedPrefix: sharedPrefix(deps, 'auditor'),
       runDir: deps.runDir,
       ledger: deps.ledger,
