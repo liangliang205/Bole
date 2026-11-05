@@ -2,6 +2,7 @@ import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths, loadPipelineConfig } from '../config.ts';
 import { AgentRegistry } from '../core/registry.ts';
+import { AgentStore } from '../agent-platform/store.ts';
 import { Ledger } from '../core/ledger.ts';
 import { ProviderStore } from '../settings/provider-store.ts';
 import { KnowledgeService } from '../knowledge/service.ts';
@@ -69,10 +70,14 @@ export async function getDoctor(): Promise<{ checks: DoctorCheck[] }> {
     knowledge.close();
   }
   try {
-    const registry = AgentRegistry.load();
-    checks.push({ name: 'Agent preset', status: 'ok', detail: `${registry.list().length} 个 / ${registry.fingerprint}` });
+    const ledger = new Ledger(paths.dbPath);
+    try {
+      const store = new AgentStore(ledger); store.seed();
+      const active = store.active().filter((entry) => entry.version_key).length;
+      checks.push({ name: '动态 Agent 注册表', status: active ? 'ok' : 'warn', detail: `${store.versions().length} 个已注册版本 / ${active} 个活动角色 / ${store.teams().length} 个团队版本` });
+    } finally { ledger.close(); }
   } catch (error) {
-    checks.push({ name: 'Agent preset', status: 'fail', detail: error instanceof Error ? error.message : String(error) });
+    checks.push({ name: '动态 Agent 注册表', status: 'fail', detail: error instanceof Error ? error.message : String(error) });
   }
   try {
     const ledger = new Ledger(paths.dbPath);

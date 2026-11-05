@@ -8,15 +8,18 @@ interface MessageSource { seq: number; id: string; role: 'user' | 'assistant'; c
 interface SummaryRow { summary_json: string; source_hash: string; through_seq: number; created_at: string; references_json: string }
 
 /** 提取式摘要不产生新事实。权威决策始终直接从台账读取。 */
-export function buildMemoryContext(ledger: Ledger, jobId: string, budget = 12000): { turns: ChatTurn[]; projection: string; summarized: boolean } {
+export function buildMemoryContext(ledger: Ledger, jobId: string, budget = 12000, reads?: string[]): { turns: ChatTurn[]; projection: string; summarized: boolean } {
   const view = new MemoryService(ledger).getJobView(jobId, 'coordinator');
+  if (reads && !reads.includes('job-decisions')) view.decisions = [];
+  if (reads && !reads.includes('job-profile')) view.binding = null;
   const rows = ledger.db.prepare(`SELECT o.seq,c.id,c.role,c.content,c.attachments_json
     FROM chat_messages c JOIN chat_message_order o ON o.message_id=c.id
     WHERE c.job_id=? AND o.job_id=? ORDER BY o.seq`).all(jobId, jobId) as unknown as MessageSource[];
   const render = (r: MessageSource): ChatTurn => ({ role: r.role, content: r.content + (r.attachments_json
     ? '\n' + (JSON.parse(r.attachments_json) as { name: string; text: string }[]).map((a) => `【附件：${a.name}】\n${a.text}`).join('\n') : '') });
   const projection = `【任务记忆：权威确认条件与固定规则，不由摘要覆盖】\n${JSON.stringify(view)}`;
-  const full = rows.map(render);
+  const full = (reads && !reads.includes('job-chat') ? rows.slice(-1) : rows).map(render);
+  if (reads && !reads.includes('job-chat')) return { turns: full, projection, summarized: false };
   if (estimateTokens(JSON.stringify(full)) <= budget || rows.length < 6) return { turns: full, projection, summarized: false };
   // 只截取完整的历史 user/assistant 轮次；工具执行轨迹不存于该表，不压缩在途 continuation。
   let cut = Math.max(0, rows.length - 8);

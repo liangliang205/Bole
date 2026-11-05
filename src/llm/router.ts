@@ -1,4 +1,5 @@
 import type { ChatRequest, ChatResult, ModelTier, StopReason } from '../types.ts';
+import { AgentStore } from '../agent-platform/store.ts';
 import type { Ledger } from '../core/ledger.ts';
 import { computeCost, type PricingTable } from './cost.ts';
 import type { LlmProvider } from './provider.ts';
@@ -19,6 +20,7 @@ export interface LlmCallRecord {
 }
 
 export interface LlmRouterOptions {
+  providerIdentity?: string;
   provider: LlmProvider;
   pricing: PricingTable;
   models: Record<ModelTier, string>;
@@ -53,6 +55,7 @@ export function extractJson(text: string): unknown | undefined {
  * 真实 provider 与 mock provider 走同一条路由，切换只改构造参数。
  */
 export class LlmRouter {
+  private providerIdentity?: string;
   readonly provider: LlmProvider;
   readonly cacheAlignment: boolean;
   private pricing: PricingTable;
@@ -64,6 +67,7 @@ export class LlmRouter {
 
   constructor(opts: LlmRouterOptions) {
     this.provider = opts.provider;
+    this.providerIdentity = opts.providerIdentity;
     this.pricing = opts.pricing;
     this.models = opts.models;
     this.ledger = opts.ledger;
@@ -77,6 +81,21 @@ export class LlmRouter {
   }
 
   async chat(req: ChatRequest): Promise<ChatResult> {
+    const store = this.ledger ? new AgentStore(this.ledger) : undefined;
+    const manifest = this.jobId ? store?.manifest(this.jobId) : undefined;
+    const entries = Object.entries(manifest?.bindings ?? {});
+    const selected = entries.find(([slot]) => slot === req.meta?.agentSlot) ?? entries.find(([slot]) => slot === req.agent) ?? entries.find(([, b]) => b.definition.id === req.agent);
+    let invocation: string | undefined;
+    if (selected && store && this.jobId) {
+      const [slot, binding] = selected;
+      if (manifest!.providerName !== this.provider.name) throw new Error('模型提供商与任务绑定不一致，请切回原提供商');
+      if (manifest!.providerIdentity && manifest!.providerIdentity !== this.providerIdentity) throw new Error('模型网关与任务绑定不一致');
+      const safeMeta = Object.fromEntries(Object.entries(req.meta ?? {}).filter(([key]) => ['taskId', 'resumeId', 'batchId', 'phase', 'step', 'kind'].includes(key)));
+      invocation = store.beginInvocation(this.jobId, slot, binding, { system: req.system, user: req.user, messages: req.messages, images: req.images }, { ...safeMeta, definitionHash: binding.hash, model: manifest!.models[req.tier] });
+      req = { ...req, agent: binding.definition.id, model: manifest!.models[req.tier],
+        signal: req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(binding.definition.limits.timeoutMs)]) : AbortSignal.timeout(binding.definition.limits.timeoutMs),
+        meta: { ...req.meta, agentSlot: slot, agentVersionKey: binding.key, invocationId: invocation } };
+    }
     const model = req.model ?? this.models[req.tier];
     const schemaText =
       req.schemaName && !req.jsonSchema ? schemaInstruction(req.schemaName) : '';
@@ -86,13 +105,16 @@ export class LlmRouter {
       : req.system;
     const sharedPrefix = this.cacheAlignment ? req.sharedPrefix : undefined;
 
-    const result = await this.provider.chat({
+    let result: Awaited<ReturnType<LlmProvider['chat']>>;
+    try { result = await this.provider.chat({
       ...req,
       model,
       system,
       jsonSchema,
       sharedPrefix,
     });
+      if (invocation) store!.finishInvocation(invocation, true, result.json ?? result.text);
+    } catch (error) { if (invocation) store!.finishInvocation(invocation, false, String(error)); throw error; }
 
     const usage = {
       promptTokens: result.usage.promptTokens,

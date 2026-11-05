@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { AgentBlockedError, AgentStore } from '../agent-platform/store.ts';
 import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore, parseExecutionMode } from '../core/approvals.ts';
+import { WorkflowUncertainError } from '../workflow/types.ts';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { bootstrap } from '../bootstrap.ts';
 import { runPipeline, type RunSummary } from '../agents/coordinator.ts';
-import { AgentRegistry } from '../core/registry.ts';
 import { Ledger } from '../core/ledger.ts';
 import { loadPipelineConfig, resolvePaths } from '../config.ts';
 import { AutoHitlResponder, ConsoleHitlResponder, type HitlResponder } from '../agents/hitl.ts';
@@ -99,6 +100,7 @@ function printHelp(): void {
   --yes               非交互模式（HITL 自动采纳推荐项）
   --mode <mode>       default（默认）或 strict；strict 需要交互审批，不能配合 --yes
   --policy-version <id>  显式选择已批准评分标准，画像后人工确认复用
+  --agent-team <id@version>  使用已注册团队（默认 builtin@1.0.0）
   --key <sk-...>      临时使用 Key（不持久化；Web 绑定会持久化）
   --host <ip>         web 监听地址（默认 127.0.0.1）
   --port <n>          web 端口（默认 8787）
@@ -253,7 +255,7 @@ async function cmdRun(args: Args): Promise<void> {
   if (!apiKey) throw new Error(`模型提供商「${active.name}」未绑定 API Key：请先在 Web 设置中填写，或用 --key 传入。`);
   const policyVersionId = str(args, 'policy-version');
   if (policyVersionId && (bool(args, 'yes') || !process.stdin.isTTY)) throw new Error('复用评分标准需要交互确认，请使用 Web 或交互终端');
-  const boot = await bootstrap({ requirements, deepseekApiKey: apiKey, executionMode, policyVersionId });
+  const boot = await bootstrap({ requirements, deepseekApiKey: apiKey, executionMode, policyVersionId, agentTeamKey: str(args, 'agent-team') });
   const { hitl, close } = makeHitl(args);
   const unsubscribe = subscribeEvents(boot.deps.ledger, boot.job.id);
   try {
@@ -261,7 +263,7 @@ async function cmdRun(args: Args): Promise<void> {
     unsubscribe();
     printSummary(summary, boot.job);
   } catch (error) {
-    if (error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError) boot.deps.ledger.setJobStatus(boot.job.id, 'paused');
+    if (error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError || error instanceof AgentBlockedError || error instanceof WorkflowUncertainError) boot.deps.ledger.setJobStatus(boot.job.id, 'paused');
     throw error;
   } finally {
     unsubscribe();
@@ -295,7 +297,7 @@ async function cmdResume(args: Args): Promise<void> {
     unsubscribe();
     printSummary(summary, boot.job);
   } catch (error) {
-    if (error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError) boot.deps.ledger.setJobStatus(jobId, 'paused');
+    if (error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError || error instanceof AgentBlockedError || error instanceof WorkflowUncertainError) boot.deps.ledger.setJobStatus(jobId, 'paused');
     throw error;
   } finally {
     unsubscribe();
@@ -472,12 +474,12 @@ function cmdCost(args: Args): void {
 }
 
 function cmdAgents(): void {
-  const registry = AgentRegistry.load();
-  process.stdout.write(`${bold('Agent preset 注册表')} version=${registry.version} fingerprint=${registry.fingerprint}\n\n`);
-  process.stdout.write('id\t名称\t档位\tmaxDepth\t输出 schema\t工具\t能力\n');
-  for (const agent of registry.list()) {
-    process.stdout.write(`${agent.id}\t${agent.nameZh}\t${agent.tier}\t${agent.maxDepth}\t\t${agent.outputSchema}\t${agent.tools.join(',')}\t${(agent.capabilities ?? []).join(',')}\n`);
-  }
+  const ledger = openReader();
+  try {
+    const store = new AgentStore(ledger); store.seed();
+    process.stdout.write(`${bold('动态 Agent 注册表')}\n版本\t状态\t活动\n`);
+    for (const v of store.versions()) process.stdout.write(`${v.version_key}\t${v.status}\t${store.active().some((a) => a.version_key === v.version_key) ? '是' : '否'}\n`);
+  } finally { ledger.close(); }
 }
 
 /** MCP 调用参数：直接写 JSON，或 `@file.json` 读文件，或 `-` 读 stdin（绕开 PowerShell 的引号吞并）。 */

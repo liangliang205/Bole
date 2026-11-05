@@ -6,7 +6,7 @@ const promptCache = new Map<string, string>();
 
 export function systemPrompt(deps: AgentDeps, id: AgentId): string {
   const preset = deps.registry.get(id);
-  const key = `${preset.id}@${preset.version}`;
+  const key = preset.definitionHash ?? `${preset.id}@${preset.version}:${deps.paths.root}`;
   const cached = promptCache.get(key);
   if (cached) return cached;
   const prompt = loadPrompt(preset, deps.paths);

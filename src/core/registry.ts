@@ -56,6 +56,9 @@ export class AgentRegistry {
     this.fingerprint = fingerprint;
     this.presets = presets;
   }
+  static bound(presets: Record<string, AgentPreset>, fingerprint: string): AgentRegistry {
+    return new AgentRegistry('dynamic-1', fingerprint, new Map(Object.entries(presets)));
+  }
 
   static load(root?: string): AgentRegistry {
     const paths = resolvePaths(root);
@@ -116,6 +119,6 @@ export class AgentRegistry {
   }
 
   list(): AgentPreset[] {
-    return AGENT_IDS.map((id) => this.get(id));
+    return [...this.presets.values()];
   }
 }

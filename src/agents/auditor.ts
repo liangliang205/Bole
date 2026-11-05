@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { specialistReference } from '../agent-platform/specialist.ts';
 import { roleKnowledge } from './knowledge.ts';
 import { reviewEvalSchema } from '../schemas.ts';
 import { runStructuredTask } from '../core/structured.ts';
@@ -40,7 +41,7 @@ export class AuditorWorker {
 
   constructor(deps: AgentDeps, index: number) {
     this.deps = deps;
-    this.workerId = `auditor#${index}`;
+    this.workerId = `${deps.registry.get('auditor').id}@${deps.registry.get('auditor').version}#${index}`;
   }
 
   private deterministicChecks(text: string, evaluation: EvalResult): ClaimCheck[] {
@@ -140,7 +141,7 @@ export class AuditorWorker {
       schemaName: 'review_eval',
       schema: reviewEvalSchema,
       system: systemPrompt(deps, 'auditor'),
-      user: user + await roleKnowledge(deps, 'auditor', evaluation.dimensions.map((d) => `${d.name} ${d.rationale}`).join(' ')),
+      user: user + specialistReference(deps, resume.id) + await roleKnowledge(deps, 'auditor', evaluation.dimensions.map((d) => `${d.name} ${d.rationale}`).join(' ')),
       sharedPrefix: sharedPrefix(deps, 'auditor'),
       runDir: deps.runDir,
       ledger: deps.ledger,

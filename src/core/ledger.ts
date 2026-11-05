@@ -233,6 +233,8 @@ export class Ledger {
       this.run("UPDATE memory_proposals SET status='withdrawn' WHERE source_job_id=? AND status='pending'", jobId);
       this.run('UPDATE memory_proposals SET source_job_id=NULL WHERE source_job_id=?', jobId);
       for (const table of ['job_policy_bindings', 'job_policy_selections', 'memory_summaries', 'chat_message_order']) this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
+      for (const table of ['specialist_results', 'agent_invocations', 'job_agent_manifests']) this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
+      this.run('DELETE FROM workflow_runs WHERE job_id=?', jobId);
       for (const table of ['approvals', 'execution_policies', 'chat_messages', 'usage', 'decisions', 'evidence', 'review_tasks', 'eval_tasks', 'parse_tasks', 'resumes']) {
         this.run(`DELETE FROM ${table} WHERE job_id=?`, jobId);
       }

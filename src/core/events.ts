@@ -1,4 +1,5 @@
 import type { Ledger } from './ledger.ts';
+import { AgentStore } from '../agent-platform/store.ts';
 import type { EventRow } from '../types.ts';
 
 export type EventListener = (event: EventRow) => void;
@@ -20,6 +21,8 @@ export class EventLog {
   }
 
   emit(jobId: string | null, actor: string, type: string, payload: Record<string, unknown> = {}): EventRow {
+    const binding = jobId ? new AgentStore(this.ledger).manifest(jobId)?.bindings[actor] : undefined;
+    if (binding) { payload = { ...payload, agentSlot: actor, agentVersion: binding.key }; actor = binding.definition.id; }
     const row = this.ledger.appendEvent(jobId, actor, type, payload);
     for (const listener of this.listeners) {
       try {

@@ -1,4 +1,5 @@
 import type { Ledger } from '../core/ledger.ts';
+import { AgentStore } from '../agent-platform/store.ts';
 import type { AgentDeps } from '../agents/deps.ts';
 import { loadLatestEval, loadLatestReview, loadParseResult } from '../agents/data.ts';
 import { rankEvaluations } from '../tools/scorecard.ts';
@@ -56,6 +57,7 @@ export interface CandidateView extends RankedCandidate {
 }
 
 export interface ReportData {
+  agentBindings?: { slot: string; key: string; name: string; hash: string }[];
   job: { id: string; title: string; requirements: string; jd: Jd; scorecard: Scorecard };
   run: {
     runId: string;
@@ -438,6 +440,7 @@ export async function buildReport(
       cacheHitRate: promptTokens > 0 ? Number((cachedTokens / promptTokens).toFixed(3)) : 0,
       byStage: [...stageMap.entries()].map(([stage, value]) => ({ stage, ...value })),
     },
+    agentBindings: Object.entries(new AgentStore(deps.ledger).manifest(deps.jobId)?.bindings ?? {}).map(([slot, b]) => ({ slot, key: b.key, name: b.definition.name, hash: b.hash })),
     pools: opts.pools,
     convergence,
     eventsCount: deps.ledger.countEvents(deps.jobId),

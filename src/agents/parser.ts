@@ -17,7 +17,7 @@ export class ParserWorker {
 
   constructor(deps: AgentDeps, index: number) {
     this.deps = deps;
-    this.workerId = `parser#${index}`;
+    this.workerId = `${deps.registry.get('parser').id}@${deps.registry.get('parser').version}#${index}`;
   }
 
   async parse(input: { resume: ResumeRow; batchId: number }): Promise<{

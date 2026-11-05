@@ -4,6 +4,10 @@ import { executeApprovedTool } from '../tools/approved-tool.ts';
 import { runOrchestrator } from '../chat/orchestrator.ts';
 import { memoryRoute } from '../memory/http.ts';
 import { MemoryService } from '../memory/service.ts';
+import { AgentBlockedError } from '../agent-platform/store.ts';
+import { agentRoute } from '../agent-platform/http.ts';
+import { workflowRoute } from '../workflow/http.ts';
+import { WorkflowUncertainError } from '../workflow/types.ts';
 import type { ChatTurn } from '../types.ts';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -171,6 +175,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/memory-ui.js': { file: 'memory-ui.js', type: 'text/javascript; charset=utf-8' },
+  '/agent-ui.js': { file: 'agent-ui.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
 };
 const PDFJS_DIR = path.join(import.meta.dirname, '..', '..', 'node_modules', 'pdfjs-dist', 'build');
@@ -358,7 +363,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         run.summary = summary;
         run.completedAt = new Date().toISOString();
       } catch (error) {
-        if (error instanceof PipelinePausedError || error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError) {
+        if (error instanceof PipelinePausedError || error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError || error instanceof AgentBlockedError || error instanceof WorkflowUncertainError) {
           run.status = 'paused';
           run.pausedAt = new Date().toISOString();
           run.completedAt = run.pausedAt;
@@ -404,6 +409,20 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
       const url = new URL(req.url, `http://${req.headers.host ?? `${host}:${port}`}`);
       const pathname = url.pathname;
       const method = req.method ?? 'GET';
+      if (/^\/api\/run\/[^/]+\/workflow(?:\/confirm)?$/.test(pathname)) {
+        const ledger = new Ledger(paths.dbPath);
+        try { json(res, 200, { ok: true, ...(workflowRoute(ledger, method, pathname, method === 'GET' ? {} : await readJsonBody(req)) as object) }); }
+        catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
+        return;
+      }
+      if (pathname.startsWith('/api/agents') || pathname === '/api/agent-catalog' || pathname.startsWith('/api/agent-drafts') || pathname.startsWith('/api/agent-teams') || /^\/api\/run\/[^/]+\/agent-manifest$/.test(pathname)) {
+        const ledger = new Ledger(paths.dbPath);
+        try { json(res, 200, { ok: true, ...(agentRoute(ledger, method, pathname, ['POST', 'PATCH'].includes(method) ? await readJsonBody(req) : {}, url.searchParams) as object) }); }
+        catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
+        return;
+      }
       if (pathname === '/api/memory' || pathname.startsWith('/api/memory/')) {
         const ledger = new Ledger(paths.dbPath);
         try {
@@ -820,6 +839,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         const boot = await bootstrap({
           requirements,
           executionMode,
+          agentTeamKey: typeof body.agentTeamKey === 'string' && body.agentTeamKey ? body.agentTeamKey : undefined,
           policyVersionId: typeof body.policyVersionId === 'string' && body.policyVersionId ? body.policyVersionId : undefined,
           stream: makeStreamSink(listeners),
         });
@@ -855,6 +875,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
             const job = ledger.getJob(jobId);
             if (active?.apiKey && job && payload.continuation) {
               const llm = new LlmRouter({
+                providerIdentity: JSON.stringify({ id: active.id, baseUrl: active.baseUrl, api: active.api }),
                 provider: new DeepSeekProvider({ apiKey: active.apiKey, baseUrl: active.baseUrl,
                   protocol: active.api, deepseekStyle: active.builtin, name: active.name }),
                 pricing: loadPipelineConfig().pricing,
@@ -1159,6 +1180,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
             name: active.name,
           });
           const llm = new LlmRouter({
+            providerIdentity: JSON.stringify({ id: active.id, baseUrl: active.baseUrl, api: active.api }),
             provider,
             pricing: config.pricing,
             models: { flash: active.flashModel, pro: active.proModel },

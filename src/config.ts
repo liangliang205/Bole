@@ -4,6 +4,8 @@ import { projectRoot } from './util/fsx.ts';
 import type { AgentId, ModelTier } from './types.ts';
 
 export interface AgentPreset {
+  promptContent?: string;
+  definitionHash?: string;
   id: AgentId;
   nameZh: string;
   role: string;
@@ -100,6 +102,7 @@ export function loadAgentRegistry(root = projectRoot()): AgentRegistryFile {
 }
 
 export function loadPrompt(preset: AgentPreset, paths = resolvePaths()): string {
+  if (preset.promptContent !== undefined) return preset.promptContent;
   const file = path.join(paths.promptsDir, path.basename(preset.prompt));
   if (!existsSync(file)) throw new Error(`缺少提示词文件: ${file}`);
   return readFileSync(file, 'utf8');

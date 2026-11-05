@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { AgentStore } from '../agent-platform/store.ts';
 import { ApprovalStore } from '../core/approvals.ts';
 import { AgentRegistry } from '../core/registry.ts';
 import type { McpManager } from '../mcp/manager.ts';
@@ -15,12 +16,17 @@ export async function executeApprovedTool(store: ApprovalStore, id: string, jobI
       name: string; arguments: string; report: ReportData; runDir: string; dataDir: string;
       registry: string; toolSchema: unknown;
     };
-    const registry = AgentRegistry.load();
+    const agentStore = new AgentStore(store.ledger);
+    const manifest = agentStore.manifest(jobId);
+    if (manifest) agentStore.assertUsable(manifest.bindings.coordinator);
+    const registry = manifest ? agentStore.registry(manifest) : AgentRegistry.load();
     const agent = registry.get('coordinator');
     if (payload.name.startsWith('mcp__')) await mcp?.start();
     const schema = toolSchemasWithMcp(mcp, agent.mcp).find((tool) =>
       tool.function.name === payload.name && (payload.name.startsWith('mcp__') || agent.tools.includes(payload.name)));
-    if (!schema || registry.fingerprint !== payload.registry || JSON.stringify(schema) !== JSON.stringify(payload.toolSchema)) {
+    const platform = AgentRegistry.load().get('coordinator');
+    const platformAllowed = toolSchemasWithMcp(mcp, platform.mcp).some((tool) => tool.function.name === payload.name && (payload.name.startsWith('mcp__') || platform.tools.includes(payload.name)));
+    if (!schema || !platformAllowed || registry.fingerprint !== payload.registry || JSON.stringify(schema) !== JSON.stringify(payload.toolSchema)) {
       throw new Error('工具定义或权限已变更，请重新发起操作');
     }
     const result = await executeTool(payload.name, payload.arguments, {

@@ -1,5 +1,6 @@
 import { loadSkill } from '../config.ts';
 import { roleKnowledge } from './knowledge.ts';
+import { AgentStore } from '../agent-platform/store.ts';
 import { screeningPlanSchema, type ScreeningPlanOutput } from '../schemas.ts';
 import type { AgentDeps } from './deps.ts';
 import { sharedPrefix, systemPrompt } from './prompts.ts';
@@ -79,7 +80,7 @@ function fallbackPlan(inventory: ScreeningInventory, errors: string[]): Screenin
  * 代码只做边界钳制与执行；失败时回退到配置默认值，保证流水线可用。
  */
 export async function planScreening(deps: AgentDeps, inventory: ScreeningInventory): Promise<ScreeningPlan> {
-  const skill = loadSkill('screening-plan', deps.paths);
+  const skill = new AgentStore(deps.ledger).manifest(deps.jobId)?.bindings.coordinator.definition.skills.find((s) => s.id === 'screening-plan')?.content ?? loadSkill('screening-plan', deps.paths);
   const user = [
     '【简历清单】',
     `usable=${inventory.usable}；duplicates=${inventory.duplicates}；failed=${inventory.failed}；resume_only=${inventory.resumeOnly}`,

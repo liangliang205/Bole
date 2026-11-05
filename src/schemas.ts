@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findingsSchema } from './agent-platform/catalog.ts';
 
 /** 模型只提供 field + quote；字符偏移由平台定位计算，杜绝模型编造 offset。 */
 export const rawSpanSchema = z.object({
@@ -151,6 +152,7 @@ export type ReviewEvalOutput = z.infer<typeof reviewEvalSchema>;
 export type JdAnalysisOutput = z.infer<typeof jdAnalysisSchema>;
 
 export const SCHEMAS = {
+  specialist_findings: findingsSchema,
   parse_resume: parseResumeSchema,
   evaluate_resume: evaluateResumeSchema,
   review_eval: reviewEvalSchema,

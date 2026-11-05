@@ -33,7 +33,6 @@
     </div>
     <div id="job-list" class="job-list"></div>
     <div class="side-footer">
-      <button class="btn ghost block" id="open-memory" type="button">▤ 岗位与评分标准</button>
       <button class="btn ghost block" id="open-knowledge">▤ 知识库</button>
       <button class="btn ghost block" id="open-settings">⚙ 设置</button>
     </div>
@@ -55,7 +54,6 @@
       <div class="hero">
         <h1>今天想寻找什么样的人才？</h1>
         <p class="hero-copy">添加简历，和伯乐聊聊岗位需求。</p>
-        <label class="policy-choice">评分标准 <select id="new-policy-version" class="input" aria-label="复用评分标准"><option value="">按本次需求生成</option></select></label>
         <div class="new-composer dsh-composer">
         <div class="composer dsh-composer-card">
           <textarea id="new-requirements" rows="3" aria-label="岗位需求" placeholder="描述岗位、技能与经验要求…"></textarea>
@@ -76,6 +74,16 @@
                   <button type="button" role="menuitemradio" aria-checked="false" data-mode="strict"><span>严格模式<small>计划、工具与发布需审批</small></span><span class="mode-check" aria-hidden="true">✓</span></button>
                 </div>
               </div>
+              <div class="composer-picker" data-picker-label="评分标准">
+                <select id="new-policy-version" class="hidden" tabindex="-1" aria-hidden="true"><option value="">按本次需求生成</option></select>
+                <button class="mode-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="policy-picker-menu"><span aria-hidden="true">▤</span><span class="picker-label">评分标准</span><span aria-hidden="true">⌃</span></button>
+                <div id="policy-picker-menu" class="mode-menu composer-picker-menu hidden" role="menu" aria-label="评分标准"></div>
+              </div>
+              <div class="composer-picker" data-picker-label="Agent 团队">
+                <select id="new-agent-team" class="hidden" tabindex="-1" aria-hidden="true"><option value="builtin@1.0.0">内置团队</option></select>
+                <button class="mode-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="team-picker-menu"><span aria-hidden="true">◇</span><span class="picker-label">内置团队</span><span aria-hidden="true">⌃</span></button>
+                <div id="team-picker-menu" class="mode-menu composer-picker-menu hidden" role="menu" aria-label="Agent 团队"></div>
+              </div>
             </div>
             <button class="dsh-composer-primary" id="new-start" title="开始筛选" aria-label="开始筛选"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13V3m-4 4 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
@@ -86,7 +94,6 @@
     </section>
 
     <section id="chat-view" class="chat-view hidden">
-      <button id="job-policy-view" class="link-btn policy-binding" type="button"></button>
       <div id="chat-scroll" class="chat-scroll"></div>
       <div id="stream-host" class="stream-host"></div>
       <div id="hitl-host" class="hitl-host"></div>
@@ -147,6 +154,9 @@
         <button class="tab active" data-drawer-tab="candidates">候选人</button>
         <button class="tab" data-drawer-tab="compliance">合规</button>
         <button class="tab" data-drawer-tab="cost">成本</button>
+        <button class="tab" data-drawer-tab="memory">任务记忆</button>
+        <button class="tab" data-drawer-tab="agents">Agent</button>
+        <button class="tab" data-drawer-tab="workflow">工作流</button>
       </div>
       <button class="btn ghost" id="drawer-close">✕</button>
     </div>
@@ -161,7 +171,8 @@
         <div class="settings-nav-title">设置</div>
         <button class="settings-nav-item active" data-settings-tab="models">模型</button>
         <button class="settings-nav-item" data-settings-tab="plugins">插件</button>
-        <button class="settings-nav-item" data-settings-tab="tools">工具与环境</button>
+        <button class="settings-nav-item" data-settings-tab="agents">Agent 团队</button>
+        <button class="settings-nav-item" data-settings-tab="memory">岗位与评分标准</button>
       </aside>
       <section class="settings-content" id="settings-models">
         <div class="modal-head"><h2>模型</h2><button class="btn ghost" id="settings-close">✕</button></div>
@@ -278,15 +289,69 @@
         </div>
       </section>
 
-      <section class="settings-content hidden" id="settings-tools">
-        <div class="modal-head"><h2>工具与环境</h2><button class="btn ghost" id="tools-close">✕</button></div>
-        <p class="muted settings-sub">运行时自检与 Agent 配置查看。清空台账等破坏性操作只保留在 CLI（<code>pnpm bole reset --yes</code>）。</p>
-        <div class="tools-grid">
-          <div class="tool-card"><h3>Agent 注册表</h3><p>查看 6 个 preset 的档位、可执行工具、能力标签与深度预算。</p><button class="btn ghost" data-tool="agents">查看</button></div>
-          <div class="tool-card"><h3>环境自检</h3><p>Node、配置、知识库、台账、Key 与 OCR。</p><button class="btn ghost" data-tool="doctor">运行自检</button></div>
+<section id="agent-dialog" class="settings-content settings-embedded hidden" aria-labelledby="agent-title">
+  <div class="modal-head"><h2 id="agent-title">Agent 团队</h2><button class="btn ghost" id="agent-close" type="button" aria-label="关闭 Agent 团队">✕</button></div>
+  <div class="agent-onboarding"><b>自定义 Agent：三步完成</b><p>① 创建角色，写清职责　② 发布并启用　③ 配置到团队，在新会话中使用</p><button id="agent-open-guide" class="btn ghost" type="button">查看操作指南</button></div>
+  <nav class="help-nav" aria-label="Agent 管理分类"><button class="active" data-agent-tab="roles" type="button">我的角色</button><button data-agent-tab="editor" type="button">创建与编辑</button><button data-agent-tab="teams" type="button">团队配置</button><button data-agent-tab="runs" type="button">任务绑定</button></nav>
+  <section data-agent-section="roles"><details><summary>按能力发现与配置导入（高级）</summary><div class="memory-family-row"><input id="agent-capability-filter" class="input" placeholder="能力，如 resume.assess@1" aria-label="按能力发现"><button id="agent-search" class="btn" type="button">发现</button><button id="agent-import-preview" class="btn ghost" type="button">配置导入预览</button></div><div id="agent-discovery"></div></details><div id="agent-version-list"></div><div id="agent-imports"></div></section>
+  <section data-agent-section="editor" class="hidden">
+    <h3>1. 选择职责</h3><div class="memory-family-row"><select id="agent-template" class="input" aria-label="角色职责"></select><button id="agent-new" class="btn" type="button">按此职责新建</button></div><p id="agent-template-description" class="muted"></p>
+    <h3>2. 告诉它要做什么</h3><div class="form-grid"><label class="span-2">角色名称<input id="agent-name" class="input" placeholder="例如：支付项目检查员"></label><label class="span-2">简短说明<input id="agent-description" class="input" placeholder="这个角色解决什么问题"></label><label class="span-2">工作指令<textarea id="agent-prompt" class="input" rows="5" placeholder="检查什么、依据是什么、遇到信息不足时如何处理…"></textarea></label><label>模型档位<select id="agent-tier" class="input"><option value="flash">快速 · 适合批量处理</option><option value="pro">深入 · 适合复杂判断</option></select></label></div>
+    <fieldset class="kb-agent-roles"><legend>参考哪些角色的知识库（可选）</legend><div id="agent-knowledge-roles"></div><p class="muted">不勾选则不检索。知识库还需在知识库页面启用，并分配给对应角色。</p></fieldset>
+    <fieldset id="agent-tool-options" class="kb-agent-roles hidden"><legend>允许使用的工具（可选）</legend><div id="agent-tool-checkboxes"></div><label><input id="agent-chat-memory" type="checkbox">允许读取本会话的历史对话</label><p class="muted">仅主 Agent 和工具助手支持工具。Python 可执行本地代码；工具操作仍受当前平台权限及审批模式约束。</p></fieldset>
+    <details><summary>标识、版本与高级设置（自动填写，通常无需修改）</summary><div class="form-grid"><label>Agent ID<input id="agent-id" class="input"></label><label>版本<input id="agent-version" class="input"></label></div>
+    <textarea id="agent-definition" class="input memory-json" rows="12" aria-label="完整 Agent 定义 JSON"></textarea><button id="agent-apply-json" class="btn ghost" type="button">将 JSON 应用到表单</button><p class="muted">基本信息、档位与知识库选择以表单为准。高级参数保留在 JSON 中，契约由职责模板确定。</p></details>
+    <h3>3. 保存或发布</h3><div class="knowledge-actions"><button id="agent-save-draft" class="btn" type="button">保存草稿</button><button id="agent-register" class="btn primary" type="button">发布并启用</button></div><p class="muted">草稿不会执行。新角色需配置到团队；已有角色的更新可由跟随启用版本的团队采用。旧会话保持原版本。保存和发布均不调用模型。</p>
+    <details><summary>继续编辑已保存的草稿</summary><div class="memory-family-row"><select id="agent-draft-list" class="input" aria-label="草稿"></select><button id="agent-load-draft" class="btn" type="button">载入草稿</button></div></details>
+  </section>
+  <section data-agent-section="teams" class="hidden">
+    <p class="muted">通常只需增加一位专职检查员，其他角色沿用默认分工。保存后用于下一次新建会话。</p>
+    <div class="agent-team-editor">
+      <div class="agent-team-form"><label>团队标识<span class="muted">自动生成，可修改</span><input id="agent-team-id" class="input" value=""></label><label>版本<span class="muted">修改后自动递增</span><input id="agent-team-version" class="input" value="1.0.0"></label></div>
+      <div id="agent-team-slots">
+        <div id="agent-team-specialist"></div>
+        <div class="agent-team-footer">
+          <div class="agent-team-disclosures">
+            <details id="agent-base-slots"><summary>调整基础分工</summary><p class="muted">通常无需修改；需要替换某个环节时再选择角色。</p><div id="agent-base-role-fields"></div></details>
+            <details><summary>完整团队定义</summary><textarea id="agent-team-json" class="input memory-json" rows="10" aria-label="团队定义 JSON"></textarea><button id="agent-team-use-json" class="btn ghost" type="button">按完整定义注册</button></details>
+          </div>
+          <button id="agent-team-save" class="btn primary" type="button">保存并用于新会话</button>
         </div>
-        <div id="tool-output" class="tool-output"></div>
-      </section>
+      </div>
+    </div>
+    <div class="agent-saved-teams"><h3>已保存的团队</h3><p class="muted">保存的组合可以在新建会话时重复使用。</p><div id="agent-team-list"></div></div>
+  </section>
+
+  <section data-agent-section="runs" class="hidden"><pre id="agent-manifest" class="approval-preview"></pre></section>
+  <section data-agent-section="environment" class="hidden">
+    <h3>运行检查</h3><p class="muted">检查模型配置、角色版本、OCR、知识库、台账和 MCP 的本地状态，不调用模型或插件工具。外部服务连通性请在模型与插件页面测试。</p>
+    <button id="agent-environment-check" class="btn" type="button">开始检查</button>
+    <div id="agent-environment-output" role="status" aria-live="polite"></div>
+  </section>
+  <p id="agent-status" class="settings-status" role="status"></p>
+</section>
+<section id="memory-dialog" class="settings-content settings-embedded hidden" aria-labelledby="memory-title">
+  <div class="modal-head"><h2 id="memory-title">岗位与评分标准</h2><button class="btn ghost" id="memory-close" type="button" aria-label="关闭岗位与评分标准">✕</button></div>
+  <p class="muted">跨任务复用经过人工批准的评价标准。新版本只供新任务选择，已有任务保持原快照。</p>
+  <div class="memory-family-row"><select id="memory-family" class="input" aria-label="岗位族"></select><input id="memory-family-name" class="input" placeholder="新岗位族名称" maxlength="100"><button class="btn" id="memory-family-create" type="button">创建岗位族</button></div>
+  <nav class="help-nav" aria-label="记忆管理分类"><button type="button" data-memory-tab="versions" class="active">版本历史</button><button type="button" data-memory-tab="proposals">提案与审批</button><button type="button" data-memory-tab="create">创建修订提案</button><button type="button" data-memory-tab="job">当前任务记忆</button></nav>
+  <section data-memory-section="versions"><div id="memory-versions"></div></section>
+  <section data-memory-section="proposals" class="hidden"><div id="memory-proposals"></div></section>
+  <section data-memory-section="create" class="hidden">
+    <p>从已完成画像的会话或已发布版本起草；提交前请去除个人信息并检查评分依据。修改已提交内容时，请撤回并新建提案。</p>
+    <div class="memory-family-row"><select id="memory-source" class="input" aria-label="提案来源"></select><button id="memory-load-source" type="button" class="btn">载入参考</button></div>
+    <p id="memory-baseline" class="muted"></p><div id="memory-dimensions"></div>
+    <details><summary>编辑完整岗位与评分卡</summary><textarea id="memory-profile" class="input memory-json" rows="8" aria-label="岗位和评分卡 JSON"></textarea><p class="muted">权重合计必须为 100；此处不会修改来源任务。</p></details>
+    <div class="form-grid">
+      <label class="span-2">规则<input id="memory-rule" class="input" placeholder="例如：支付后端更重视项目实践"></label>
+      <label class="span-2">为什么修改<textarea id="memory-why" class="input" rows="2" placeholder="业务理由，请勿填写候选人身份信息"></textarea></label>
+      <label class="span-2">如何应用<textarea id="memory-how" class="input" rows="2" placeholder="说明适用岗位与评分方法"></textarea></label>
+      <label>开始生效<input id="memory-valid-from" type="datetime-local" class="input"></label><label>结束生效（可选）<input id="memory-valid-to" type="datetime-local" class="input"></label>
+    </div><button id="memory-submit" type="button" class="btn primary">提交提案，等待审批</button>
+  </section>
+  <section data-memory-section="job" class="hidden"><p>当前任务已确认的条件、冻结的评分卡与摘要来源。</p><pre id="memory-job-view" class="approval-preview"></pre></section>
+  <p id="memory-status" class="settings-status" role="status"></p>
+</section>
     </div>
   </div>
 </div>
@@ -404,6 +469,7 @@
   <nav class="help-nav" aria-label="帮助分类">
     <button class="active" type="button" data-help="start" aria-pressed="true">快速入门</button>
     <button type="button" data-help="agents" aria-pressed="false">Agent 分工</button>
+    <button type="button" data-help="agent-guide" aria-pressed="false">配置 Agent</button>
     <button type="button" data-help="features" aria-pressed="false">功能介绍</button>
     <button type="button" data-help="control" aria-pressed="false">运行与审批</button>
   </nav>
@@ -412,6 +478,7 @@
     <ol><li>在「设置 → 模型」添加提供商、填写密钥，并选择模型。</li><li>新建会话，点击「＋」添加简历，输入岗位、技能与经验要求。</li><li>在附件按钮右侧选择默认或严格模式，点击发送箭头开始筛选。</li><li>遇到需要澄清的问题，在对话中选择选项或输入回答。</li><li>筛选完成后查看推荐与原文证据，继续追问或要求导出 Word / PDF。</li></ol>
     <p>支持 PDF、DOCX、图片、TXT、Markdown 和 HTML；单文件不超过 25MB。扫描 PDF 暂不支持，请转为图片上传。</p>
     <p class="muted">结果用于辅助判断，最终招聘决定由人作出。</p>
+    <p>在右上角「任务面板 → 工作流」查看执行阶段、并行分支、核查修正轮次和审批子流程。发送按钮支持暂停与续跑，已完成的节点会从检查点复用。</p>
   </section>
   <section data-help-section="agents" class="hidden">
     <h3>名字背后的分工</h3><p>多个角色分别处理需求、解析、评估与核查，便于追踪每一步的输入、结论和依据。</p>
@@ -424,13 +491,22 @@
       <dt>监军 · 证据核查</dt><dd>检查结论与引用是否得到原文支持，并审查不当评分依据；可打回重评或转人工。</dd>
     </dl><p class="muted">不同角色的核查可减少错误，但不能替代人工核实，也不意味着简历中的陈述已得到外部事实认证。</p>
   </section>
+  <section data-help-section="agent-guide" class="hidden">
+    <h3>第一次配置：增加一位专职检查员</h3>
+    <p>直接使用内置团队时，无需逐个配置角色。新增专项角色、替换某个环节或为不同项目保留组合时，才需要团队配置。“配置到团队”只是预选角色，保存团队后才会用于新会话。</p>
+    <ol><li>打开「设置 → Agent 团队 → 创建与编辑」，选择「专职检查」职责。它会在解析后、评估前增加专项检查，不替换现有流程。</li><li>填写角色名称和工作指令。例如：<blockquote>检查候选人是否参与过支付或清结算项目。只列出有原文依据的经历；没有依据时不编造、不作淘汰决定。</blockquote>标识、版本、能力与输出契约会自动填写，通常不需要编辑 JSON。</li><li>选择快速或深入模型档位。需要业务资料时，勾选可参考的知识库角色；对应知识库也必须已启用并分配给该角色。</li><li>点击「发布并启用」。系统会保存、校验、注册版本并启用默认选择。若暂未完成，可先保存草稿。</li><li>在角色卡片点击「配置到团队」。保留基础分工，确认“增加专职检查”选择了新角色，再点「保存团队并用于新会话」。</li><li>关闭设置，新建会话。输入框底部会显示刚保存的团队，上传材料并开始筛选。</li></ol>
+    <h3>修改已有角色</h3><p>在角色卡片点击「复制为新版本」，修改名称或工作指令后发布。使用“内置角色当前启用版本”的团队会在下一次新建会话时采用新版本；固定选择确切版本的团队，需要重新保存团队。已有会话继续使用原版本。</p>
+    <h3>几个按钮有什么区别？</h3><dl class="help-roles"><dt>保存草稿</dt><dd>暂存编辑，不参与执行。</dd><dt>发布并启用</dt><dd>创建不可变版本，允许发现和默认选择；不会自动加入所有团队。</dd><dt>配置到团队</dt><dd>明确安排角色参与哪个环节；保存团队后才会用于新会话。</dd><dt>退役</dt><dd>停止新任务发现和选择该版本，已绑定的任务仍可继续执行。</dd></dl>
+    <p class="muted">实际执行中的工具操作按所选模式审批。知识库权限只决定可检索哪些参考资料，不授予工具或长期规则批准权。</p>
+  </section>
   <section data-help-section="features" class="hidden">
     <h3>功能在哪里</h3><dl class="help-roles">
       <dt>会话管理</dt><dd>左侧查看和搜索会话；会话菜单支持重命名、置顶、归档与删除。</dd>
       <dt>任务面板</dt><dd>查看候选人、证据、合规与成本，了解推荐依据和失败明细。</dd>
       <dt>知识库</dt><dd>从左下角进入，创建知识库并添加资料。在库内启停、选择适用 Agent，保存后仅这些角色自动检索；默认供相马官使用。</dd>
-      <dt>岗位与评分标准 · 记忆管理</dt><dd>从左下角进入，创建岗位族，从已有会话或版本提出修订。审阅差异并批准后形成不可变新版本；新建会话可显式选择复用，旧任务仍按原快照执行。长对话采用带消息来源的提取式摘要，已确认条件直接读取台账。</dd>
+      <dt>岗位与评分标准 · 记忆管理</dt><dd>从设置中的“岗位与评分标准”进入，创建岗位族，从已有会话或版本提出修订。审阅差异并批准后形成不可变新版本；新建会话可显式选择复用，旧任务仍按原快照执行。长对话采用带消息来源的提取式摘要，已确认条件直接读取台账。</dd>
       <dt>模型与插件</dt><dd>在设置中管理模型提供商、档位与 MCP 插件。插件为完成后对话扩展工具能力。</dd>
+      <dt>Agent 团队</dt><dd>在“设置 → Agent 团队”管理角色定义、版本和团队。注册并激活后可按能力发现；团队可以替换已有角色或增加专职检查。任务创建后版本固定，退役不影响旧任务继续执行。实际运行调用模型并计费，工具操作受权限和审批模式约束。</dd>
       <dt>文件与导出</dt><dd>完成后可以添加附件继续提问，明确要求时生成 Word / PDF；生成的文件可预览和下载。</dd>
       <dt>主题</dt><dd>右上角切换日间与暗夜主题。</dd>
     </dl>
@@ -442,30 +518,11 @@
     <p>审批绑定具体内容并持久化，重启后仍可处理。拒绝即停止该操作。严格模式是授权控制，不是代码沙箱；执行中断的外部工具需要人工核对，系统不会自动重放。</p>
   </section>
 </dialog>
-<dialog id="memory-dialog" class="help-dialog memory-dialog" aria-labelledby="memory-title">
-  <div class="modal-head"><h2 id="memory-title">岗位与评分标准</h2><button class="btn ghost" id="memory-close" type="button" aria-label="关闭岗位与评分标准">✕</button></div>
-  <p class="muted">跨任务复用经过人工批准的评价标准。新版本只供新任务选择，已有任务保持原快照。</p>
-  <div class="memory-family-row"><select id="memory-family" class="input" aria-label="岗位族"></select><input id="memory-family-name" class="input" placeholder="新岗位族名称" maxlength="100"><button class="btn" id="memory-family-create" type="button">创建岗位族</button></div>
-  <nav class="help-nav" aria-label="记忆管理分类"><button type="button" data-memory-tab="versions" class="active">版本历史</button><button type="button" data-memory-tab="proposals">提案与审批</button><button type="button" data-memory-tab="create">创建修订提案</button><button type="button" data-memory-tab="job">当前任务记忆</button></nav>
-  <section data-memory-section="versions"><div id="memory-versions"></div></section>
-  <section data-memory-section="proposals" class="hidden"><div id="memory-proposals"></div></section>
-  <section data-memory-section="create" class="hidden">
-    <p>从已完成画像的会话或已发布版本起草；提交前请去除个人信息并检查评分依据。修改已提交内容时，请撤回并新建提案。</p>
-    <div class="memory-family-row"><select id="memory-source" class="input" aria-label="提案来源"></select><button id="memory-load-source" type="button" class="btn">载入参考</button></div>
-    <p id="memory-baseline" class="muted"></p><div id="memory-dimensions"></div>
-    <details><summary>编辑完整岗位与评分卡</summary><textarea id="memory-profile" class="input memory-json" rows="8" aria-label="岗位和评分卡 JSON"></textarea><p class="muted">权重合计必须为 100；此处不会修改来源任务。</p></details>
-    <div class="form-grid">
-      <label class="span-2">规则<input id="memory-rule" class="input" placeholder="例如：支付后端更重视项目实践"></label>
-      <label class="span-2">为什么修改<textarea id="memory-why" class="input" rows="2" placeholder="业务理由，请勿填写候选人身份信息"></textarea></label>
-      <label class="span-2">如何应用<textarea id="memory-how" class="input" rows="2" placeholder="说明适用岗位与评分方法"></textarea></label>
-      <label>开始生效<input id="memory-valid-from" type="datetime-local" class="input"></label><label>结束生效（可选）<input id="memory-valid-to" type="datetime-local" class="input"></label>
-    </div><button id="memory-submit" type="button" class="btn primary">提交提案，等待审批</button>
-  </section>
-  <section data-memory-section="job" class="hidden"><p>当前任务已确认的条件、冻结的评分卡与摘要来源。</p><pre id="memory-job-view" class="approval-preview"></pre></section>
-  <p id="memory-status" class="settings-status" role="status"></p>
-</dialog>
+
+
 <div id="toast" class="toast hidden"></div>
 <script src="/app.js"></script>
 <script src="/memory-ui.js"></script>
+<script src="/agent-ui.js"></script>
 </body>
 </html>

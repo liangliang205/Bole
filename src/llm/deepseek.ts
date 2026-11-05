@@ -392,7 +392,7 @@ export class DeepSeekProvider implements LlmProvider {
           method: 'POST',
           headers: spec.headers,
           body: JSON.stringify(spec.body),
-          signal: AbortSignal.timeout(this.timeoutMs),
+          signal: req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs),
         });
         if (!response.ok) {
           const body = await response.text();

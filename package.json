@@ -21,6 +21,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "check": "pnpm typecheck && pnpm lint && pnpm test:all",
+    "workflow:example": "node scripts/workflow-example.ts",
     "ocr:download": "node scripts/download-ocr.ts",
     "report:cost": "node src/cli/index.ts cost",
     "setup": "pnpm install && pnpm ocr:download",

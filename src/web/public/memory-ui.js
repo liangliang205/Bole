@@ -65,13 +65,11 @@
     $('#memory-dimensions').innerHTML = profile.scorecard.dimensions.map((d, i) => `<label class="memory-weight">${esc(d.name)}<input type="number" class="input" min="1" max="100" value="${d.weight}" data-weight="${i}">%</label>`).join('');
   }
   async function showJob() {
-    const id = $('#job-policy-view').dataset.jobId;
+    const id = $('#chat-view').dataset.jobId;
     $('#memory-job-view').textContent = id ? JSON.stringify(await api(`/api/memory/jobs/${encodeURIComponent(id)}`), null, 2) : '先打开一个会话。';
     tab('job');
   }
-  $('#open-memory').addEventListener('click', () => { dialog.showModal(); action(async () => { await load(); status(''); }); });
-  $('#job-policy-view').addEventListener('click', () => { dialog.showModal(); action(showJob); });
-  $('#memory-close').addEventListener('click', () => dialog.close());
+  window.addEventListener('bole-settings-tab', (event) => { if (event.detail === 'memory') action(async () => { await load(); status(''); }); });
   dialog.querySelectorAll('[data-memory-tab]').forEach((button) => button.addEventListener('click', () => {
     if (button.dataset.memoryTab === 'job') action(showJob); else tab(button.dataset.memoryTab);
   }));

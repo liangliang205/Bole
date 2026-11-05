@@ -13,6 +13,7 @@
     coordinator: '伯乐', profiler: '画像师', fetcher: '探马', parser: '录事',
     assessor: '相马官', auditor: '监军', advisor: '谋士',
   };
+  window.addEventListener('bole-agent-names', (event) => { Object.assign(AGENT_NAMES, event.detail); });
   const CONCLUSION_LABELS = {
     strong_yes: '强烈推荐', yes: '推荐', maybe: '待定',
     no: '不推荐', strong_no: '强烈不推荐', pending: '待评估',
@@ -473,6 +474,7 @@
   }
 
   function showNewView() {
+    $('#chat-view').dataset.jobId = '';
     disconnectStream();
     Object.assign(state, { jobId: '', run: null, snapshot: null, report: null, events: [], lastSeq: 0, hitlId: '', attachments: [], chat: [], chatPending: false, chatAttachments: [] });
     state.seen.clear();
@@ -496,6 +498,7 @@
 
 
   async function selectJob(jobId) {
+    $('#chat-view').dataset.jobId = jobId || '';
     if (!jobId) { showNewView(); return; }
     disconnectStream();
     Object.assign(state, {
@@ -555,9 +558,6 @@
     if (!state.run || !state.snapshot) return;
     const job = state.snapshot.job || {};
     const run = state.run;
-    const binding = $('#job-policy-view');
-    binding.textContent = run.policyBinding ? `评分标准已冻结 · ${run.policyBinding.version_id ? '复用版本' : '本次岗位'} · 查看来源` : '查看当前任务记忆';
-    binding.dataset.jobId = state.jobId;
     document.title = `${jobTitle(job)} · 伯乐 BoLe`;
     const canChat = run.status === 'completed';
     const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
@@ -590,6 +590,7 @@
       if (state.drawerTab === 'candidates') renderCandidates();
       if (state.drawerTab === 'compliance') renderCompliance();
       if (state.drawerTab === 'cost') renderCost();
+      if (['memory', 'agents', 'workflow'].includes(state.drawerTab)) loadDrawerInspector();
     }
   }
 
@@ -964,6 +965,8 @@
     };
 
     for (const event of events) {
+      // Detailed workflow paths and node checkpoints live in the task panel.
+      if (event.type.startsWith('workflow.')) continue;
       if (MILESTONES.has(event.type)) {
         flushTools();
         if (event.type === 'jd.analyzed') {
@@ -1106,7 +1109,7 @@
     const signature = JSON.stringify([run.jobId, approvals]);
     if (host.dataset.signature === signature) return;
     host.dataset.signature = signature;
-    const titles = { 'screening-plan': '批准筛选计划', 'publish-report': '审阅并发布报告', tool: '批准工具操作', 'memory-policy-change': '长期规则修订' };
+    const titles = { 'screening-plan': '批准筛选计划', 'publish-report': '审阅并发布报告', tool: '批准工具操作', workflow: '工作流人工审批', 'memory-policy-change': '长期规则修订' };
     host.innerHTML = (run.executionMode === 'strict' ? '<div class="muted">严格模式 · 计划、工具与发布需审批</div>' : '') +
       approvals.filter((item) => item.status === 'pending' && item.kind !== 'memory-policy-change').map((item) => {
         const payload = JSON.parse(item.payload_json);
@@ -1195,7 +1198,7 @@
     const pending = state.chatAttachments.some((item) => item.status === 'uploading');
     const empty = replyValue() === '' && state.chatAttachments.filter((item) => item.status !== 'error').length === 0;
     const button = $('#reply-send');
-    const approvalBlocked = (run.approvals || []).some((item) => ['screening-plan', 'publish-report'].includes(item.kind) && ['pending', 'rejected'].includes(item.status));
+    const approvalBlocked = (run.approvals || []).some((item) => ['screening-plan', 'publish-report', 'workflow'].includes(item.kind) && ['pending', 'rejected'].includes(item.status));
     const action = run.pendingHitl ? 'send' : run.status === 'pausing' ? 'waiting' : run.status === 'running' ? 'pause'
       : ['paused', 'failed', 'idle'].includes(run.status) ? 'resume' : 'send';
     const label = { send: '发送', pause: '暂停筛选', resume: approvalBlocked ? '请先处理审批；拒绝后需新建会话' : '从检查点续跑', waiting: '正在安全暂停…' }[action];
@@ -1381,7 +1384,7 @@
     try {
       const data = await api('/api/run', {
         method: 'POST',
-        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined }),
+        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined, agentTeamKey: $('#new-agent-team').value }),
       });
       state.attachments = [];
       renderAttachments();
@@ -1449,6 +1452,60 @@
     if (tab === 'candidates') { if (load) loadCandidates(); else renderCandidates(); }
     if (tab === 'compliance') { loadCandidates().then(renderCompliance); }
     if (tab === 'cost') loadCost();
+    if (['memory', 'agents', 'workflow'].includes(tab)) loadDrawerInspector(true);
+  }
+
+  let inspectorKey = '';
+  let inspectorRequest = 0;
+  async function loadDrawerInspector(force = false) {
+    const jobId = state.jobId;
+    const tab = state.drawerTab;
+    if (!['memory', 'agents', 'workflow'].includes(tab)) return;
+    const key = JSON.stringify([jobId, tab, state.run?.status, state.snapshot?.eventsCount]);
+    if (!force && inspectorKey === key) return;
+    inspectorKey = key;
+    const request = ++inspectorRequest;
+    const current = () => request === inspectorRequest && state.jobId === jobId && state.drawerTab === tab;
+    const body = $('#drawer-body');
+    if (!jobId) { body.innerHTML = '<div class="empty-note">选择会话后查看任务详情</div>'; return; }
+    body.innerHTML = '<div class="empty-note">读取中…</div>';
+    try {
+      const data = await api(tab === 'memory' ? `/api/memory/jobs/${encodeURIComponent(jobId)}` : `/api/run/${encodeURIComponent(jobId)}/${tab === 'workflow' ? 'workflow' : 'agent-manifest'}`);
+      if (!current()) return;
+      if (tab === 'workflow') {
+        const statuses = { pending: '待执行', running: '执行中', waiting_approval: '等待审批', waiting_confirmation: '结果待确认', paused: '已暂停', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
+        const kinds = { task: '任务', sequence: '顺序', parallel: '并行', condition: '条件', loop: '循环', subworkflow: '子流程', approval: '人工审批' };
+        body.innerHTML = '<h3>工作流执行</h3><p class="muted">查看流程版本、父子运行、分支及每轮核查修正。</p>' + ((data.runs || []).map((run) => `<section class="eval-card"><div class="eval-head"><b>${esc(run.workflow_key)}</b><span class="tag ${run.status === 'succeeded' ? 'ok' : run.status === 'failed' ? 'danger' : ''}">${esc(statuses[run.status] || run.status)}</span></div><small class="muted">运行 ${esc(run.id)}${run.parent_run_id ? `<br>父运行 ${esc(run.parent_run_id)} · ${esc(run.parent_node_path)}` : ' · 根流程'}</small>${run.error ? `<p class="muted">${esc(run.error)}</p>` : ''}
+          ${(data.nodes || []).filter((n) => n.run_id === run.id).map((n) => `<details class="workflow-node"><summary><span class="tag">${esc(statuses[n.status] || n.status)}</span> ${esc(n.node_id)} <small class="muted">${esc(kinds[n.kind] || n.kind)}</small></summary><p class="muted">${esc(n.path)} · 执行 ${esc(n.attempt)} 次</p>${n.error ? `<p>${esc(n.error)}</p>` : ''}<pre class="approval-preview">${esc(JSON.stringify({ input: JSON.parse(n.input_json), output: n.output_json ? JSON.parse(n.output_json) : null, control: n.control_json ? JSON.parse(n.control_json) : null }, null, 2))}</pre>${n.status === 'waiting_confirmation' && n.kind === 'task' ? `<p class="muted">先核对外部操作结果，再选择重试或录入符合该节点契约的结果。</p><div class="row"><button class="btn ghost" data-workflow-confirm="retry" data-run="${esc(run.id)}" data-path="${esc(n.path)}">确认可以重试</button><button class="btn ghost" data-workflow-confirm="complete" data-run="${esc(run.id)}" data-path="${esc(n.path)}">录入已完成结果</button></div>` : ''}</details>`).join('')}</section>`).join('') || '<div class="empty-note">暂无工作流记录；历史任务首次续跑时会建立兼容运行。</div>');
+        body.querySelectorAll('[data-workflow-confirm]').forEach((button) => button.addEventListener('click', async () => {
+          try {
+            const action = button.dataset.workflowConfirm;
+            let output;
+            if (action === 'complete') { const value = window.prompt('请输入该节点已完成的输出（JSON）'); if (value === null) return; output = JSON.parse(value); }
+            else if (!window.confirm('已核对外部系统，确认重复执行不会造成重复操作？')) return;
+            await api(`/api/run/${encodeURIComponent(jobId)}/workflow/confirm`, { method: 'POST', body: JSON.stringify({ runId: button.dataset.run, path: button.dataset.path, action, ...(action === 'complete' ? { output } : {}) }) });
+            toast('已记录确认，可使用发送按钮续跑', 'ok'); await loadDrawerInspector(true);
+          } catch (error) { toast(`确认失败：${error.message}`, 'error'); }
+        }));
+      } else if (tab === 'memory') {
+        const view = data.view || {};
+        const binding = view.binding;
+        const profile = data.profile;
+        body.innerHTML = `<h3>当前任务记忆</h3><p class="muted">当前会话的确认条件、评分标准与历史摘要。</p>
+          <div class="eval-card"><b>${esc(profile?.jd?.title || '岗位尚未完成画像')}</b><p class="muted">${binding ? `评分标准已冻结 · ${binding.version_id ? '复用已批准版本' : '按本次需求生成'}` : '尚未绑定评分标准'}</p>
+          ${(profile?.scorecard?.dimensions || []).map((d) => `<div class="muted">${esc(d.name)} · ${esc(d.weight)}%</div>`).join('')}</div>
+          <h3>人工确认记录</h3>${(view.decisions || []).map((d) => `<div class="eval-card"><div>${esc(d.question)}</div><p>${esc(d.answer)}</p><small class="muted">${esc(d.actor)}</small></div>`).join('') || '<div class="empty-note">暂无确认记录</div>'}
+          <h3>对话摘要</h3>${(view.summaries || []).map((s) => `<div class="eval-card">覆盖消息 ${esc(s.from_seq)}–${esc(s.through_seq)}<p class="muted">生成于 ${esc(fmtDateTime(s.created_at))}</p></div>`).join('') || '<p class="muted">尚无历史摘要；上下文超过预算时按需生成。</p>'}
+          <details><summary>查看版本与来源详情</summary><pre class="approval-preview">${esc(JSON.stringify(data, null, 2))}</pre></details>`;
+      } else {
+        const manifest = data.manifest;
+        if (!manifest) { body.innerHTML = '<div class="empty-note">该历史会话暂无 Agent 版本绑定。首次续跑时会建立迁移清单。</div>'; return; }
+        body.innerHTML = `<h3>Agent 版本与执行记录</h3><p class="muted">团队 ${esc(manifest.teamKey)}${manifest.migration ? ' · 迁移时绑定' : ''}</p>
+          ${Object.entries(manifest.bindings || {}).map(([slot, b]) => `<div class="eval-card"><b>${esc(b.definition.name)}</b><p>${esc(b.key)}</p><small class="muted">${esc(slot)} · ${esc(b.reason)}</small></div>`).join('')}
+          <h3>调用记录</h3>${(data.invocations || []).map((i) => `<div class="eval-card"><b>${esc(i.version_key)}</b><p>${esc({ running: '执行中', completed: '调用完成', failed: '调用失败' }[i.state] || i.state)} · ${esc(fmtDateTime(i.started_at))}</p>${i.error ? `<p class="muted">${esc(i.error)}</p>` : ''}</div>`).join('') || '<div class="empty-note">暂无调用记录</div>'}
+          <details><summary>查看完整绑定与调用详情</summary><pre class="approval-preview">${esc(JSON.stringify(data, null, 2))}</pre></details>`;
+      }
+    } catch (error) { if (current()) { inspectorKey = ''; body.innerHTML = `<div class="empty-note">读取失败：${esc(error.message)}</div>`; } }
   }
 
   function closeDrawer() {
@@ -1723,7 +1780,7 @@
     disabled: { label: '已停用', dot: 'idle' },
   };
 
-  const SETTINGS_TABS = ['models', 'plugins', 'tools'];
+  const SETTINGS_TABS = ['models', 'plugins', 'agents', 'memory'];
 
   function switchSettingsTab(tab) {
     state.settingsTab = SETTINGS_TABS.includes(tab) ? tab : 'models';
@@ -1732,7 +1789,9 @@
     });
     $('#settings-models').classList.toggle('hidden', state.settingsTab !== 'models');
     $('#settings-plugins').classList.toggle('hidden', state.settingsTab !== 'plugins');
-    $('#settings-tools').classList.toggle('hidden', state.settingsTab !== 'tools');
+    $('#agent-dialog').classList.toggle('hidden', state.settingsTab !== 'agents');
+    $('#memory-dialog').classList.toggle('hidden', state.settingsTab !== 'memory');
+    window.dispatchEvent(new CustomEvent('bole-settings-tab', { detail: state.settingsTab }));
     if (state.settingsTab === 'models') {
       renderProviders();
       loadProviders();
@@ -2536,23 +2595,6 @@
     }
   }
 
-  async function runTool(tool) {
-    const output = $('#tool-output');
-    output.innerHTML = '<div class="empty-note">执行中…</div>';
-    try {
-      if (tool === 'agents') {
-        const data = await api('/api/agents');
-        output.innerHTML = `<div class="info-card"><h3>Agent preset 注册表</h3><p class="muted">${esc(data.version)} · ${esc(data.fingerprint)}</p><div class="table-wrap"><table><thead><tr><th>id</th><th>名称</th><th>档位</th><th>深度</th><th>schema</th><th>工具</th><th>能力</th></tr></thead><tbody>${data.agents.map((agent) => `<tr><td>${esc(agent.id)}</td><td>${esc(agent.nameZh)}</td><td>${esc(agent.tier)}</td><td>${esc(agent.maxDepth)}</td><td>${esc(agent.outputSchema)}</td><td>${esc((agent.tools || []).join(', '))}</td><td>${esc((agent.capabilities || []).join(', '))}</td></tr>`).join('')}</tbody></table></div></div>`;
-      } else if (tool === 'doctor') {
-        const data = await api('/api/doctor');
-        output.innerHTML = `<div class="info-card"><h3>环境自检</h3><ul>${data.checks.map((check) => `<li><span class="tag ${check.status === 'ok' ? 'ok' : check.status === 'warn' ? 'warn' : 'danger'}">${esc(check.status)}</span> ${esc(check.name)} — ${esc(check.detail)}</li>`).join('')}</ul></div>`;
-      }
-    } catch (error) {
-      output.innerHTML = `<div class="info-card"><p class="muted">${esc(error.message)}</p></div>`;
-      toast(error.message, 'error');
-    }
-  }
-
   // ---------------------------------------------------------------- init
 
   function bind() {
@@ -2632,6 +2674,55 @@
       }
     });
     const modeTrigger = $('#mode-trigger');
+    $$('.composer-picker').forEach((picker) => {
+      const select = picker.querySelector('select');
+      const trigger = picker.querySelector('button');
+      const menu = picker.querySelector('[role="menu"]');
+      const close = () => { menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false'); };
+      const refresh = () => {
+        const selected = select.selectedOptions[0];
+        const text = selected?.textContent || picker.dataset.pickerLabel;
+        trigger.querySelector('.picker-label').textContent = select.id === 'new-policy-version' && !select.value ? '评分标准' : text;
+        trigger.title = `${picker.dataset.pickerLabel}：${text}`;
+        trigger.setAttribute('aria-label', trigger.title);
+        menu.replaceChildren();
+        for (const option of select.options) {
+          const group = option.parentElement;
+          if (group.tagName === 'OPTGROUP' && group.firstElementChild === option) {
+            const heading = document.createElement('div'); heading.className = 'picker-group'; heading.textContent = group.label; menu.append(heading);
+          }
+          const button = document.createElement('button'); button.type = 'button';
+          button.setAttribute('role', 'menuitemradio'); button.setAttribute('aria-checked', String(option.selected)); button.disabled = option.disabled;
+          const label = document.createElement('span'); label.textContent = option.textContent;
+          const check = document.createElement('span'); check.className = 'mode-check'; check.textContent = '✓'; check.setAttribute('aria-hidden', 'true');
+          button.append(label, check); menu.append(button);
+          button.addEventListener('click', () => { select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true })); close(); trigger.focus(); });
+        }
+      };
+      const open = () => {
+        refresh(); menu.classList.remove('hidden'); trigger.setAttribute('aria-expanded', 'true');
+        menu.style.left = '0'; menu.style.right = 'auto';
+        if (menu.getBoundingClientRect().right > window.innerWidth - 12) { menu.style.left = 'auto'; menu.style.right = '0'; }
+        menu.querySelector('[aria-checked="true"]')?.focus();
+      };
+      trigger.addEventListener('click', () => { if (menu.classList.contains('hidden')) open(); else close(); });
+      select.addEventListener('change', refresh);
+      new MutationObserver(refresh).observe(select, { childList: true, subtree: true });
+      document.addEventListener('click', (event) => { if (!picker.contains(event.target)) close(); });
+      document.addEventListener('focusin', (event) => { if (!picker.contains(event.target)) close(); });
+      picker.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { event.preventDefault(); close(); trigger.focus(); }
+        if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        if (menu.classList.contains('hidden')) { open(); return; }
+        const options = [...menu.querySelectorAll('button:not(:disabled)')];
+        if (!options.length) return;
+        const index = options.indexOf(document.activeElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+        options[next].focus();
+      });
+      refresh();
+    });
     const modeMenu = $('#mode-menu');
     const modeItems = [...modeMenu.querySelectorAll('[data-mode]')];
     const setModeMenu = (open, focus = false) => {
@@ -2659,6 +2750,11 @@
       }
     });
     const help = $('#help-dialog');
+    window.addEventListener('bole-help-open', (event) => {
+      if (!help.open) help.showModal();
+      const button = [...help.querySelectorAll('[data-help]')].find((item) => item.dataset.help === event.detail);
+      button?.click();
+    });
     $('#help-open').addEventListener('click', () => help.showModal());
     $('#help-close').addEventListener('click', () => help.close());
     help.addEventListener('click', (event) => {
@@ -2710,6 +2806,8 @@
     $('#open-settings').addEventListener('click', openSettings);
     $('#theme-toggle').addEventListener('click', toggleTheme);
     $('#settings-close').addEventListener('click', closeSettings);
+    $('#agent-close').addEventListener('click', closeSettings);
+    $('#memory-close').addEventListener('click', closeSettings);
     $('#provider-add').addEventListener('click', () => openProviderEditor(null));
     $$('.settings-nav-item').forEach((button) => {
       button.addEventListener('click', () => switchSettingsTab(button.dataset.settingsTab));
@@ -2758,7 +2856,6 @@
         $('#provider-base').value = defaults[api] ?? '';
       }
     });
-    $('#tools-close').addEventListener('click', closeSettings);
     $('#open-knowledge').addEventListener('click', openKnowledge);
     $('#knowledge-close').addEventListener('click', closeKnowledge);
     $('#knowledge-new').addEventListener('click', () => {
@@ -2812,10 +2909,6 @@
         url.value = event.target.value === 'openai' ? 'https://api.openai.com/v1' : 'http://127.0.0.1:11434';
       }
     });
-    $('#tool-output').parentElement.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-tool]');
-      if (button) runTool(button.getAttribute('data-tool'));
-    });
     $('#chat-scroll').addEventListener('click', (event) => {
       if (event.target.closest('#open-evidence')) openDrawer('candidates');
       if (event.target.closest('#open-cost')) openDrawer('cost');
@@ -2823,7 +2916,7 @@
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') { closeSettings(); closeKnowledge(); closeDrawer(); }
+      if (event.key === 'Escape' && !$('#help-dialog').open) { closeSettings(); closeKnowledge(); closeDrawer(); }
       if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
         event.preventDefault();
         $('#job-search').focus();

@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises';
+import { specialistReference } from '../agent-platform/specialist.ts';
+import { AgentStore } from '../agent-platform/store.ts';
 import { evaluateResumeSchema } from '../schemas.ts';
 import { runStructuredTask } from '../core/structured.ts';
 import { resolveRawSpans } from '../util/text.ts';
@@ -54,7 +56,7 @@ export class AssessorWorker {
   constructor(deps: AgentDeps, index: number, ctx: AssessorContext, role = 'assessor') {
     this.deps = deps;
     this.ctx = ctx;
-    this.workerId = `${role}#${index}`;
+    this.workerId = `${deps.registry.get('assessor').id}@${deps.registry.get('assessor').version}:${role}#${index}`;
   }
 
   async evaluate(input: AssessInput): Promise<AssessResult> {
@@ -83,8 +85,10 @@ export class AssessorWorker {
       ...this.ctx.jd.hardRequirements,
       ...this.ctx.jd.niceToHave,
     ].join(' ');
-    const hits = await deps.knowledge.recall(ragQuery, 4, 'assessor');
-    const references = formatKnowledgeReferences(hits, deps.knowledge.publicSettings().maxContextChars).split('\n\n').filter(Boolean);
+    const definition = new AgentStore(deps.ledger).manifest(deps.jobId)?.bindings.assessor.definition;
+    const accessRoles = definition?.knowledge.accessRoles ?? ['assessor'];
+    const hits = (await Promise.all(accessRoles.map((role) => deps.knowledge.recall(ragQuery, 4, role)))).flat();
+    const references = formatKnowledgeReferences(hits, Math.min(deps.knowledge.publicSettings().maxContextChars, definition?.knowledge.maxContextChars ?? 4000)).split('\n\n').filter(Boolean);
     if (hits.length > 0) {
       deps.events.emit(deps.jobId, 'assessor', 'knowledge.recalled', {
         agent: 'assessor',
@@ -158,7 +162,7 @@ export class AssessorWorker {
       schemaName: 'evaluate_resume',
       schema: evaluateResumeSchema,
       system: systemPrompt(deps, 'assessor'),
-      user,
+      user: user + specialistReference(deps, resume.id),
       sharedPrefix: sharedPrefix(deps, 'assessor', [
         `【评分卡】${JSON.stringify(this.ctx.scorecard)}`,
         `【岗位 JD】${JSON.stringify(this.ctx.jd)}`,

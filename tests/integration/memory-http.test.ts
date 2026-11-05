@@ -38,7 +38,7 @@ test('隔离 HTTP 服务：提案先隔离、人工发布、重复批准幂等�
     await api(`/api/memory/versions/${published.version.id}/retire`, {});
     assert.equal((await api('/api/memory')).versions[0].status, 'retired');
     const page = await fetch(base + '/');
-    assert.match(await page.text(), /id="open-memory"/);
+    assert.match(await page.text(), /data-settings-tab="memory"/);
     const script = await fetch(base + '/memory-ui.js');
     assert.equal(script.status, 200);
     assert.match(await script.text(), /memory-proposals/);

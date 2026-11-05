@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+import { AgentBlockedError, AgentStore } from '../agent-platform/store.ts';
 import type { ChatResult, StreamSink } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
 
@@ -27,6 +28,8 @@ export async function callAgentJson<T>(
   deps: AgentDeps,
   opts: JsonCallOptions<T>,
 ): Promise<{ ok: true; value: T; attempts: number; chat: ChatResult } | { ok: false; errors: string[] }> {
+  const binding = new AgentStore(deps.ledger).manifest(deps.jobId)?.bindings[opts.agent];
+  if (binding) opts = { ...opts, meta: { ...opts.meta, agentSlot: opts.agent }, agent: binding.definition.id };
   const maxAttempts = opts.maxAttempts ?? deps.config.structuredOutput.maxAttempts;
   const stream = opts.stream ?? deps.stream;
   let errors: string[] = [];
@@ -62,6 +65,7 @@ export async function callAgentJson<T>(
         meta: opts.meta,
       });
     } catch (error) {
+      if (error instanceof AgentBlockedError) throw error;
       errors = [error instanceof Error ? error.message : String(error)];
       continue;
     }

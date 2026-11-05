@@ -9,6 +9,7 @@ import { AutoHitlResponder } from '../../src/agents/hitl.ts';
 import type { UploadedFile } from '../../src/types.ts';
 import { FakeProvider } from '../fixtures/fake-provider.ts';
 import { setupTempEnv } from '../helpers/env.ts';
+import { WorkflowStore } from '../../src/workflow/store.ts';
 
 const RESUME_A = `姓名：张伟
 手机：13800000001
@@ -126,6 +127,12 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     assert.equal(JSON.parse(planEvent.payload_json).maxActiveAgents, 8);
     assert.ok(events.some((event) => event.type === 'deep_eval.shortlist'));
     assert.ok(events.some((event) => event.type === 'selfloop.revise'), '伪造结论应被验真环打回');
+    const workflow = new WorkflowStore(boot.deps.ledger).inspect(boot.job.id);
+    assert.equal(workflow.runs.find((r) => !r.parent_run_id)?.workflow_key, 'recruitment@1.0.0');
+    assert.ok(workflow.runs.some((r) => r.workflow_key === 'candidate-verification@1.0.0' && r.parent_run_id));
+    assert.ok(workflow.runs.every((r) => r.status === 'succeeded'));
+    assert.ok(workflow.nodes.some((n) => n.kind === 'loop' && n.output_json?.includes('"iterations":2')));
+    assert.ok(workflow.nodes.some((n) => n.kind === 'condition' && n.control_json === '"then"'));
     assert.ok(events.some((event) => event.type === 'report.generated'));
 
     const parseTasks = boot.deps.ledger.listTasks('parse', { jobId: boot.job.id });
@@ -336,4 +343,24 @@ test('从检查点续跑：不重新上传，复用已评估结果', async () =>
   } finally {
     await env.restore();
   }
+});
+
+test('升级前无工作流记录的任务显式迁移，复用已提交解析并重新进入未完成评估', async () => {
+  const env = await setupTempEnv();
+  const file = await makeUpload(env.dir, 'legacy.txt', RESUME_A);
+  const boot = await bootstrap({ requirements: '招 Java 后端，3 年以上经验。', provider: new FakeProvider() });
+  try {
+    await assert.rejects(runPipeline(boot.deps, {
+      requirements: boot.job.requirements, hitl: new AutoHitlResponder(), uploadFiles: [file],
+      shouldPause: () => boot.deps.ledger.listTasks('parse', { jobId: boot.job.id }).some((t) => t.status === 'committed'),
+    }), PipelinePausedError);
+    const parseCount = boot.deps.ledger.listTasks('parse', { jobId: boot.job.id }).length;
+    // A pre-upgrade database has business results but no workflow checkpoints.
+    boot.deps.ledger.db.prepare('DELETE FROM workflow_runs WHERE job_id=?').run(boot.job.id);
+    const result = await runPipeline(boot.deps, { requirements: boot.job.requirements, hitl: new AutoHitlResponder(), resumeOnly: true });
+    assert.equal(result.status, 'final');
+    assert.equal(boot.deps.ledger.listTasks('parse', { jobId: boot.job.id }).length, parseCount);
+    assert.ok(boot.deps.ledger.listEvents({ jobId: boot.job.id, limit: 2000 }).some((e) => e.type === 'workflow.legacy_import'));
+    assert.equal(new WorkflowStore(boot.deps.ledger).root(boot.job.id)?.status, 'succeeded');
+  } finally { boot.close(); await env.restore(); }
 });

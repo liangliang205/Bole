@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { AgentBlockedError, AgentStore } from '../agent-platform/store.ts';
 import type { ZodType } from 'zod';
 import { writeJson } from '../util/fsx.ts';
 import { nowIso } from '../util/time.ts';
@@ -50,6 +51,8 @@ function formatIssues(error: { issues: { path: PropertyKey[]; message: string }[
  * 校验失败同轮退回模型重试（≤maxAttempts），错误信息回喂，而不是外包给"再跑一遍"。
  */
 export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Promise<StructuredOutcome<T>> {
+  const binding = new AgentStore(opts.ledger).manifest(opts.jobId)?.bindings[opts.agent];
+  if (binding) opts = { ...opts, meta: { ...opts.meta, agentSlot: opts.agent }, agent: binding.definition.id };
   const maxAttempts = opts.maxAttempts ?? 2;
   let maxTokens = opts.maxTokens ?? 8192;
   let errors: string[] = [];
@@ -92,6 +95,7 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
         meta: { ...(opts.meta ?? {}), key: opts.taskId, taskId: opts.taskId, jobId: opts.jobId, resumeId: opts.resumeId, batchId: opts.batchId },
       });
     } catch (error) {
+      if (error instanceof AgentBlockedError) { opts.ledger.failTask(opts.kind, opts.taskId, 'error', [error.message]); throw error; }
       const message = error instanceof Error ? error.message : String(error);
       errors = [message];
       if (attempts >= maxAttempts) {

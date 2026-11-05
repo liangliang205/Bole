@@ -28,9 +28,13 @@
 
 ## 2. 复跑命令
 
+动态 Agent：`tests/unit/agent-platform.test.ts` 覆盖草稿并发、契约与权限、能力发现、幂等注册、活动指针事务回滚、快照隔离、退役/撤销、容量租约与重启持久化。`tests/integration/agent-platform.test.ts` 验证运行中注册新角色、专职证据打回重试、真实调用链的角色/成本元数据、旧任务版本复用、移除独立试运行接口后的兼容性及 HTTP 注册/发现/退役；模型使用测试替身。
+
 记忆管理第一版：`tests/unit/memory.test.ts` 覆盖规则批准前隔离、拒绝与自动授权拦截、哈希校验、幂等发布、事务失败回滚、并发基线冲突、不可变版本、角色边界、摘要水位/来源/脱敏/缓存失效、删除清理和重启持久化；`tests/integration/memory.test.ts` 覆盖“人工发布 → 新任务确认复用 → 快照冻结 → 退役与配置变化后续跑”的完整链路。模型使用测试替身，不据此推断真实筛选质量。
 
 严格模式新增验收：`tests/unit/approvals.test.ts` 验证默认模式兼容、参数变更重新审批、拒绝/自动应答不授权、工具执行至多领取一次、批准后对话续接及工具权限变化失效；`tests/integration/approvals.test.ts` 验证计划审批前不解析、SQLite 重启恢复、发布前不生成终稿及批准后检查点续跑。
+
+代码化工作流验收：`tests/unit/workflow.test.ts` 覆盖五种控制结构、并发上限、collect/fail-fast、父子审批重启恢复、循环耗尽、条件冻结、版本和输入不可变、租约、取消与副作用人工确认；招聘集成测试确认真实筛选使用这些节点，并覆盖伪造结论修正及升级前任务迁移。`pnpm workflow:example` 提供独立的确定性 SDK 控制结构示例，不调用模型。
 
 ```bash
 pnpm typecheck   # 类型检查（strict）
@@ -41,7 +45,7 @@ pnpm check       # 以上三项串行
 
 以上命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）完全一致：push/PR 到 `master`、`dev` 时在 Node 24 上执行 `typecheck → lint → test:all`。CI 已在 `dev` 分支跑通（首次运行全绿）。
 
-当前结果：**127 个测试通过，0 失败**（2026-11-05，Windows，本地 `pnpm check`）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，并用本地 SSE 服务器验证 DeepSeek/OpenAI/Anthropic 流式解析、档位参数、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容、知识库分块/检索/角色隔离、完成后主 Agent 多轮对话与稳定前缀、Agent 筛选计划、严格审批、评分卡版本与提案事务、长对话提取式摘要、隔离 HTTP 服务、按需工具调用与 Word/PDF 导出等机制。替身只存在于 `tests/`，不进入产品运行时；机制测试不等于真实模型筛选质量评测。
+当前结果：**150 个测试通过，0 失败**（2026-11-05，Windows，本地 `pnpm check`）。测试使用 `tests/fixtures/fake-provider.ts` 作为**测试替身**，验证模型协议、筛选/重评/恢复、严格审批、知识库角色隔离、评分卡与记忆、动态 Agent 注册/发现/团队绑定、代码化工作流与嵌套恢复、调用版本与网关隔离、专职证据检查、隔离 HTTP 服务和文档导出。替身只存在于 `tests/`，不进入产品运行时；机制测试不等于真实模型筛选质量评测。
 
 ## 3. 真实数据验收（需要 Key）
 

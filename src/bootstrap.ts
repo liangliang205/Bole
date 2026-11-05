@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { AgentStore } from './agent-platform/store.ts';
 import { MemoryService } from './memory/service.ts';
 import { ApprovalStore, parseExecutionMode, type ExecutionMode } from './core/approvals.ts';
 import { randomBytes } from 'node:crypto';
@@ -17,6 +18,7 @@ import type { LlmProvider } from './llm/provider.ts';
 import type { JobRow, StreamSink } from './types.ts';
 
 export interface BootstrapOptions {
+  agentTeamKey?: string;
   policyVersionId?: string;
   executionMode?: ExecutionMode;
   requirements: string;
@@ -40,15 +42,17 @@ export interface Bootstrapped {
 export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
   const paths = resolvePaths();
   const config = loadPipelineConfig(paths.root);
-  const registry = AgentRegistry.load(paths.root);
+  let registry = AgentRegistry.load(paths.root);
   const ledger = new Ledger(paths.dbPath);
   const events = new EventLog(ledger);
   const rag = new RagIndex([]);
 
   let provider: LlmProvider;
+  let providerIdentity: string;
   let models: { flash: string; pro: string };
   if (opts.provider) {
     provider = opts.provider;
+    providerIdentity = provider.name;
     models = {
       flash: process.env.BOLE_FLASH_MODEL ?? config.models.flash,
       pro: process.env.BOLE_PRO_MODEL ?? config.models.pro,
@@ -72,6 +76,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
       deepseekStyle: active.builtin,
       name: active.name,
     });
+    providerIdentity = JSON.stringify({ id: active.id, baseUrl: active.baseUrl, api: active.api });
     models = {
       flash: process.env.BOLE_FLASH_MODEL ?? active.flashModel,
       pro: process.env.BOLE_PRO_MODEL ?? active.proModel,
@@ -101,6 +106,14 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
     catch (error) { ledger.deleteJob(job.id); ledger.close(); throw error; }
   }
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const agentStore = new AgentStore(ledger);
+  try {
+    agentStore.seed(paths.root);
+    if (opts.jobId && opts.agentTeamKey && agentStore.manifest(job.id)?.teamKey !== opts.agentTeamKey) throw new Error('续跑不能切换已绑定的 Agent 团队');
+    const manifest = agentStore.bind(job.id, opts.agentTeamKey ?? 'builtin@1.0.0', models, provider.name, Boolean(opts.jobId), providerIdentity);
+    registry = agentStore.registry(manifest);
+    models = manifest.models;
+  } catch (error) { ledger.close(); throw error; }
   const runId = opts.runId ?? `run_${stamp}_${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runsDir, runId);
   await ensureDir(runDir);
@@ -108,6 +121,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<Bootstrapped> {
 
   const llm = new LlmRouter({
     provider,
+    providerIdentity,
     pricing: config.pricing,
     models,
     ledger,

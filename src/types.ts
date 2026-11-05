@@ -2,7 +2,7 @@
 
 export type ModelTier = 'flash' | 'pro';
 
-export type AgentId =
+export type BuiltinAgentRole =
   | 'coordinator'
   | 'profiler'
   | 'fetcher'
@@ -10,6 +10,7 @@ export type AgentId =
   | 'assessor'
   | 'auditor'
   | 'assistant';
+export type AgentId = string;
 
 export type TaskKind = 'parse' | 'eval' | 'review';
 
@@ -336,6 +337,7 @@ export type ChatTurn =
   | { role: 'tool'; content: string; tool_call_id: string };
 
 export interface ChatRequest {
+  signal?: AbortSignal;
   agent: string;
   tier: ModelTier;
   model?: string;
