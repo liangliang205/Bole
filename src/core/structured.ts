@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { AgentBlockedError, AgentStore } from '../agent-platform/store.ts';
+import { isSuspension } from '../workflow/builders.ts';
+import { nodeExecution } from '../scheduler/context.ts';
 import type { ZodType } from 'zod';
 import { writeJson } from '../util/fsx.ts';
 import { nowIso } from '../util/time.ts';
@@ -95,6 +97,10 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
         meta: { ...(opts.meta ?? {}), key: opts.taskId, taskId: opts.taskId, jobId: opts.jobId, resumeId: opts.resumeId, batchId: opts.batchId },
       });
     } catch (error) {
+      if (isSuspension(error)) {
+        opts.ledger.updateTask(opts.kind, opts.taskId, { status: 'aborted', stop_reason: 'aborted' });
+        throw error;
+      }
       if (error instanceof AgentBlockedError) { opts.ledger.failTask(opts.kind, opts.taskId, 'error', [error.message]); throw error; }
       const message = error instanceof Error ? error.message : String(error);
       errors = [message];
@@ -157,6 +163,7 @@ export async function runStructuredTask<T>(opts: StructuredTaskOptions<T>): Prom
       return { ok: false, stopReason: 'error', errors, attempts };
     }
 
+    nodeExecution.getStore()?.assertOwner();
     opts.ledger.updateTask(opts.kind, opts.taskId, {
       status: 'staged',
       attempt: attempts,

@@ -41,20 +41,17 @@
 
 从版本列表“复制为新版本”，保留相应模板和契约，调整提示词、技能及档位。也可以改为新 ID，如 `payment-assessor`；团队的评估槽位必须使用 `builtin.assessor.v1`，代码计分、引用校验与重评机制不会被替换掉。
 
-团队支持三种槽位定义：
+团队支持两种槽位定义：
 
 ```json
 {
   "assessor": { "agentId": "payment-assessor", "version": "1.0.0" },
   "parser": { "activeAgentId": "parser" },
-  "specialist": {
-    "capability": "resume.specialist-check@1",
-    "candidates": [{ "agentId": "payment-checker", "version": "1.0.0" }]
-  }
+  "specialist": { "agentId": "payment-checker", "version": "1.0.0" }
 }
 ```
 
-上面是 slots 的局部示例，完整团队还须包含 coordinator/profiler/fetcher/parser/assessor/auditor 六个槽位。能力候选必须是团队显式允许的确切版本，第一版采用稳定规则选择，并保存选择原因。
+上面是 slots 的局部示例，完整团队还须包含 coordinator/profiler/fetcher/parser/assessor/auditor 六个槽位。每个槽位明确指定一个角色；能力发现用于查询和人工选择，不再新建候选池。历史候选团队仅兼容读取，不改写历史版本。
 
 激活版本只是更新默认选择指针，不改写已绑定任务。精确绑定不跟随活动指针；`activeAgentId` 在任务创建时解析，此后也冻结。
 

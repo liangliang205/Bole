@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { auditCoverageIssues } from './evidence-policy.ts';
 import { specialistReference } from '../agent-platform/specialist.ts';
 import { roleKnowledge } from './knowledge.ts';
 import { reviewEvalSchema } from '../schemas.ts';
@@ -160,6 +161,7 @@ export class AuditorWorker {
       maxAttempts: deps.config.structuredOutput.maxAttempts,
       postValidate: (value) => {
         const issues: string[] = [];
+        issues.push(...auditCoverageIssues(evaluation.dimensions, value.checks));
         if (value.checks.length === 0) issues.push('核查结果必须逐条给出 verdict，不能为空');
         if (value.verdict === 'pass' && value.checks.some((c) => c.verdict !== 'supported')) {
           issues.push('存在未通过的逐条裁决，但整体 verdict 为 pass');

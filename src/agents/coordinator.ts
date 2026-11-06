@@ -7,11 +7,13 @@ import type { ReportPaths } from '../report/render.ts';
 import { combineStopReasons } from '../core/state.ts';
 import { WorkflowPausedError, WorkflowEngine, WorkflowStore } from '../workflow/index.ts';
 import { recruitmentRegistry, RECRUITMENT_KEY } from '../workflows/recruitment/workflow.ts';
+import type { MailboxQuery } from '../mail/service.ts';
 
 export interface PipelineRunOptions {
   requirements: string;
   hitl: HitlResponder;
   uploadFiles?: UploadedFile[];
+  mailbox?: MailboxQuery;
   resumeOnly?: boolean;
   /** Web 控制台暂停信号：在节点边界停止派发，在途结果安全收束。 */
   shouldPause?: () => boolean;
@@ -21,8 +23,8 @@ export interface PipelineRunOptions {
 
 /** 暂停不是失败：携带这个类型让 Web 层把运行标记为 paused 而不是 failed。 */
 export class PipelinePausedError extends WorkflowPausedError {
-  constructor() {
-    super();
+  constructor(reason?: string) {
+    super(reason);
     this.name = 'PipelinePausedError';
   }
 }
@@ -94,14 +96,15 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   }
   const effective = existing ? { ...deps, config: JSON.parse(existing.input_json).config as PipelineConfig } : deps;
   const engine = new WorkflowEngine(deps.ledger, recruitmentRegistry(effective, opts), {
+    executionCapacity: effective.config.maxActiveAgents,
     shouldPause: opts.shouldPause, approvalResponder: opts.approvalResponder,
     checkpoint: () => { const agents = new AgentStore(deps.ledger); const manifest = agents.manifest(deps.jobId); if (manifest) for (const binding of Object.values(manifest.bindings)) agents.assertUsable(binding); },
   });
   try {
     return existing ? await engine.resume<RunSummary>(existing.id)
-      : await engine.start(deps.jobId, RECRUITMENT_KEY, { requirements: opts.requirements, files: opts.uploadFiles ?? [], resumeOnly: !!opts.resumeOnly, config: deps.config });
+      : await engine.start(deps.jobId, RECRUITMENT_KEY, { requirements: opts.requirements, files: opts.uploadFiles ?? [], ...(opts.mailbox ? { mailbox: opts.mailbox } : {}), resumeOnly: !!opts.resumeOnly, config: deps.config });
   } catch (error) {
-    if (error instanceof WorkflowPausedError) throw new PipelinePausedError();
+    if (error instanceof WorkflowPausedError) throw new PipelinePausedError(error.message);
     throw error;
   }
 }

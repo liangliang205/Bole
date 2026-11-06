@@ -53,11 +53,19 @@
     <section id="empty-view" class="empty-view">
       <div class="hero">
         <h1>今天想寻找什么样的人才？</h1>
-        <p class="hero-copy">添加简历，和伯乐聊聊岗位需求。</p>
+          <p class="hero-copy">描述岗位需求，从招聘邮箱收取简历，或添加本地简历。</p>
         <div class="new-composer dsh-composer">
         <div class="composer dsh-composer-card">
           <textarea id="new-requirements" rows="3" aria-label="岗位需求" placeholder="描述岗位、技能与经验要求…"></textarea>
           <div id="new-attachments" class="attachments"></div>
+            <div class="mail-source-controls">
+              <label><input type="checkbox" id="new-mail-enabled"> 从招聘邮箱收取简历</label>
+              <button type="button" class="btn ghost" id="mail-test">检查邮箱连接</button>
+              <span id="mail-status" role="status"></span>
+              <label>邮件关键词 <input id="new-mail-query" maxlength="300" placeholder="如：全栈（留空检索收件箱附件）"></label>
+              <label>起始日期 <input id="new-mail-after" type="date"></label>
+              <label>最多检查邮件 <input id="new-mail-limit" type="number" min="1" max="200" value="50"></label>
+            </div>
           <div class="dsh-composer-row">
             <div class="dsh-composer-tools">
               <button class="dsh-composer-add" id="attach-btn" type="button" title="添加简历 · PDF / DOCX / 图片 / TXT / HTML，单文件 ≤25MB" aria-label="添加简历">
@@ -229,7 +237,7 @@
 
       <section class="settings-content hidden" id="settings-plugins">
         <div class="modal-head"><h2>插件</h2><button class="btn ghost" id="plugins-close">✕</button></div>
-        <p class="muted settings-sub">外接 MCP 服务做成了插件：安装、启用后由伯乐在「完成后对话」里按需调用；关闭开关即停止该服务，不影响筛选流水线。点「＋ 添加插件」配置 stdio 命令或 HTTP 端点，凭据加密保存。</p>
+        <p class="muted settings-sub">添加工具和技能，扩展伯乐的能力。粘贴安装命令，Agent 会识别并处理安装。</p>
         <div class="settings-toolbar">
           <span class="muted" id="plugin-summary"></span>
           <button class="btn primary" id="plugin-add">＋ 添加插件</button>
@@ -284,9 +292,36 @@
         </div>
 
         <div class="plugin-section">
-          <div class="plugin-section-head"><h3>已安装 <span id="plugin-count" class="muted"></span></h3><button class="link-btn" id="plugin-refresh" type="button">刷新</button></div>
+          <div class="plugin-section-head"><h3>已安装插件 <span id="plugin-count" class="muted hidden"></span></h3><button class="link-btn" id="plugin-refresh" type="button">刷新</button></div>
           <div id="plugin-list" class="plugin-list"></div>
         </div>
+        <div class="plugin-section" id="skills-section">
+          <div class="hidden"><span id="skill-count"></span><button id="skill-refresh" type="button">刷新</button><button id="skill-add" type="button">添加 Skill</button></div>
+          <div id="skill-status" class="settings-status" role="status"></div>
+          <div id="skill-editor" class="plugin-editor hidden">
+            <h3 id="skill-editor-title">添加 Skill</h3>
+            <div class="form-grid">
+              <label class="span-2">从文件导入<input id="skill-file" type="file" accept=".md,text/markdown,text/plain"></label>
+              <label class="span-2">本机 SKILL.md 或目录路径<input id="skill-path" class="input" placeholder="C:\Users\liang\.agents\skills\agently-mail"></label>
+              <button class="btn ghost" id="skill-import-path" type="button">读取本机技能</button>
+              <label>Skill ID<input id="skill-id" class="input" maxlength="64" placeholder="agently-mail"></label>
+              <label>名称<input id="skill-name" class="input" maxlength="100"></label>
+              <label class="span-2">说明<textarea id="skill-desc" class="input" rows="2" maxlength="2000"></textarea></label>
+              <label class="knowledge-switch-line"><span>启用</span><input id="skill-enabled" type="checkbox" checked></label>
+            </div>
+            <fieldset id="skill-roles"><legend>适用角色</legend></fieldset>
+            <label>技能内容（Markdown，最多 16000 字符）<textarea id="skill-content" class="input" rows="12" maxlength="16000" spellcheck="false"></textarea></label>
+            <div class="settings-toolbar"><button class="btn ghost" id="skill-cancel" type="button">取消</button><button class="btn primary" id="skill-save" type="button">保存 Skill</button></div>
+          </div>
+          <div id="skill-list" class="plugin-list"></div>
+        </div>
+        <dialog id="plugin-install-dialog" class="plugin-install-dialog">
+          <div class="modal-head"><h2>添加插件</h2><button class="btn ghost" id="plugin-install-close" type="button" aria-label="关闭安装窗口">✕</button></div>
+          <p class="muted">粘贴插件提供的安装命令，Agent 会识别类型、整理配置并安装到伯乐。</p>
+          <label>安装命令<textarea id="plugin-install-command" class="input" rows="5" spellcheck="false" placeholder="npx skills add https://agent.qq.com --skill agently-mail -g -y&#10;或 npx -y @modelcontextprotocol/server-filesystem D:/resumes"></textarea></label>
+          <div id="plugin-install-status" class="settings-status" role="status"></div>
+          <div class="settings-toolbar"><button class="btn ghost" id="plugin-manual-mcp" type="button">手动配置工具</button><button class="btn ghost" id="plugin-manual-skill" type="button">导入技能文件</button><button class="btn primary" id="plugin-install-run" type="button">交给 Agent 安装</button></div>
+        </dialog>
       </section>
 
 <section id="agent-dialog" class="settings-content settings-embedded hidden" aria-labelledby="agent-title">
@@ -479,6 +514,7 @@
     <p>支持 PDF、DOCX、图片、TXT、Markdown 和 HTML；单文件不超过 25MB。扫描 PDF 暂不支持，请转为图片上传。</p>
     <p class="muted">结果用于辅助判断，最终招聘决定由人作出。</p>
     <p>在右上角「任务面板 → 工作流」查看执行阶段、并行分支、核查修正轮次和审批子流程。发送按钮支持暂停与续跑，已完成的节点会从检查点复用。</p>
+    <p>暂停或失败后，可以直接输入“请继续筛选”，让伯乐从检查点续跑；严格模式会先请求审批。已结束的旧流程或版本不兼容时，伯乐会说明原因。</p>
   </section>
   <section data-help-section="agents" class="hidden">
     <h3>名字背后的分工</h3><p>多个角色分别处理需求、解析、评估与核查，便于追踪每一步的输入、结论和依据。</p>
@@ -524,5 +560,6 @@
 <script src="/app.js"></script>
 <script src="/memory-ui.js"></script>
 <script src="/agent-ui.js"></script>
+<script src="/skill-ui.js"></script>
 </body>
 </html>

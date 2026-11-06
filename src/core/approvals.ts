@@ -3,7 +3,7 @@ import type { Ledger } from './ledger.ts';
 import type { HitlResponder } from '../agents/hitl.ts';
 
 export type ExecutionMode = 'default' | 'strict';
-export type ApprovalKind = 'screening-plan' | 'publish-report' | 'tool' | 'memory-policy-change' | 'workflow';
+export type ApprovalKind = 'screening-plan' | 'publish-report' | 'tool' | 'memory-policy-change' | 'workflow' | 'recruitment-mail';
 export interface Approval {
   id: string;
   job_id: string;

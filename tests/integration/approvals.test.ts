@@ -39,7 +39,7 @@ test('严格流水线：计划前不解析，重启恢复审批，发布前不�
     const resumed = new ApprovalStore(boot.deps.ledger);
     const publication = resumed.list(jobId).find((a) => a.kind === 'publish-report')!;
     assert.ok(publication);
-    const publicationRun = new WorkflowStore(boot.deps.ledger).inspect(jobId).runs.find((r) => r.workflow_key === 'report-publication@1.0.0');
+    const publicationRun = new WorkflowStore(boot.deps.ledger).inspect(jobId).runs.find((r) => r.workflow_key === 'report-publication@1.4.0');
     assert.equal(publicationRun?.status, 'waiting_approval');
     assert.ok(publicationRun?.parent_run_id);
     assert.notEqual(boot.deps.ledger.getJob(jobId)?.status, 'completed');

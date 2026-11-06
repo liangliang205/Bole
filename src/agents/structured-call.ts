@@ -2,6 +2,8 @@ import type { ZodType } from 'zod';
 import { AgentBlockedError, AgentStore } from '../agent-platform/store.ts';
 import type { ChatResult, StreamSink } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
+import { isSuspension } from '../workflow/builders.ts';
+import { nodeExecution } from '../scheduler/context.ts';
 
 export interface JsonCallOptions<T> {
   agent: string;
@@ -65,7 +67,7 @@ export async function callAgentJson<T>(
         meta: opts.meta,
       });
     } catch (error) {
-      if (error instanceof AgentBlockedError) throw error;
+      if (error instanceof AgentBlockedError || isSuspension(error)) throw error;
       errors = [error instanceof Error ? error.message : String(error)];
       continue;
     }
@@ -91,6 +93,7 @@ export async function callAgentJson<T>(
       errors = extra;
       continue;
     }
+    nodeExecution.getStore()?.assertOwner();
     return { ok: true, value: parsed.data, attempts: attempt, chat };
   }
   return { ok: false, errors };

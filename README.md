@@ -18,6 +18,12 @@ pnpm web                   # http://127.0.0.1:8787
 
 ### 页面里能做什么
 
+- 插件：统一管理工具和技能。点击「添加插件」粘贴安装命令，由 Agent 识别并安装；也可手动配置 MCP 或导入 SKILL.md。技能可启停、编辑和分配角色，新任务冻结技能快照。使用范围、命令示例和 API 见 [插件安装说明](docs/PLUGIN_INSTALLATION.md)。
+
+- 招聘邮箱：已接入腾讯 Agent Mail CLI。在新建任务中勾选「从招聘邮箱收取简历」，设置邮件关键词、起始日期及数量后，输入岗位需求即可处理收件箱附件。筛选完成后对伯乐说「我选 R01，请发邮件邀请面试，并说明……」，伯乐准备具体邮件，HR 审阅候选人、收件地址与正文后批准发送；默认模式也必须审批。安装、API 与限制见 [招聘邮箱接入](docs/AGENT_MAIL.md)。
+
+- 可靠执行：每个角色固定绑定一个 Agent 版本，能力发现用于开发者选择；持久化执行队列统一管理跨会话容量，保留等待原因和恢复记录。任务面板“工作流”内可展开执行队列。实现范围与 review 结论见 [可靠执行层](docs/RELIABLE_EXECUTION.md)。
+
 - Agent 团队：在“设置 → Agent 团队”管理角色草稿、不可变版本、活动指针与团队配置。可复制内置角色为新版本，或基于 `structured-llm.v1` 新建专职检查角色，注册后无需重启即可按能力发现和绑定。退役只停止新任务使用，已绑定任务仍可继续执行。新建会话可选择团队，任务详情可查看确切版本和调用记录。初次启动从原配置幂等导入六个 preset；之后文件修改需在“配置导入预览”中显式创建新版本。
 - 工作流：招聘流程使用代码化 `sequence / parallel / condition / loop / subworkflow` 编排，节点状态与父子运行持久化，暂停后可从检查点续跑。任务面板的“工作流”页签展示分支、核查修正轮次及审批子流程。开发接入参见 [工作流指南](docs/WORKFLOW_GUIDE.md)，运行 `pnpm workflow:example` 可查看无 API Key 的确定性 SDK 控制结构示例。
 - 专职检查：可选专职节点在解析之后、初筛之前运行，输出必须附原文引用；结果供评估/核查参考，不直接改变评分卡或淘汰候选人。角色通过实际团队流程验证，工具操作沿用所选模式的审批。CLI 可用 `--agent-team <id@version>` 选择团队，`pnpm bole agents` 查看当前版本状态。
@@ -255,7 +261,7 @@ bole/
 ```bash
 pnpm typecheck   # tsc --noEmit（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
-pnpm test:all    # 116 个测试
+pnpm test:all    # 177 个测试
 pnpm check       # 以上三项串行跑一遍
 ```
 
@@ -263,7 +269,7 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
-当前 **116 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+当前 **177 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 
 ## 文档
 
@@ -284,7 +290,7 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 
 - 图片 OCR 默认使用 **DeepSeek V4 Flash Vision**（JPEG/PNG/GIF/WebP，逐字转写，token 计入成本；图片会以 base64 发送给 DeepSeek API）；失败或 BMP/TIFF 自动回退本地 Tesseract。手写体/低分辨率仍可能识别错误，可通过 `BOLE_OCR_MODE=local` 完全避免外发。
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
-- 仅支持单附件简历，不做 IMAP/Exchange 邮箱接入。
+- 支持上传简历或通过腾讯 Agent Mail 收取普通附件；每个附件独立处理，不做 IMAP/Exchange 直连，也不抓取邮件中的外链简历。
 - 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。
 - 外接 MCP 只在「完成后对话」生效；筛选流水线不调用外部工具，避免第三方延迟/故障进入批次关键路径。MCP 服务的权限等同当前用户，接入前需自行评估。
 - 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。各提供商 Key 由服务端加密持久化在 `data/providers.json`，请保护数据目录权限。

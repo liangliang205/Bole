@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { roleKnowledge } from './knowledge.ts';
+import { optionalMissingAnomaly } from './evidence-policy.ts';
 import path from 'node:path';
 import { parseResumeSchema } from '../schemas.ts';
 import { runStructuredTask } from '../core/structured.ts';
@@ -55,7 +56,7 @@ export class ParserWorker {
       },
       schemaName: 'parse_resume',
       completion: `字段至少覆盖 ${FIELD_HINT} 中的主要项；每个非空字段至少 1 条逐字引用，可在原文定位`,
-    })}\n\n【简历原文（唯一事实来源）】\n${text}`;
+    })}\n\n【岗位要求：仅用于判断缺失信息是否重要，不得修改简历事实】\n${deps.ledger.getJob(deps.jobId)?.requirements ?? ''}\n\n【简历原文（唯一事实来源）】\n${text}`;
 
     let persisted: ParseResult | null = null;
     const outcome = await runStructuredTask({
@@ -122,7 +123,7 @@ export class ParserWorker {
         const result: ParseResult = {
           resumeId: resume.id,
           fields,
-          anomalies: value.anomalies,
+          anomalies: value.anomalies.flatMap((a) => a.split(/[；;]/)).filter((a) => a.trim() && !optionalMissingAnomaly(a, deps.ledger.getJob(deps.jobId)?.requirements ?? '')),
           summary: value.summary,
         };
         deps.ledger.saveParseResult(task.id, result);

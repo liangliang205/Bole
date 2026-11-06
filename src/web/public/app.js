@@ -35,7 +35,7 @@
     eventSource: null, fallbackTimer: null, drawerTab: 'candidates', drawerCandidate: null,
     candidates: [], candidatesLoaded: false, cost: null, sending: false,
     providers: [], activeProviderId: null, activeModel: '', activeModelId: '', activeModelName: '', editingProvider: null, editorModels: [],
-    settingsTab: 'models', plugins: [], pluginStatus: null, pluginLoadError: '',
+    settingsTab: 'models', plugins: [], skillPlugins: [], pluginStatus: null, pluginLoadError: '',
     editingPlugin: null, pluginBusy: false, pluginEnvDirty: false, pluginHeadersDirty: false,
   };
 
@@ -534,8 +534,7 @@
         await loadReport();
         if (state.run.status === 'completed') await loadCandidates();
       }
-      if (state.run.status === 'completed') await loadChat();
-      else state.chat = [];
+      await loadChat();
       renderAll();
       if (state.run.status === 'running' || state.run.status === 'pausing') connectStream();
       else disconnectStream();
@@ -559,7 +558,7 @@
     const job = state.snapshot.job || {};
     const run = state.run;
     document.title = `${jobTitle(job)} · 伯乐 BoLe`;
-    const canChat = run.status === 'completed';
+    const canChat = ['completed', 'paused', 'failed', 'idle'].includes(run.status);
     const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
     $('#reply-hint').textContent = replyHint;
     $('#reply-hint').classList.toggle('hidden', !replyHint);
@@ -1034,6 +1033,11 @@
 
   function finalReportHtml() {
     const report = state.report;
+    const counts = state.snapshot?.resumeCounts || {};
+    const unfinished = ['queued', 'parsing', 'parsed', 'evaluating', 'evaluated', 'verifying'].reduce((n, key) => n + (counts[key] || 0), 0);
+    if (unfinished || state.run?.status !== 'completed' && report.run?.status !== 'draft') {
+      return messageHtml('assistant', '伯乐', '', `<div class="msg-text">筛选尚未完成${unfinished ? `，还有 ${unfinished} 份材料未完成处理` : ''}。当前不展示最终候选人结论，请在任务面板查看执行状态。</div>`);
+    }
     const top = Array.isArray(report.top) ? report.top : [];
     const recommended = top.filter((candidate) => candidate.conclusion === 'yes' || candidate.conclusion === 'strong_yes').length;
     const intro = top.length
@@ -1073,10 +1077,6 @@
           <div><b>${(compliance.failed || []).length}</b><span>失败</span></div>
           <div><b>${((stats.vetoRate || 0) * 100).toFixed(0)}%</b><span>核查否决率</span></div>
         </div>
-        <div class="report-actions">
-          <button class="btn ghost" id="open-evidence">查看证据链</button>
-          <button class="btn ghost" id="open-cost">查看成本</button>
-        </div>
       </div>`);
   }
 
@@ -1109,7 +1109,7 @@
     const signature = JSON.stringify([run.jobId, approvals]);
     if (host.dataset.signature === signature) return;
     host.dataset.signature = signature;
-    const titles = { 'screening-plan': '批准筛选计划', 'publish-report': '审阅并发布报告', tool: '批准工具操作', workflow: '工作流人工审批', 'memory-policy-change': '长期规则修订' };
+    const titles = { 'screening-plan': '批准筛选计划', 'publish-report': '审阅并发布报告', tool: '批准工具操作', workflow: '工作流人工审批', 'memory-policy-change': '长期规则修订', 'recruitment-mail': '确认候选人与招聘邮件' };
     host.innerHTML = (run.executionMode === 'strict' ? '<div class="muted">严格模式 · 计划、工具与发布需审批</div>' : '') +
       approvals.filter((item) => item.status === 'pending' && item.kind !== 'memory-policy-change').map((item) => {
         const payload = JSON.parse(item.payload_json);
@@ -1121,6 +1121,8 @@
             <p>每批 ${esc(plan.batchSize)} 份，同时处理 ${esc(plan.maxBatchesInFlight)} 批；总并发上限 ${esc(plan.maxActiveAgents)}。
             ${plan.deepEval.enabled ? `初筛后深评前 ${esc(plan.deepEval.percent)}% 及异常项。` : '本轮不启用深评。'}核查打回最多修正 ${esc(payload.revisionBudget.maxLoops)} 次。</p>
             <p>${esc(plan.reason)}</p>`;
+        } else if (item.kind === 'recruitment-mail') {
+          summary = `<p>选定候选人：<strong>${esc(payload.candidate)}</strong></p><p>发件邮箱：${esc(payload.mailbox)}<br>收件地址（投递邮件发件人）：${esc(payload.to)}</p><p>主题：${esc(payload.subject)}</p><pre class="approval-preview">${esc(payload.body)}</pre><p>批准后发送此邮件；请核对收件地址是否为候选人本人。</p>`;
         } else if (item.kind === 'publish-report') {
           summary = (payload.report.top || []).map((candidate) => `<p><strong>${esc(candidate.label)}</strong> · ${esc(candidate.totalScore)} 分<br>${esc(candidate.reason || '')}</p>`).join('') || '<p>暂无推荐候选人，请查看完整报告中的失败及转人工明细。</p>';
         } else {
@@ -1194,13 +1196,13 @@
   function syncReplyComposerState() {
     const run = state.run;
     if (!run) return;
-    const canSubmit = run.pendingHitl || run.status === 'completed';
+    const canSubmit = run.pendingHitl || ['completed', 'paused', 'failed', 'idle'].includes(run.status);
     const pending = state.chatAttachments.some((item) => item.status === 'uploading');
     const empty = replyValue() === '' && state.chatAttachments.filter((item) => item.status !== 'error').length === 0;
     const button = $('#reply-send');
     const approvalBlocked = (run.approvals || []).some((item) => ['screening-plan', 'publish-report', 'workflow'].includes(item.kind) && ['pending', 'rejected'].includes(item.status));
     const action = run.pendingHitl ? 'send' : run.status === 'pausing' ? 'waiting' : run.status === 'running' ? 'pause'
-      : ['paused', 'failed', 'idle'].includes(run.status) ? 'resume' : 'send';
+      : ['paused', 'failed', 'idle'].includes(run.status) && empty ? 'resume' : 'send';
     const label = { send: '发送', pause: '暂停筛选', resume: approvalBlocked ? '请先处理审批；拒绝后需新建会话' : '从检查点续跑', waiting: '正在安全暂停…' }[action];
     button.title = label;
     button.setAttribute('aria-label', label);
@@ -1274,7 +1276,7 @@
   }
 
   async function sendChat() {
-    if (!state.jobId || state.run?.status !== 'completed') return;
+    if (!state.jobId || !['completed', 'paused', 'failed', 'idle'].includes(state.run?.status)) return;
     const value = replyValue();
     const ready = state.chatAttachments.filter((item) => item.status === 'ready' && item.uploadId);
     if (state.chatAttachments.some((item) => item.status === 'uploading')) { toast('附件还在上传，请稍候', 'error'); return; }
@@ -1318,7 +1320,7 @@
       await submitHitl(value);
       return;
     }
-    if (state.run?.status === 'completed') {
+    if (['completed', 'paused', 'failed', 'idle'].includes(state.run?.status)) {
       await sendChat();
       return;
     }
@@ -1366,7 +1368,9 @@
     const requirements = $('#new-requirements').value.trim();
     if (requirements.length < 5) { showHint('请填写至少 5 个字符的招聘需求', true); return; }
     const uploaded = state.attachments.filter((file) => file.status === 'uploaded');
-    if (uploaded.length === 0) { showHint('请先上传至少一份简历', true); return; }
+    const useMailbox = $('#new-mail-enabled').checked;
+    if (uploaded.length === 0 && !useMailbox) { showHint('请上传简历或选择从招聘邮箱收取', true); return; }
+    const mailbox = useMailbox ? { query: $('#new-mail-query').value.trim(), maxMessages: Number($('#new-mail-limit').value), ...($('#new-mail-after').value ? { after: new Date(`${$('#new-mail-after').value}T00:00:00`).toISOString() } : {}) } : undefined;
     if (!state.config?.providers?.length || !state.activeProviderId) {
       showHint('请先在设置中添加模型提供商并绑定 API Key', true);
       openSettings();
@@ -1384,7 +1388,7 @@
     try {
       const data = await api('/api/run', {
         method: 'POST',
-        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined, agentTeamKey: $('#new-agent-team').value }),
+        body: JSON.stringify({ requirements, mailbox, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined, agentTeamKey: $('#new-agent-team').value }),
       });
       state.attachments = [];
       renderAttachments();
@@ -1477,6 +1481,10 @@
         const kinds = { task: '任务', sequence: '顺序', parallel: '并行', condition: '条件', loop: '循环', subworkflow: '子流程', approval: '人工审批' };
         body.innerHTML = '<h3>工作流执行</h3><p class="muted">查看流程版本、父子运行、分支及每轮核查修正。</p>' + ((data.runs || []).map((run) => `<section class="eval-card"><div class="eval-head"><b>${esc(run.workflow_key)}</b><span class="tag ${run.status === 'succeeded' ? 'ok' : run.status === 'failed' ? 'danger' : ''}">${esc(statuses[run.status] || run.status)}</span></div><small class="muted">运行 ${esc(run.id)}${run.parent_run_id ? `<br>父运行 ${esc(run.parent_run_id)} · ${esc(run.parent_node_path)}` : ' · 根流程'}</small>${run.error ? `<p class="muted">${esc(run.error)}</p>` : ''}
           ${(data.nodes || []).filter((n) => n.run_id === run.id).map((n) => `<details class="workflow-node"><summary><span class="tag">${esc(statuses[n.status] || n.status)}</span> ${esc(n.node_id)} <small class="muted">${esc(kinds[n.kind] || n.kind)}</small></summary><p class="muted">${esc(n.path)} · 执行 ${esc(n.attempt)} 次</p>${n.error ? `<p>${esc(n.error)}</p>` : ''}<pre class="approval-preview">${esc(JSON.stringify({ input: JSON.parse(n.input_json), output: n.output_json ? JSON.parse(n.output_json) : null, control: n.control_json ? JSON.parse(n.control_json) : null }, null, 2))}</pre>${n.status === 'waiting_confirmation' && n.kind === 'task' ? `<p class="muted">先核对外部操作结果，再选择重试或录入符合该节点契约的结果。</p><div class="row"><button class="btn ghost" data-workflow-confirm="retry" data-run="${esc(run.id)}" data-path="${esc(n.path)}">确认可以重试</button><button class="btn ghost" data-workflow-confirm="complete" data-run="${esc(run.id)}" data-path="${esc(n.path)}">录入已完成结果</button></div>` : ''}</details>`).join('')}</section>`).join('') || '<div class="empty-note">暂无工作流记录；历史任务首次续跑时会建立兼容运行。</div>');
+        if ((data.queue || []).length) {
+          const queueStates = { queued: '等待执行', running: '执行中', succeeded: '已完成', stopped: '已停止', interrupted: '等待恢复' };
+          body.insertAdjacentHTML('beforeend', `<details class="eval-card"><summary>执行队列（${data.queue.length}）</summary><p class="muted">固定 Agent 绑定；依赖由工作流推进，容量不足时等待，不自动跳过材料。</p>${data.queue.map((q) => `<div class="workflow-node"><b>${esc(q.label)}</b> <span class="tag">${esc(queueStates[q.state] || q.state)}</span><p class="muted">${esc(q.reason || '执行次数：' + q.attempts)}</p></div>`).join('')}</details>`);
+        }
         body.querySelectorAll('[data-workflow-confirm]').forEach((button) => button.addEventListener('click', async () => {
           try {
             const action = button.dataset.workflowConfirm;
@@ -1568,12 +1576,19 @@
     parts.push('<h3>解析字段与证据</h3>');
     if (!detail.parse) parts.push('<div class="empty-note">没有已提交的解析结果</div>');
     else {
-      if ((detail.parse.anomalies || []).length) parts.push(`<div class="muted">异常：${esc(detail.parse.anomalies.join('；'))}</div>`);
-      parts.push(detail.parse.fields.map((field) => `<div class="eval-card">
-        <div class="eval-head"><b>${esc(field.key)}</b><span class="tag">conf ${esc(field.confidence)}</span></div>
-        <div>${esc(field.value)}</div>
-        ${(field.spans || []).map((span) => `<div class="evidence-quote">「${esc(span.quote)}」<div class="span-meta">${esc(span.charStart)}-${esc(span.charEnd)}</div></div>`).join('')}
-      </div>`).join(''));
+      const fieldLabels = { name: '姓名', contact: '联系方式', education: '教育背景', major: '所学专业', skills: '专业技能', projects: '项目经历', work_history: '工作经历', years_experience: '工作年限', expected_salary: '期望薪资' };
+      const order = Object.keys(fieldLabels);
+      const experienceOptional = /经验\s*(不限|不做要求|无要求)|应届/.test(state.snapshot?.job?.requirements || '');
+      const hints = (detail.parse.anomalies || []).flatMap((a) => a.split(/[；;]/)).filter((a) => !(/缺少|缺失|未填写/.test(a) && (/expected_salary|期望薪资/.test(a) || experienceOptional && /work_history|years_experience|工作经历|工作年限/.test(a))));
+      if (hints.length) parts.push(`<details class="resume-parse-notes"><summary>解析提示（${hints.length}）</summary><p class="muted">以下为提取结果提示，不代表候选人能力结论；排版问题请以原文件为准。</p><ul>${hints.map((h) => `<li>${esc(h)}</li>`).join('')}</ul></details>`);
+      const fields = [...detail.parse.fields].sort((a, b) => (order.includes(a.key) ? order.indexOf(a.key) : 99) - (order.includes(b.key) ? order.indexOf(b.key) : 99));
+      parts.push(fields.filter((f) => String(f.value || '').trim()).map((field) => `<section class="eval-card resume-field">
+        <div class="eval-head"><b>${esc(fieldLabels[field.key] || field.key)}</b><small class="muted">提取置信度 ${Math.round(Number(field.confidence || 0) * 100)}%</small></div>
+        <div class="resume-field-value">${esc(String(field.value).replace(/；/g, '；\n'))}</div>
+        ${(field.spans || []).length ? `<details class="resume-evidence"><summary>原文引用（${field.spans.length}）</summary>${field.spans.map((span) => `<blockquote class="evidence-quote">${esc(span.quote)}<small class="span-meta">文本位置 ${esc(span.charStart)}–${esc(span.charEnd)}</small></blockquote>`).join('')}</details>` : ''}
+      </section>`).join(''));
+      const missing = fields.filter((f) => !String(f.value || '').trim());
+      if (missing.length) parts.push(`<details class="resume-parse-notes"><summary>未填写的信息（${missing.length}）</summary><p class="muted">未填写不等于不满足岗位要求，不自动扣分。</p>${missing.map((f) => `<span class="tag">${esc(fieldLabels[f.key] || f.key)}</span>`).join(' ')}</details>`);
     }
 
     parts.push('<h3>评估历史</h3>');
@@ -1592,8 +1607,9 @@
       ${review.escalationReason ? `<div class="muted">转人工：${esc(review.escalationReason)}</div>` : ''}
     </div>`).join('') : '<div class="empty-note">没有核查记录</div>');
 
-    parts.push('<h3>证据表</h3>');
+    parts.push('<details class="resume-evidence"><summary>完整证据记录</summary>');
     parts.push(detail.evidence.length ? `<div class="table-wrap"><table><thead><tr><th>字段</th><th>引用</th><th>区间</th><th>状态</th></tr></thead><tbody>${detail.evidence.map((row) => `<tr><td>${esc(row.field)}</td><td>${esc(row.quote)}</td><td class="span-meta">${esc(row.charStart)}-${esc(row.charEnd)}</td><td><span class="tag ${row.verified ? 'ok' : 'warn'}">${esc(row.verdict)}</span></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-note">暂无证据</div>');
+    parts.push('</details>');
 
     $('#drawer-body').innerHTML = parts.join('');
     $('#candidate-back').addEventListener('click', () => { state.drawerCandidate = null; renderCandidates(); });
@@ -1824,16 +1840,16 @@
     const list = $('#plugin-list');
     if (!list) return;
     const plugins = state.plugins || [];
-    const enabled = plugins.filter((plugin) => plugin.enabled).length;
+    const enabled = [...plugins, ...state.skillPlugins].filter((plugin) => plugin.enabled).length;
     if ($('#plugin-summary')) {
-      $('#plugin-summary').textContent = `${enabled}/${plugins.length} 启用 · ${state.pluginStatus?.tools || 0} 个工具可用${state.pluginLoadError ? ' · 插件库异常' : ''}`;
+      $('#plugin-summary').textContent = `${enabled}/${plugins.length + state.skillPlugins.length} 启用 · ${state.pluginStatus?.tools || 0} 个工具可用${state.pluginLoadError ? ' · 插件库异常' : ''}`;
     }
     if ($('#plugin-count')) $('#plugin-count').textContent = plugins.length ? `${plugins.length} 个` : '';
 
     if (state.pluginLoadError) {
       list.innerHTML = `<div class="empty-note">${esc(state.pluginLoadError)}</div>`;
     } else if (!plugins.length) {
-      list.innerHTML = '<div class="empty-note">还没有安装插件。点右上角「＋ 添加插件」填写 MCP 服务。</div>';
+      list.innerHTML = state.skillPlugins.length ? '' : '<div class="empty-note">还没有安装插件。点击「＋ 添加插件」，粘贴安装命令交给 Agent 处理。</div>';
     } else {
       list.innerHTML = plugins.map((plugin) => {
         const runtime = pluginRuntime(plugin);
@@ -2619,6 +2635,11 @@
       if (event.key === 'Escape' && !$('#preview-pane').classList.contains('hidden')) closeFilePreview();
     });
     $('#new-run-btn').addEventListener('click', showNewView);
+    $('#mail-test').addEventListener('click', async () => {
+      $('#mail-status').textContent = '正在检查…';
+      try { const data = await api('/api/mail/status'); $('#mail-status').textContent = data.mailbox || data.error || '尚未授权'; }
+      catch (error) { $('#mail-status').textContent = error.message; }
+    });
     $('#new-start').addEventListener('click', startRun);
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
     $('#file-input').addEventListener('change', async (event) => {
@@ -2813,7 +2834,10 @@
       button.addEventListener('click', () => switchSettingsTab(button.dataset.settingsTab));
     });
     $('#plugins-close').addEventListener('click', closeSettings);
-    $('#plugin-add').addEventListener('click', () => openPluginEditor(null));
+    $('#plugin-add').addEventListener('click', () => window.dispatchEvent(new CustomEvent('bole-plugin-add')));
+    window.addEventListener('bole-plugin-manual', (event) => { if (event.detail === 'mcp') openPluginEditor(null); });
+    window.addEventListener('bole-plugins-refresh', () => { void loadPlugins(); });
+    window.addEventListener('bole-skills-updated', (event) => { state.skillPlugins = event.detail; renderPlugins(); });
     $('#plugin-refresh').addEventListener('click', loadPlugins);
     $('#plugin-save').addEventListener('click', savePlugin);
     $('#plugin-cancel').addEventListener('click', closePluginEditor);
@@ -2910,8 +2934,6 @@
       }
     });
     $('#chat-scroll').addEventListener('click', (event) => {
-      if (event.target.closest('#open-evidence')) openDrawer('candidates');
-      if (event.target.closest('#open-cost')) openDrawer('cost');
       const row = event.target.closest('[data-candidate]');
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
     });

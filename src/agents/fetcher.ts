@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { nodeExecution } from '../scheduler/context.ts';
+import { isSuspension } from '../workflow/builders.ts';
 import { readFile, writeFile } from 'node:fs/promises';
 import { ensureDir } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
@@ -20,11 +22,12 @@ export interface FetcherResult {
 
 /**
  * 接入 Agent：真实上传文件 → 去重 → 格式归一 → 落盘 + 台账。
- * 产品路径不再读取本地 mock 邮箱；简历来源只有用户上传。
+ * 文件来自 HR 上传或招聘邮箱导入，共用归一化和证据链。
  */
 export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<FetcherResult> {
   const manifest: FetchManifest = { pulled: 0, duplicates: [], failed: [], resumes: [] };
   const created: ResumeRow[] = [];
+  const labelOffset = deps.ledger.listResumes(deps.jobId).reduce((max, r) => Math.max(max, Number(r.label.match(/^R(\d+)$/)?.[1] ?? 0)), 0);
   const hasImage = input.files.some((file) => detectFormat(file.filename, file.contentType) === 'image');
   const ocrMode = (process.env.BOLE_OCR_MODE ?? 'deepseek').toLowerCase();
   const ocrFallback = process.env.BOLE_OCR_FALLBACK !== 'false';
@@ -33,7 +36,7 @@ export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<
 
   for (let i = 0; i < input.files.length; i += 1) {
     const file = input.files[i];
-    const label = `R${String(i + 1).padStart(2, '0')}`;
+    const label = `R${String(labelOffset + i + 1).padStart(2, '0')}`;
     const resumeId = newId('res');
     let ocrFallbackReason = '';
     const ocr = async (buffer: Buffer, filename: string, mimeType: string): Promise<string> => {
@@ -49,6 +52,7 @@ export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<
       try {
         return await visionOcr(deps, { buffer, filename, mimeType, label });
       } catch (error) {
+        if (isSuspension(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
         deps.events.emit(deps.jobId, 'fetcher', 'resume.ocr_failed', { label, filename, error: message });
         if (!ocrFallback) throw error;
@@ -65,6 +69,7 @@ export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<
       const existing = deps.ledger.findResumeByDedup(deps.jobId, dedupKey, sha256);
 
       if (existing) {
+        nodeExecution.getStore()?.assertOwner();
         const duplicate = deps.ledger.insertResume({
           id: resumeId,
           jobId: deps.jobId,
@@ -98,6 +103,7 @@ export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<
       await writeFile(rawPath, buffer);
       await writeFile(normPath, `${normalized.text}\n`, 'utf8');
 
+      nodeExecution.getStore()?.assertOwner();
       const resume = deps.ledger.insertResume({
         id: resumeId,
         jobId: deps.jobId,
@@ -125,6 +131,7 @@ export async function runFetcher(deps: AgentDeps, input: FetcherInput): Promise<
         warnings: normalized.warnings,
       });
     } catch (error) {
+      if (isSuspension(error)) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       manifest.failed.push({ messageId: file.uploadId, reason });
       const failedRow = deps.ledger.insertResume({

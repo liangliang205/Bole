@@ -6,12 +6,15 @@ import { WorkflowBusyError, WorkflowCancelledError, WorkflowPausedError, Workflo
 import type { Node, NodeContext, RunRow, RunStatus } from './types.ts';
 import type { Ledger } from '../core/ledger.ts';
 import type { HitlResponder } from '../agents/hitl.ts';
+import { ExecutionScheduler } from '../scheduler/execution.ts';
+import { nodeExecution } from '../scheduler/context.ts';
 
 export class WorkflowEngine {
   readonly store: WorkflowStore;
   private registry: WorkflowRegistry;
-  private options: { shouldPause?: () => boolean; checkpoint?: () => void; approvalResponder?: HitlResponder };
-  constructor(ledger: Ledger, registry: WorkflowRegistry, options: { shouldPause?: () => boolean; checkpoint?: () => void; approvalResponder?: HitlResponder } = {}) {
+  private owners = new Map<string, string>();
+  private options: { shouldPause?: () => boolean; checkpoint?: () => void; approvalResponder?: HitlResponder; executionCapacity?: number };
+  constructor(ledger: Ledger, registry: WorkflowRegistry, options: { shouldPause?: () => boolean; checkpoint?: () => void; approvalResponder?: HitlResponder; executionCapacity?: number } = {}) {
     this.store = new WorkflowStore(ledger); this.registry = registry; this.options = options;
   }
   async start<I, O>(jobId: string, key: string, input: I): Promise<O> {
@@ -31,12 +34,13 @@ export class WorkflowEngine {
     const db = this.store.ledger.db;
     if (db.prepare('UPDATE workflow_runs SET lease_owner=?,lease_until=? WHERE id=? AND (lease_owner IS NULL OR lease_until<?)')
       .run(owner, Date.now() + 30000, runId, Date.now()).changes !== 1) throw new WorkflowBusyError();
+    this.owners.set(runId, owner);
     const timer = setInterval(() => {
       db.prepare('UPDATE workflow_runs SET lease_until=? WHERE id=? AND lease_owner=?').run(Date.now() + 30000, runId, owner);
     }, 5000);
     timer.unref();
     try { return await this.executeRun(root) as O; }
-    finally { clearInterval(timer); db.prepare('UPDATE workflow_runs SET lease_owner=NULL,lease_until=NULL WHERE id=? AND lease_owner=?').run(runId, owner); }
+    finally { clearInterval(timer); this.owners.delete(runId); db.prepare('UPDATE workflow_runs SET lease_owner=NULL,lease_until=NULL WHERE id=? AND lease_owner=?').run(runId, owner); }
   }
   cancel(runId: string): void {
     const row = this.store.get(runId);
@@ -45,9 +49,14 @@ export class WorkflowEngine {
     for (const child of this.store.inspect(row.job_id).runs.filter((r) => r.root_run_id === row.id && !['succeeded', 'failed'].includes(r.status))) this.store.state(child.id, 'cancelled');
   }
   private checkpoint(rootId: string): void {
+    if (!this.owns(rootId)) throw new WorkflowPausedError();
     if (this.store.get(rootId).status === 'cancelled') throw new WorkflowCancelledError();
     if (this.options.shouldPause?.()) throw new WorkflowPausedError();
     this.options.checkpoint?.();
+  }
+  private owns(rootId: string): boolean {
+    const root = this.store.get(rootId);
+    return root.lease_owner === this.owners.get(rootId) && (root.lease_until ?? 0) > Date.now();
   }
   private status(error: unknown): RunStatus {
     return error instanceof ApprovalPendingError ? 'waiting_approval'
@@ -67,7 +76,7 @@ export class WorkflowEngine {
       this.checkpoint(row.root_run_id);
       this.store.state(row.id, 'succeeded', null, output);
       return output;
-    } catch (error) { this.store.state(row.id, this.status(error), error instanceof Error ? error.message : String(error)); throw error; }
+    } catch (error) { if (this.owns(row.root_run_id)) this.store.state(row.id, this.status(error), error instanceof Error ? error.message : String(error)); throw error; }
   }
   private async executeNode<I, O>(row: RunRow, node: Node<I, O>, value: I, path: string): Promise<O> {
     this.checkpoint(row.root_run_id);
@@ -94,6 +103,8 @@ export class WorkflowEngine {
       ledger: this.store.ledger, jobId: row.job_id, runId: row.id, rootRunId: row.root_run_id, path,
       idempotencyKey: hash([row.id, path]), approvalResponder: this.options.approvalResponder,
       checkpoint: () => this.checkpoint(row.root_run_id),
+      assertOwner: () => { if (!this.owns(row.root_run_id)) throw new WorkflowPausedError('执行者租约已失效，停止写回'); },
+      schedule: (label, resources, execute, priority) => new ExecutionScheduler(this.store.ledger).run({ runId: row.id, rootRunId: row.root_run_id, nodePath: path, checkpoint: () => this.checkpoint(row.root_run_id) }, label, resources, execute, priority),
       run: (child, childInput, segment) => this.executeNode(row, child, childInput, `${path}/${encodeURIComponent(segment)}`),
       control: (create) => this.store.control(row.id, path, create),
       child: async <A, B>(key: string, childInput: A): Promise<B> => {
@@ -106,13 +117,15 @@ export class WorkflowEngine {
     };
     this.store.ledger.appendEvent(row.job_id, 'workflow', 'workflow.node.started', { runId: row.id, path, kind: node.spec.kind });
     try {
-      const raw = await node.execute(JSON.parse(inputJson) as I, context);
+      const raw = await nodeExecution.run({ ...context, executionCapacity: this.options.executionCapacity ?? 8 }, () => node.execute(JSON.parse(inputJson) as I, context));
+      if (!this.owns(row.root_run_id)) throw new WorkflowPausedError();
       const result = node.output ? node.output.parse(raw) : raw;
       const encoded = json(result);
       this.store.finish(row.id, path, 'succeeded', JSON.parse(encoded));
       this.store.ledger.appendEvent(row.job_id, 'workflow', 'workflow.node.succeeded', { runId: row.id, path });
       return JSON.parse(encoded) as O;
     } catch (error) {
+      if (!this.owns(row.root_run_id)) throw error;
       let status = this.status(error);
       if (status === 'failed' && node.spec.kind === 'task' && node.recovery === 'confirm') status = 'waiting_confirmation';
       this.store.finish(row.id, path, status, undefined, error instanceof Error ? error.message : String(error));

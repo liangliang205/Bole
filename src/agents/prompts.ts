@@ -1,4 +1,5 @@
-import { loadPrompt } from '../config.ts';
+import { loadPrompt, loadSkill } from '../config.ts';
+import { createHash } from 'node:crypto';
 import type { AgentId } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
 
@@ -6,10 +7,11 @@ const promptCache = new Map<string, string>();
 
 export function systemPrompt(deps: AgentDeps, id: AgentId): string {
   const preset = deps.registry.get(id);
-  const key = preset.definitionHash ?? `${preset.id}@${preset.version}:${deps.paths.root}`;
+  const policy = ['profiler', 'parser', 'assessor', 'auditor'].includes(id) ? loadSkill('evidence-calibration', deps.paths) : '';
+  const key = `${preset.definitionHash ?? `${preset.id}@${preset.version}:${deps.paths.root}`}:${createHash('sha256').update(policy).digest('hex')}`;
   const cached = promptCache.get(key);
   if (cached) return cached;
-  const prompt = loadPrompt(preset, deps.paths);
+  const prompt = loadPrompt(preset, deps.paths) + (policy ? `\n\n【平台技能 evidence-calibration@1.0.0】\n${policy}` : '');
   promptCache.set(key, prompt);
   return prompt;
 }

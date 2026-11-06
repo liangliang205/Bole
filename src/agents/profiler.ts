@@ -3,6 +3,8 @@ import { MemoryService } from '../memory/service.ts';
 import type { PolicyProfile } from '../memory/types.ts';
 import { jdAnalysisSchema } from '../schemas.ts';
 import { reviewRequirements } from '../tools/fairness.ts';
+import { rubricIssues } from './evidence-policy.ts';
+import { nodeExecution } from '../scheduler/context.ts';
 import type { Ambiguity, JdAnalysis } from '../types.ts';
 import type { AgentDeps } from './deps.ts';
 import type { HitlResponder } from './hitl.ts';
@@ -91,6 +93,7 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
     meta: { requirements: input.requirements },
     postValidate: (value) => {
       const issues: string[] = [];
+      issues.push(...rubricIssues(input.requirements, value.scorecard));
       if (!value.jd.title.trim()) issues.push('jd.title 不能为空');
       if (value.scorecard.dimensions.length < 3) issues.push('评分维度至少 3 个');
       const total = value.scorecard.dimensions.reduce((sum, dim) => sum + dim.weight, 0);
@@ -172,6 +175,7 @@ export async function runProfiler(deps: AgentDeps, input: ProfilerInput): Promis
     }
     deps.ledger.addDecision({ jobId: deps.jobId, node: 'policy_selection', question: `评分标准 ${selected.id}`, ...decision });
   }
+  nodeExecution.getStore()?.assertOwner();
   deps.ledger.saveJobAnalysis(deps.jobId, analysis.jd, analysis.scorecard, analysis.jd.title, analysis.fairness);
   memory.bindJob(deps.jobId, { jd: analysis.jd, scorecard: analysis.scorecard, thresholds: thresholds as unknown as import('../tools/scorecard.ts').RatingThresholds }, boundVersion);
   deps.ledger.setJobStatus(deps.jobId, 'pipeline');

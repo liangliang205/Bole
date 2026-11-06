@@ -2,6 +2,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { MEMORY_SCHEMA } from '../memory/schema.ts';
 import { AGENT_SCHEMA } from '../agent-platform/schema.ts';
 import { WORKFLOW_SCHEMA } from '../workflow/schema.ts';
+import { EXECUTION_SCHEMA } from '../scheduler/schema.ts';
+import { MAIL_SCHEMA } from '../mail/service.ts';
+import { SKILL_SCHEMA } from '../skills/schema.ts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -222,6 +225,9 @@ export function openDatabase(dbPath: string): DatabaseSync {
   db.exec(MEMORY_SCHEMA);
   db.exec(AGENT_SCHEMA);
   db.exec(WORKFLOW_SCHEMA);
+  db.exec(EXECUTION_SCHEMA);
+  db.exec(MAIL_SCHEMA);
+  db.exec(SKILL_SCHEMA);
   return db;
 }
 

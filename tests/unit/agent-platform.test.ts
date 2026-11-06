@@ -14,6 +14,25 @@ import type { LlmProvider } from '../../src/llm/provider.ts';
 function definition() { const t = templateCatalog['structured-llm.v1']; return validateDefinition({ id: 'qualification', version: '1.0.0', name: '资格核查', templateId: 'structured-llm.v1', inputContract: t.input, outputContract: t.output, capabilities: [t.capability], prompt: '核对证据，不要编造。' }); }
 function setup() { const ledger = new Ledger(':memory:'); const store = new AgentStore(ledger); store.seed(); return { ledger, store }; }
 
+test('新团队只接受单个角色绑定；历史候选团队兼容读取并固定实际版本', () => {
+  const { ledger, store } = setup();
+  try {
+    const team = teamSchema.parse(JSON.parse(store.teams()[0].definition_json));
+    const original = store.active().find((a) => a.agent_id === 'assessor')!.version_key!;
+    const previous = store.get(original);
+    const next = store.register({ ...JSON.parse(previous.definition_json), version: '99.0.0' });
+    const legacy = { ...team, id: 'legacy', slots: { ...team.slots, assessor: { candidates: [{ agentId: next.agent_id, version: next.version }, { agentId: previous.agent_id, version: previous.version }], capability: 'resume.assess@1' } } };
+    assert.throws(() => store.registerTeam(legacy), /只需指定一个/);
+    // Simulate a previously stored immutable team; no rewrite/migration of historical definitions.
+    ledger.db.prepare('INSERT INTO agent_teams VALUES (?,?,?,?)').run('legacy@1.0.0', JSON.stringify(legacy), 'legacy-hash', new Date().toISOString());
+    const job = ledger.createJob({ title: 'legacy', requirements: 'test' });
+    const manifest = store.bind(job.id, 'legacy@1.0.0', { flash: 'flash', pro: 'pro' }, 'test');
+    assert.equal(manifest.bindings.assessor.key, [previous.version_key, next.version_key].sort()[0]);
+    assert.match(manifest.bindings.assessor.reason, /历史候选定义兼容/);
+    assert.equal(JSON.parse(store.teams().find((t) => t.team_key === 'legacy@1.0.0')!.definition_json).slots.assessor.candidates.length, 2);
+  } finally { ledger.close(); }
+});
+
 test('运行时注册、草稿乐观并发、能力发现与同版本幂等', () => {
   const { ledger, store } = setup();
   try {

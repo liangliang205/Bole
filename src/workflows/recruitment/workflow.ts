@@ -2,10 +2,14 @@ import { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { collectMailbox, mailboxQuerySchema } from '../../mail/service.ts';
+import { loadUpload } from '../../ingest/uploads.ts';
+import { AgentStore } from '../../agent-platform/store.ts';
+import { WorkflowPausedError } from '../../workflow/types.ts';
 import { runSpecialist } from '../../agent-platform/specialist.ts';
 import { MemoryService } from '../../memory/service.ts';
 import { ApprovalStore } from '../../core/approvals.ts';
-import { CapacityPool, withAgentSlot, admissionOptions } from '../../core/pool.ts';
+import { CapacityPool } from '../../core/pool.ts';
 import { chunk } from '../../core/pipeline.ts';
 import { loadPrompt, loadSkill } from '../../config.ts';
 import { writeJson } from '../../util/fsx.ts';
@@ -21,11 +25,11 @@ import type { AgentDeps } from '../../agents/deps.ts';
 import type { PipelineRunOptions } from '../../agents/coordinator.ts';
 import type { RatingThresholds } from '../../tools/scorecard.ts';
 import { defineWorkflow, task, sequence, retain, parallel, condition, loop, subworkflow, approval, WorkflowRegistry } from '../../workflow/index.ts';
-import type { Node, Outcome } from '../../workflow/index.ts';
+import type { Node, Outcome, NodeContext } from '../../workflow/index.ts';
 import { publicationSchema, summarySchema, prepareReport, publishReport } from './report.ts';
 
-export const RECRUITMENT_KEY = 'recruitment@1.0.0';
-const inputSchema = z.object({ requirements: z.string(), files: z.array(z.object({ uploadId: z.string(), filename: z.string(), path: z.string(), size: z.number(), contentType: z.string() })), resumeOnly: z.boolean(), config: z.json() });
+export const RECRUITMENT_KEY = 'recruitment@1.4.0';
+const inputSchema = z.object({ requirements: z.string(), files: z.array(z.object({ uploadId: z.string(), filename: z.string(), path: z.string(), size: z.number(), contentType: z.string() })), mailbox: mailboxQuerySchema.optional(), resumeOnly: z.boolean(), config: z.json() });
 const planSchema = screeningPlanSchema.extend({ source: z.enum(['agent', 'fallback']) });
 const preparedSchema = z.object({ plan: planSchema, resumeIds: z.array(z.string()), startedMs: z.number(), strict: z.boolean() });
 type Prepared = z.infer<typeof preparedSchema>;
@@ -41,7 +45,8 @@ function identity<T>(id: string, schema: z.ZodType<T>): Node<T, T> { return task
 
 /** Trusted source modules, including imported business handlers, are fingerprinted. */
 function implementationHash(): string {
-  const files = ['./workflow.ts', './report.ts', '../../agents/coordinator.ts', '../../agents/profiler.ts', '../../agents/fetcher.ts', '../../agents/parser.ts', '../../agents/assessor.ts', '../../agents/auditor.ts', '../../agents/planner.ts', '../../agents/data.ts', '../../agent-platform/specialist.ts', '../../core/structured.ts', '../../workflow/builders.ts', '../../workflow/engine.ts'];
+  const files = ['./workflow.ts', './report.ts', '../../agents/coordinator.ts', '../../agents/profiler.ts', '../../agents/fetcher.ts', '../../agents/parser.ts', '../../agents/assessor.ts', '../../agents/auditor.ts', '../../agents/planner.ts', '../../agents/data.ts', '../../agent-platform/specialist.ts', '../../core/structured.ts', '../../workflow/builders.ts', '../../workflow/engine.ts', '../../scheduler/execution.ts', '../../scheduler/schema.ts', '../../scheduler/context.ts', '../../llm/router.ts', '../../agents/prompts.ts', '../../agents/evidence-policy.ts', '../../ingest/normalize.ts', '../../ingest/pdf-layout.ts', '../../../config/skills/evidence-calibration.md'];
+  files.push('../../mail/client.ts', '../../mail/service.ts');
   return createHash('sha256').update(files.map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n')).digest('hex');
 }
 export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): WorkflowRegistry {
@@ -51,7 +56,31 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
   let pools: { parse: CapacityPool; assess: CapacityPool; review: CapacityPool; agents: CapacityPool } | undefined;
   const capacity = (prepared: Prepared) => pools ??= { parse: new CapacityPool('parse', prepared.plan.pools.parse), assess: new CapacityPool('assess', prepared.plan.pools.assess), review: new CapacityPool('review', prepared.plan.pools.review), agents: new CapacityPool('agents', prepared.plan.maxActiveAgents) };
   const stats = (prepared: Prepared) => Object.values(capacity(prepared)).map((p) => p.stats());
-  const slot = <T>(prepared: Prepared, role: 'parse' | 'assess' | 'review', label: string, run: () => Promise<T>) => withAgentSlot(capacity(prepared).agents, capacity(prepared)[role], label, admissionOptions(deps.config.admission), run);
+  // Fixed Agent bindings; the durable scheduler owns admission. Pools below are metrics only.
+  const slot = <T>(ctx: NodeContext, prepared: Prepared, role: 'parse' | 'assess' | 'review', label: string, run: () => Promise<T>) => {
+    const p = capacity(prepared);
+    const slotName = label.startsWith('specialist:') ? 'specialist' : { parse: 'parser', assess: 'assessor', review: 'auditor' }[role];
+    const binding = new AgentStore(deps.ledger).manifest(deps.jobId)?.bindings[slotName];
+    const resources = [
+      { key: 'platform:agents', capacity: deps.config.maxActiveAgents },
+      { key: `job:${deps.jobId}:agents`, capacity: prepared.plan.maxActiveAgents },
+      { key: `job:${deps.jobId}:${role}`, capacity: prepared.plan.pools[role] },
+      ...(binding ? [{ key: `agent:${binding.key}`, capacity: binding.definition.limits.maxConcurrency }] : []),
+    ];
+    return ctx.schedule(label, resources, async () => {
+      const local = p[role].tryAcquire(label); const global = p.agents.tryAcquire(label);
+      if (!local || !global) { local?.release(); global?.release(); throw new Error('执行容量与本地统计不一致'); }
+      try { return await run(); }
+      catch (error) {
+        const resumeId = label.slice(label.indexOf(':') + 1);
+        const status = deps.ledger.getResume(resumeId)?.status;
+        if (status && !['failed', 'quarantine', 'verified', 'reported', 'duplicate'].includes(status) && !(error instanceof WorkflowPausedError)) {
+          throw new WorkflowPausedError(`执行暂未完成：${label}；${error instanceof Error ? error.message : String(error)}。结果已保留，可检查后续跑`);
+        }
+        throw error;
+      } finally { local.release(); global.release(); }
+    });
+  };
   const analysis = () => { const value = loadJobAnalysis(deps.ledger.getJob(deps.jobId)!); if (!value) throw new Error('岗位画像缺失'); return value; };
   const assessor = (prepared: Prepared) => {
     const profile = analysis(); const binding = new MemoryService(deps.ledger).binding(deps.jobId);
@@ -74,8 +103,17 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
   } });
   const ingest = task({ id: 'ingest', input: inputSchema, output: inputSchema, recovery: 'retry', handler: async (input) => {
     if (!input.resumeOnly) {
-      if (!input.files.length) throw new Error('请至少上传一份简历（支持 PDF / DOCX / 图片 / 文本）');
-      await runFetcher(deps, { files: input.files });
+      if (input.mailbox) await collectMailbox(deps, input.mailbox);
+      const sources = deps.ledger.db.prepare('SELECT upload_id FROM recruitment_mail_sources WHERE job_id=?').all(deps.jobId);
+      const files = [...input.files];
+      for (const source of sources) {
+        const file = await loadUpload(String(source.upload_id), deps.paths.uploadsDir);
+        if (file) files.push(file);
+      }
+      const ingested = new Set(deps.ledger.listResumes(deps.jobId).map((r) => r.source_msg_id));
+      const pending = files.filter((f) => !ingested.has(f.uploadId));
+      if (!files.length) throw new Error(input.mailbox ? '招聘邮箱中未找到可处理的简历附件，请检查关键词、时间范围或附件格式' : '请至少上传一份简历（支持 PDF / DOCX / 图片 / 文本）');
+      if (pending.length) await runFetcher(deps, { files: pending });
       if (!deps.ledger.listResumes(deps.jobId).some((r) => !['failed', 'duplicate'].includes(r.status))) throw new Error('所有简历均未能接入（无可用简历）');
     }
     return input;
@@ -100,33 +138,33 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
       promptHash: createHash('sha256').update(deps.registry.list().map((p) => loadPrompt(p, deps.paths)).join('\n') + loadSkill('screening-plan', deps.paths)).digest('hex'), scope: '本岗位材料的解析、初筛、深评、核查及预算内重评；外部工具另行审批。' }) }),
     otherwise: identity('plan-approved-by-policy', preparedSchema) });
 
-  const parse = task({ id: 'parse', input: candidateSchema, output: candidateSchema, recovery: 'retry', handler: async (item) => {
+  const parse = task({ id: 'parse', input: candidateSchema, output: candidateSchema, recovery: 'retry', handler: async (item, ctx) => {
     if (loadParseResult(deps.ledger, item.resumeId)) { emit('parse.reused', { resumeId: item.resumeId, label: resume(item.resumeId).label, batchId: item.batchId }); return item; }
     restoreStage(item.resumeId, 'queued');
     const worker = new ParserWorker(deps, capacity(item.prepared).parse.stats().acquired + 1);
-    const result = await slot(item.prepared, 'parse', `parse:${item.resumeId}`, () => worker.parse({ resume: resume(item.resumeId), batchId: item.batchId }));
+    const result = await slot(ctx, item.prepared, 'parse', `parse:${item.resumeId}`, () => worker.parse({ resume: resume(item.resumeId), batchId: item.batchId }));
     if (!result.ok) throw new Error(`解析失败：${result.errors.join('；')}`);
     parsed(item.resumeId); return item;
   } });
-  const screen = task({ id: 'screen', input: candidateSchema, output: evalSchema, recovery: 'retry', handler: async (item) => {
-    await slot(item.prepared, 'assess', `specialist:${item.resumeId}`, () => runSpecialist(deps, item.resumeId));
+  const screen = task({ id: 'screen', input: candidateSchema, output: evalSchema, recovery: 'retry', handler: async (item, ctx) => {
+    await slot(ctx, item.prepared, 'assess', `specialist:${item.resumeId}`, () => runSpecialist(deps, item.resumeId));
     let prior = loadLatestEval(deps.ledger, item.resumeId);
     if (!prior || prior.task.phase !== 'screen') {
       restoreStage(item.resumeId, 'parsed');
       const worker = assessor(item.prepared);
-      const result = await slot(item.prepared, 'assess', `screen:${item.resumeId}`, () => worker.evaluate({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: 0, tier: deps.registry.get('assessor').tier, phase: 'screen' }));
+      const result = await slot(ctx, item.prepared, 'assess', `screen:${item.resumeId}`, () => worker.evaluate({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: 0, tier: deps.registry.get('assessor').tier, phase: 'screen' }));
       if (!result.ok) throw new Error(`初筛评估失败：${result.errors.join('；')}`);
       prior = loadLatestEval(deps.ledger, item.resumeId);
     }
     if (!prior) throw new Error('初筛未提交');
     return { ...item, evalTaskId: prior.task.id, evalTier: prior.task.tier as Evaluated['evalTier'], evalPhase: 'screen' as const, loopIndex: 0, verdict: null, reviewTaskId: null };
   } });
-  const deep = task({ id: 'deep-evaluate', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item) => {
+  const deep = task({ id: 'deep-evaluate', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item, ctx) => {
     let prior = loadLatestEval(deps.ledger, item.resumeId);
     if (!prior || prior.task.phase !== 'deep') {
       restoreStage(item.resumeId, 'evaluated');
       const worker = assessor(item.prepared);
-      const result = await slot(item.prepared, 'assess', `deep:${item.resumeId}`, () => worker.evaluate({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: 0, tier: deps.config.deepEval.tier, phase: 'deep' }));
+      const result = await slot(ctx, item.prepared, 'assess', `deep:${item.resumeId}`, () => worker.evaluate({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: 0, tier: deps.config.deepEval.tier, phase: 'deep' }));
       if (!result.ok) { emit('deep_eval.failed', { resumeId: item.resumeId, label: resume(item.resumeId).label, batchId: item.batchId, errors: result.errors, fallback: 'flash' }); return item; }
       prior = loadLatestEval(deps.ledger, item.resumeId);
     }
@@ -134,7 +172,7 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
     emit('deep_eval.completed', { resumeId: item.resumeId, label: resume(item.resumeId).label, batchId: item.batchId, totalScore: prior.evaluation.totalScore, tier: deps.config.deepEval.tier, evalTaskId: prior.task.id });
     return { ...item, evalTaskId: prior.task.id, evalTier: deps.config.deepEval.tier, evalPhase: 'deep' };
   } });
-  const revise = task({ id: 'revise', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item) => {
+  const revise = task({ id: 'revise', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item, ctx) => {
     const feedback = loadLatestReview(deps.ledger, item.resumeId);
     if (!feedback || feedback.task.id !== item.reviewTaskId) throw new Error('核查反馈版本不一致');
     let prior = loadLatestEval(deps.ledger, item.resumeId);
@@ -142,21 +180,21 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
       restoreStage(item.resumeId, 'evaluated');
       const worker = assessor(item.prepared);
       emit('selfloop.revise', { resumeId: item.resumeId, label: resume(item.resumeId).label, loop: item.loopIndex + 1, workerId: worker.workerId, fixes: feedback.review.requiredFixes.length, tier: item.evalTier });
-      const result = await slot(item.prepared, 'assess', `revise:${item.resumeId}`, () => worker.revise({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: item.loopIndex + 1, feedback: feedback.review, revisionOf: item.evalTaskId, tier: item.evalTier, phase: 'revise' }));
+      const result = await slot(ctx, item.prepared, 'assess', `revise:${item.resumeId}`, () => worker.revise({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: item.loopIndex + 1, feedback: feedback.review, revisionOf: item.evalTaskId, tier: item.evalTier, phase: 'revise' }));
       if (!result.ok) throw new Error(`重评失败：${result.errors.join('；')}`);
       prior = loadLatestEval(deps.ledger, item.resumeId);
     }
     if (!prior) throw new Error('重评未提交');
     return { ...item, evalTaskId: prior.task.id, evalPhase: 'revise' as const, loopIndex: item.loopIndex + 1, verdict: null };
   } });
-  const review = task({ id: 'review', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item) => {
+  const review = task({ id: 'review', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item, ctx) => {
     let prior = loadLatestReview(deps.ledger, item.resumeId);
     if (!prior || prior.task.eval_task_id !== item.evalTaskId) {
       const evaluation = loadLatestEval(deps.ledger, item.resumeId);
       if (!evaluation || evaluation.task.id !== item.evalTaskId) throw new Error('待核查评估版本不一致');
       restoreStage(item.resumeId, 'evaluated');
       const worker = new AuditorWorker(deps, capacity(item.prepared).review.stats().acquired + 1);
-      const result = await slot(item.prepared, 'review', `review:${item.resumeId}`, () => worker.review({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), evaluation: evaluation.evaluation, evalTaskId: item.evalTaskId, batchId: item.batchId, loopCount: item.loopIndex, maxLoops: deps.config.selfLoop.maxLoops }));
+      const result = await slot(ctx, item.prepared, 'review', `review:${item.resumeId}`, () => worker.review({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), evaluation: evaluation.evaluation, evalTaskId: item.evalTaskId, batchId: item.batchId, loopCount: item.loopIndex, maxLoops: deps.config.selfLoop.maxLoops }));
       if (!result.ok) throw new Error(`核查失败：${result.errors.join('；')}`);
       prior = loadLatestReview(deps.ledger, item.resumeId);
     }
@@ -173,7 +211,7 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
     const result = { resumeId: item.resumeId, status, score: evaluation?.evaluation.totalScore ?? 0, tier: item.evalTier, phase: item.evalPhase };
     emit('candidate.processed', { ...result, label: resume(item.resumeId).label, batchId: item.batchId, deep: item.evalPhase !== 'screen' }); return result;
   } });
-  registry.register(defineWorkflow({ id: 'candidate-verification', version: '1.0.0', input: evalSchema, output: resultSchema, implementation, body: sequence('verify-candidate', verification, finish) }));
+  registry.register(defineWorkflow({ id: 'candidate-verification', version: '1.4.0', input: evalSchema, output: resultSchema, implementation, body: sequence('verify-candidate', verification, finish) }));
 
   const parseParallel = parallel('parse-candidates', { items: (b: Batch) => b.resumeIds.map((resumeId) => ({ resumeId, batchId: b.batchId, prepared: b.prepared })), key: (v) => v.resumeId, concurrency: (b) => b.prepared.plan.pools.parse, failure: 'collect', body: parse });
   const afterParse = task({ id: 'collect-parsed', input: z.object({ input: batchSchema, result: z.array(outcomeSchema(candidateSchema)) }), output: batchSchema, recovery: 'retry', handler: ({ input, result }) => {
@@ -197,7 +235,7 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
   const selectedCandidate = condition('deep-if-selected', { test: (v: z.infer<typeof candidateInputSchema>) => v.deep,
     then: sequence('selected-deep', task({ id: 'deep-input', input: candidateInputSchema, output: evalSchema, recovery: 'retry', handler: (v) => v.candidate }), deep),
     otherwise: task({ id: 'screen-only', input: candidateInputSchema, output: evalSchema, recovery: 'retry', handler: (v) => v.candidate }) });
-  const candidateBody = sequence('candidate', selectedCandidate, subworkflow('verification', 'candidate-verification@1.0.0', evalSchema, resultSchema));
+  const candidateBody = sequence('candidate', selectedCandidate, subworkflow('verification', 'candidate-verification@1.4.0', evalSchema, resultSchema));
   const verifyParallel = parallel('evaluate-and-verify', { items: (b: Batch) => b.screened.map((candidate) => ({ candidate, deep: b.shortlist.includes(candidate.resumeId) })), key: (v) => v.candidate.resumeId, concurrency: (b) => Math.max(1, b.prepared.plan.pools.review + b.prepared.plan.pools.assess), failure: 'collect', body: candidateBody });
   const finishBatch = task({ id: 'finish-batch', input: z.object({ input: batchSchema, result: z.array(outcomeSchema(resultSchema)) }), output: batchResultSchema, recovery: 'retry', handler: ({ input, result }) => {
     const evaluated = result.filter((r) => r.ok).length;
@@ -215,8 +253,8 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
     then: approval('approve-publication', { title: '审阅并发布报告', kind: 'publish-report', input: publicationSchema, payload: (v) => ({ report: v.report }) }),
     otherwise: identity('publication-default-mode', publicationSchema) });
   const publish = task({ id: 'write-report', input: publicationSchema, output: summarySchema, recovery: 'retry', handler: (value) => publishReport(deps, opts, value) });
-  registry.register(defineWorkflow({ id: 'report-publication', version: '1.0.0', input: publicationSchema, output: summarySchema, implementation, body: sequence('publication', publishApproval, publish) }));
-  registry.register(defineWorkflow({ id: 'recruitment', version: '1.0.0', input: inputSchema, output: summarySchema, implementation,
-    body: sequence('recruitment', profile, ingest, sequence('planning', plan, planApproval), sequence('processing', retain('batch-results', batches), preparePublication), subworkflow('publish', 'report-publication@1.0.0', publicationSchema, summarySchema)) }));
+  registry.register(defineWorkflow({ id: 'report-publication', version: '1.4.0', input: publicationSchema, output: summarySchema, implementation, body: sequence('publication', publishApproval, publish) }));
+  registry.register(defineWorkflow({ id: 'recruitment', version: '1.4.0', input: inputSchema, output: summarySchema, implementation,
+    body: sequence('recruitment', profile, ingest, sequence('planning', plan, planApproval), sequence('processing', retain('batch-results', batches), preparePublication), subworkflow('publish', 'report-publication@1.4.0', publicationSchema, summarySchema)) }));
   return registry;
 }

@@ -10,6 +10,7 @@ import type { UploadedFile } from '../../src/types.ts';
 import { FakeProvider } from '../fixtures/fake-provider.ts';
 import { setupTempEnv } from '../helpers/env.ts';
 import { WorkflowStore } from '../../src/workflow/store.ts';
+import { ExecutionScheduler } from '../../src/scheduler/execution.ts';
 
 const RESUME_A = `姓名：张伟
 手机：13800000001
@@ -88,9 +89,13 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     stream: (chunk) => tokens.push(chunk.delta),
   });
   try {
+    const auto = new AutoHitlResponder();
     const summary = await runPipeline(boot.deps, {
       requirements: boot.job.requirements,
-      hitl: new AutoHitlResponder(),
+      hitl: { ask: async (question) => {
+        assert.equal(new ExecutionScheduler(boot.deps.ledger).list(boot.job.id).filter((r) => r.state === 'running').length, 0, '等待人工回答时不得占用模型执行容量');
+        return auto.ask(question);
+      } },
       uploadFiles: files,
     });
     assert.equal(summary.status, 'final');
@@ -128,9 +133,15 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     assert.ok(events.some((event) => event.type === 'deep_eval.shortlist'));
     assert.ok(events.some((event) => event.type === 'selfloop.revise'), '伪造结论应被验真环打回');
     const workflow = new WorkflowStore(boot.deps.ledger).inspect(boot.job.id);
-    assert.equal(workflow.runs.find((r) => !r.parent_run_id)?.workflow_key, 'recruitment@1.0.0');
-    assert.ok(workflow.runs.some((r) => r.workflow_key === 'candidate-verification@1.0.0' && r.parent_run_id));
+    assert.equal(workflow.runs.find((r) => !r.parent_run_id)?.workflow_key, 'recruitment@1.4.0');
+    assert.ok(workflow.runs.some((r) => r.workflow_key === 'candidate-verification@1.4.0' && r.parent_run_id));
     assert.ok(workflow.runs.every((r) => r.status === 'succeeded'));
+    const execution = new ExecutionScheduler(boot.deps.ledger).list(boot.job.id);
+    assert.ok(execution.some((r) => r.label.startsWith('model:profiler:')));
+    assert.ok(execution.some((r) => r.label.startsWith('model:coordinator:')));
+    assert.ok(execution.some((r) => r.label.startsWith('review:')));
+    assert.ok(execution.every((r) => r.state === 'succeeded'));
+    assert.equal(boot.deps.ledger.db.prepare("SELECT COUNT(*) AS n FROM agent_invocations WHERE job_id=? AND json_extract(meta_json,'$.executionId') IS NULL").get(boot.job.id)?.n, 0);
     assert.ok(workflow.nodes.some((n) => n.kind === 'loop' && n.output_json?.includes('"iterations":2')));
     assert.ok(workflow.nodes.some((n) => n.kind === 'condition' && n.control_json === '"then"'));
     assert.ok(events.some((event) => event.type === 'report.generated'));

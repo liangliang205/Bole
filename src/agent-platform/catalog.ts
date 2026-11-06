@@ -35,15 +35,18 @@ export type AgentDefinition = z.infer<typeof definitionSchema>;
 export const bindingSchema = z.union([
   z.object({ activeAgentId: id }).strict(),
   z.object({ agentId: id, version: versionSchema }).strict(),
-  z.object({ candidates: z.array(z.object({ agentId: id, version: versionSchema }).strict()).min(1).max(12), capability: z.string().min(1) }).strict(),
 ]);
 export const teamSchema = z.object({ id, version: versionSchema,
   slots: z.object({ coordinator: bindingSchema, profiler: bindingSchema, fetcher: bindingSchema, parser: bindingSchema,
     assessor: bindingSchema, auditor: bindingSchema, specialist: bindingSchema.optional() }).strict(),
 }).strict();
+/** Read-only compatibility for historical teams; new definitions have one binding per slot. */
+const legacyBindingSchema = z.union([bindingSchema, z.object({ candidates: z.array(z.object({ agentId: id, version: versionSchema }).strict()).min(1).max(12), capability: z.string().min(1) }).strict()]);
+export const storedTeamSchema = teamSchema.extend({ slots: z.object({ coordinator: legacyBindingSchema, profiler: legacyBindingSchema, fetcher: legacyBindingSchema, parser: legacyBindingSchema, assessor: legacyBindingSchema, auditor: legacyBindingSchema, specialist: legacyBindingSchema.optional() }).strict() });
 export type AgentTeam = z.infer<typeof teamSchema>;
 export interface AgentVersion { version_key: string; agent_id: string; version: string; definition_json: string; content_hash: string; status: 'registered' | 'retired'; registered_at: string }
 export interface AgentManifest {
+  skills?: import('../skills/store.ts').SkillSnapshot[];
   teamKey: string; migration: boolean; providerName: string; providerIdentity?: string; models: { flash: string; pro: string };
   bindings: Record<string, { key: string; hash: string; definition: AgentDefinition; reason: string }>;
 }

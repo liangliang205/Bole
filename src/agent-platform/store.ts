@@ -6,7 +6,8 @@ import { AgentRegistry } from '../core/registry.ts';
 import { loadPrompt, resolvePaths } from '../config.ts';
 import type { AgentPreset } from '../config.ts';
 import { memoryHash } from '../memory/service.ts';
-import { slotNames, teamSchema, templateCatalog, validateDefinition,
+import { SkillStore, skillPrompt } from '../skills/store.ts';
+import { slotNames, teamSchema, storedTeamSchema, templateCatalog, validateDefinition,
   type AgentDefinition, type AgentManifest, type AgentTeam, type AgentVersion } from './catalog.ts';
 
 const seedTemplates = ['builtin.coordinator.v1', 'builtin.profiler.v1', 'builtin.ingest.v1', 'builtin.parser.v1', 'builtin.assessor.v1', 'builtin.auditor.v1'] as const;
@@ -103,16 +104,17 @@ export class AgentStore {
   }
   teams() { return this.ledger.db.prepare('SELECT * FROM agent_teams ORDER BY created_at,team_key').all() as unknown as { team_key: string; definition_json: string; content_hash: string }[]; }
   registerTeam(input: unknown): AgentTeam {
+    const slots = (input as { slots?: Record<string, unknown> } | null)?.slots;
+    if (slots && Object.values(slots).some((v) => v && typeof v === 'object' && 'candidates' in v)) throw new Error('每个角色只需指定一个 Agent；能力发现用于人工选择，历史候选团队仅兼容读取');
     const team = teamSchema.parse(input);
     for (const [slot, binding] of Object.entries(team.slots)) {
-      const candidates = 'candidates' in binding ? binding.candidates : 'activeAgentId' in binding
+      const candidates = 'activeAgentId' in binding
         ? [{ agentId: binding.activeAgentId, version: this.active().find((a) => a.agent_id === binding.activeAgentId)?.version_key?.split('@')[1] ?? '' }] : [binding];
       for (const ref of candidates) {
         const v = this.get(`${ref.agentId}@${ref.version}`);
-        if (v.status !== 'registered') throw new Error('团队不能引用已退役或撤销的版本');
+        if (v.status !== 'registered') throw new Error('团队不能引用已退役的版本');
         const d = JSON.parse(v.definition_json) as AgentDefinition;
         if (templateCatalog[d.templateId].slot !== slot) throw new Error(`模板不能执行团队槽位 ${slot}`);
-        if ('capability' in binding && !d.capabilities.includes(binding.capability)) throw new Error('团队候选不具备要求的能力');
       }
     }
     const key = `${team.id}@${team.version}`;
@@ -185,7 +187,7 @@ export class AgentStore {
     }
     const row = this.teams().find((t) => t.team_key === teamKey);
     if (!row) throw new Error('Agent 团队不存在');
-    const team = teamSchema.parse(JSON.parse(row.definition_json));
+    const team = storedTeamSchema.parse(JSON.parse(row.definition_json));
     const bindings: AgentManifest['bindings'] = {};
     for (const [slot, binding] of Object.entries(team.slots)) {
       const refs = 'candidates' in binding ? binding.candidates : 'activeAgentId' in binding
@@ -198,9 +200,10 @@ export class AgentStore {
       const selected = eligible[0];
       bindings[slot] = { key: selected.version_key, hash: selected.content_hash,
         definition: JSON.parse(selected.definition_json) as AgentDefinition,
-        reason: refs.length > 1 ? `团队候选内按确切版本标识稳定选择，共 ${eligible.length} 个合格候选` : '用户指定团队的精确/活动版本绑定' };
+        reason: refs.length > 1 ? `历史候选定义兼容读取，按旧规则固定为 ${selected.version_key}；新团队请明确指定一个角色版本` : '用户指定团队的精确/活动版本绑定' };
     }
-    const manifest = { teamKey, migration, providerName, providerIdentity, models, bindings };
+    const skills = new SkillStore(this.ledger).snapshot();
+    const manifest = { teamKey, migration, providerName, providerIdentity, models, bindings, ...(skills.length ? { skills } : {}) };
     this.transaction(() => {
       this.ledger.db.prepare('INSERT INTO job_agent_manifests VALUES (?,?,?,?)').run(jobId, JSON.stringify(manifest), memoryHash(manifest), new Date().toISOString());
       this.ledger.appendEvent(jobId, 'agent-registry', 'agent.team.bound', { teamKey, migration, bindings: Object.fromEntries(Object.entries(bindings).map(([slot, b]) => [slot, { key: b.key, hash: b.hash, reason: b.reason }])) });
@@ -234,7 +237,7 @@ export class AgentStore {
       presets[slot] = { id: d.id, nameZh: d.name, role: d.description, version: d.version, tier: d.tier,
         tools: d.tools, mcp: d.mcp, capabilities: d.capabilities, maxDepth: slot === 'coordinator' ? 1 : 0,
         canDelegate: slot === 'coordinator', outputSchema: templateCatalog[d.templateId].schema, prompt: '',
-        promptContent: d.prompt + d.skills.filter((s) => s.id !== 'screening-plan').map((s) => `\n【技能 ${s.id}@${s.version}】\n${s.content}`).join(''), definitionHash: b.hash };
+        promptContent: d.prompt + d.skills.filter((s) => s.id !== 'screening-plan').map((s) => `\n【技能 ${s.id}@${s.version}】\n${s.content}`).join('') + skillPrompt(manifest.skills, slot), definitionHash: manifest.skills?.length ? memoryHash({ agent: b.hash, skills: manifest.skills }) : b.hash };
     }
     return AgentRegistry.bound(presets, memoryHash(manifest));
   }

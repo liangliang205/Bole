@@ -31,6 +31,7 @@ export async function chatWithJob(opts: {
   dataDir?: string;
   mcp?: McpManager;
   knowledge?: KnowledgeService;
+  resumeWorkflow?: () => Promise<unknown>;
 }): Promise<{ answer: string; messages: ChatMessageRow[] }> {
   const attachments = opts.attachments ?? [];
   const message = opts.message.trim() || (attachments.length ? '请查看附件。' : '');
@@ -49,6 +50,7 @@ export async function chatWithJob(opts: {
     dataDir: opts.dataDir,
     mcp: opts.mcp,
     knowledge: opts.knowledge,
+    resumeWorkflow: opts.resumeWorkflow,
   });
 
   const names = files.map((file) => path.basename(file));

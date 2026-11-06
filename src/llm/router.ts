@@ -1,5 +1,8 @@
 import type { ChatRequest, ChatResult, ModelTier, StopReason } from '../types.ts';
 import { AgentStore } from '../agent-platform/store.ts';
+import { currentExecutionId } from '../scheduler/execution.ts';
+import { nodeExecution } from '../scheduler/context.ts';
+import { createHash } from 'node:crypto';
 import type { Ledger } from '../core/ledger.ts';
 import { computeCost, type PricingTable } from './cost.ts';
 import type { LlmProvider } from './provider.ts';
@@ -85,12 +88,22 @@ export class LlmRouter {
     const manifest = this.jobId ? store?.manifest(this.jobId) : undefined;
     const entries = Object.entries(manifest?.bindings ?? {});
     const selected = entries.find(([slot]) => slot === req.meta?.agentSlot) ?? entries.find(([slot]) => slot === req.agent) ?? entries.find(([, b]) => b.definition.id === req.agent);
+    const scope = nodeExecution.getStore();
+    if (scope && !currentExecutionId()) {
+      const label = createHash('sha256').update(JSON.stringify({ agent: req.agent, system: req.system, user: req.user, schema: req.schemaName, meta: req.meta })).digest('hex').slice(0, 20);
+      return scope.schedule(`model:${req.agent}:${label}`, [
+        { key: 'platform:agents', capacity: scope.executionCapacity },
+        ...(selected ? [{ key: `agent:${selected[1].key}`, capacity: selected[1].definition.limits.maxConcurrency }] : []),
+      ], () => this.chat(req));
+    }
     let invocation: string | undefined;
     if (selected && store && this.jobId) {
       const [slot, binding] = selected;
       if (manifest!.providerName !== this.provider.name) throw new Error('模型提供商与任务绑定不一致，请切回原提供商');
       if (manifest!.providerIdentity && manifest!.providerIdentity !== this.providerIdentity) throw new Error('模型网关与任务绑定不一致');
       const safeMeta = Object.fromEntries(Object.entries(req.meta ?? {}).filter(([key]) => ['taskId', 'resumeId', 'batchId', 'phase', 'step', 'kind'].includes(key)));
+      const executionId = currentExecutionId();
+      if (executionId) safeMeta.executionId = executionId;
       invocation = store.beginInvocation(this.jobId, slot, binding, { system: req.system, user: req.user, messages: req.messages, images: req.images }, { ...safeMeta, definitionHash: binding.hash, model: manifest!.models[req.tier] });
       req = { ...req, agent: binding.definition.id, model: manifest!.models[req.tier],
         signal: req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(binding.definition.limits.timeoutMs)]) : AbortSignal.timeout(binding.definition.limits.timeoutMs),

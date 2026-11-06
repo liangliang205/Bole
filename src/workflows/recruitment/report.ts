@@ -4,6 +4,7 @@ import type { PipelineRunOptions, RunSummary } from '../../agents/coordinator.ts
 import { buildReport, selectTopCandidates, type ReportData } from '../../report/builder.ts';
 import { writeReports } from '../../report/render.ts';
 import { loadJobAnalysis } from '../../agents/data.ts';
+import { nodeExecution } from '../../scheduler/context.ts';
 
 export const poolSchema = z.object({ name: z.string(), capacity: z.number(), active: z.number(), peak: z.number(), acquired: z.number(), refused: z.number(), released: z.number(), timeouts: z.number() });
 export const publicationSchema = z.object({ report: z.json(), strict: z.boolean(), startedMs: z.number(), pools: z.array(poolSchema) });
@@ -15,12 +16,18 @@ export const summarySchema: z.ZodType<RunSummary> = z.object({
   reports: z.object({ markdown: z.string(), json: z.string(), cost: z.string(), convergence: z.string() }),
   usage: z.object({ calls: z.number(), promptTokens: z.number(), completionTokens: z.number(), cachedTokens: z.number(), costUsd: z.number(), cacheHitRate: z.number() }), durationMs: z.number(),
 });
+export function assertScreeningComplete(deps: Pick<AgentDeps, 'ledger' | 'jobId'>): void {
+  const unfinished = deps.ledger.listResumes(deps.jobId).filter((r) => !['verified', 'reported', 'quarantine', 'failed', 'duplicate'].includes(r.status));
+  if (unfinished.length) throw new Error(`筛选尚未完成：${unfinished.length} 份材料仍待处理（${unfinished.map((r) => `${r.label}: ${r.status}`).join('、')}），禁止发布候选人结论`);
+}
 export async function prepareReport(deps: AgentDeps, pools: Publication['pools'], startedMs: number, strict: boolean): Promise<Publication> {
+  assertScreeningComplete(deps);
   const analysis = loadJobAnalysis(deps.ledger.getJob(deps.jobId)!)!;
   const report = await buildReport(deps, analysis, { pools, startedMs, topN: deps.config.topN, interviewPlans: new Map(), status: 'draft' });
   return { report: JSON.parse(JSON.stringify(report)) as Publication['report'], pools, startedMs, strict };
 }
 export async function publishReport(deps: AgentDeps, opts: PipelineRunOptions, input: Publication): Promise<RunSummary> {
+  assertScreeningComplete(deps);
   const reportData = input.report as unknown as ReportData;
   const verified = deps.ledger.listResumes(deps.jobId).filter((r) => r.status === 'verified');
   const prior = deps.ledger.listDecisions(deps.jobId).find((d) => d.node === 'final_confirmation');
@@ -34,6 +41,7 @@ export async function publishReport(deps: AgentDeps, opts: PipelineRunOptions, i
   const finalStatus = /确认输出/.test(confirmation.answer) ? 'final' : 'draft';
   reportData.run.status = finalStatus;
   const reports = await writeReports(reportData, deps.runDir);
+  nodeExecution.getStore()?.assertOwner();
   deps.ledger.setJobStatus(deps.jobId, finalStatus === 'final' ? 'completed' : 'draft');
   if (finalStatus === 'final') for (const resume of verified) deps.ledger.setResumeStatus(resume.id, 'reported');
   deps.events.emit(deps.jobId, 'coordinator', 'report.generated', { status: finalStatus, top: reportData.top.map((c) => `${c.label}:${c.totalScore}`), reports });

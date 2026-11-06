@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { Ledger } from '../core/ledger.ts';
 import type { HitlResponder } from '../agents/hitl.ts';
+import type { Resource } from '../scheduler/execution.ts';
 
 export type RunStatus = 'pending' | 'running' | 'waiting_approval' | 'waiting_confirmation' | 'paused' | 'succeeded' | 'failed' | 'cancelled';
 export interface NodeSpec {
@@ -22,6 +23,8 @@ export interface NodeContext {
   control<T>(create: () => T): T;
   child<I, O>(key: string, input: I): Promise<O>;
   checkpoint(): void;
+  assertOwner(): void;
+  schedule<T>(label: string, resources: Resource[], execute: () => Promise<T>, priority?: number): Promise<T>;
 }
 export interface Node<I, O> {
   spec: NodeSpec;
@@ -54,7 +57,7 @@ export interface NodeRow {
 export type Outcome<T> = { key: string; ok: true; value: T } | { key: string; ok: false; error: string };
 export interface LoopResult<S> { status: 'completed' | 'exhausted'; iterations: number; value: S }
 
-export class WorkflowPausedError extends Error { constructor() { super('工作流已暂停'); } }
+export class WorkflowPausedError extends Error { constructor(reason = '工作流已暂停') { super(reason); } }
 export class WorkflowUncertainError extends Error { constructor(path: string) { super(`节点结果待人工确认：${path}；请确认外部操作结果后恢复`); } }
 export class WorkflowCancelledError extends Error { constructor() { super('工作流已取消'); } }
 export class WorkflowBusyError extends Error { constructor() { super('工作流已有执行者，请稍后再试'); } }

@@ -78,7 +78,7 @@ try {
 
 工作流决定控制结构，Agent 团队定义模型角色及权限。处理器通过现有 `AgentDeps` 调用 `ParserWorker`、`AssessorWorker`、`AuditorWorker` 等适配器；所有模型调用继续走任务已绑定的 Agent 版本和模型网关。
 
-招聘规划 Agent 产生批次大小、批次并发、角色容量和深评策略；这些经过边界校验的决策实际决定 `parallel` 的并发与候选人深评分支。工作流本身不增加新的优先级队列或负载感知调度器。
+招聘规划 Agent 产生批次大小、批次并发、角色容量和深评策略；这些经过边界校验的决策实际决定 `parallel` 的并发与候选人深评分支。工作流将资源准入交给持久化执行队列，支持简单可选优先级；不做 Agent 自动选人，详见 [可靠执行层](RELIABLE_EXECUTION.md)。
 
 如果需要根据 LLM 选择路径，应先用任务节点产生经 Schema 校验的结构化决策，再由 `condition` 消费；不要让 LLM 生成可执行 TypeScript。
 
@@ -92,11 +92,11 @@ try {
     → 选择深评短名单
     → 并行候选人
        → 条件深评
-       → candidate-verification@1.0.0 子流程
+       → candidate-verification@1.3.0 子流程
           → 有界循环：按反馈修正 → 核查 → 判断是否结束
           → 通过 / 转人工
  → 汇总报告
- → report-publication@1.0.0 子流程
+ → report-publication@1.3.0 子流程
     → 严格模式人工审批
     → 确认并写出报告
 ```
@@ -133,6 +133,10 @@ SQLite 自动增加 `workflow_definitions`、`workflow_runs`、`workflow_nodes`�
 - `GET /api/run/:jobId/workflow`：读取当前任务的运行和节点。
 - `POST /api/run/:jobId/workflow/confirm`：提交 `{ runId, path, action: 'retry' }` 或 `{ runId, path, action: 'complete', output }`，记录人工审计，不自动启动执行。
 - `POST /api/run/:jobId/resume`：沿用现有续跑接口。
+
+暂停或失败后也可继续对话，例如发送“请继续筛选”或“帮我续跑当前任务”。主 Agent 可调用仅面向当前会话的 `resume_workflow` 工具；默认模式直接启动检查点恢复，严格模式先生成独立审批。询问原因不代表授权，工具不能替换目标任务、输入或审批结果。运行中不允许重复启动；存在待处理审批、结果待确认、已取消或已结束时会返回原因。
+
+续跑入口在实际启动前校验工作流实现指纹；旧版本未保留兼容实现时会明确拒绝，不会报告“已启动”。本次招聘参考实现发布为 `1.3.0`，保留已有 `1.0.0` / `1.1.0` 历史定义，不覆盖历史绑定。此前误结束的旧会话需使用兼容实现处理或新建会话重新筛选。
 
 接口沿用本地单用户访问边界，不对 Agent 开放管理权限，也不提供独立身份认证。
 

@@ -1,6 +1,7 @@
 import type { Ledger } from '../core/ledger.ts';
 import { WorkflowStore } from './store.ts';
 import { z } from 'zod';
+import { ExecutionScheduler } from '../scheduler/execution.ts';
 
 /** Local human-facing inspection/confirmation only; never exposed as an Agent tool. */
 export function workflowRoute(ledger: Ledger, method: string, pathname: string, body: unknown = {}): unknown {
@@ -9,7 +10,7 @@ export function workflowRoute(ledger: Ledger, method: string, pathname: string, 
   const jobId = decodeURIComponent(match[1]);
   if (!ledger.getJob(jobId)) throw new Error('任务不存在');
   const store = new WorkflowStore(ledger);
-  if (method === 'GET' && !match[2]) return store.inspect(jobId);
+  if (method === 'GET' && !match[2]) return { ...store.inspect(jobId), queue: new ExecutionScheduler(ledger).list(jobId) };
   if (method === 'POST' && match[2] === 'confirm') {
     const request = z.discriminatedUnion('action', [
       z.object({ runId: z.string(), path: z.string(), action: z.literal('retry') }).strict(),

@@ -1,6 +1,7 @@
 import { inflateRawSync } from 'node:zlib';
 import path from 'node:path';
 import { ocrImage } from './ocr.ts';
+import { pdfPageText, type PdfFragment } from './pdf-layout.ts';
 
 export interface NormalizedDoc {
   format: string;
@@ -146,10 +147,7 @@ export function docxToText(buffer: Buffer): string {
   return decodeEntities(text);
 }
 
-interface PdfTextItem {
-  str?: string;
-  hasEOL?: boolean;
-}
+type PdfTextItem = PdfFragment;
 
 interface PdfDocument {
   numPages: number;
@@ -173,7 +171,7 @@ export async function pdfToText(buffer: Buffer): Promise<string> {
     for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
       const page = await doc.getPage(pageNo);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item) => `${item.str ?? ''}${item.hasEOL ? '\n' : ' '}`).join('');
+      const pageText = pdfPageText(content.items);
       pages.push(pageText.trim());
       page.cleanup();
     }
@@ -202,7 +200,7 @@ export async function normalizeDocument(buffer: Buffer, filename: string, conten
     text = docxToText(buffer);
   } else if (format === 'pdf') {
     text = await pdfToText(buffer);
-    warnings.push('PDF 文本层提取；扫描件请上传图片走 OCR');
+    warnings.push('PDF 文本层提取（按页面坐标恢复行序，未调用 OCR）；复杂分栏仍需核对原文件');
   } else if (format === 'image') {
     text = options.ocr
       ? await options.ocr(buffer, filename, imageMimeType(filename, contentType))

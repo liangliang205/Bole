@@ -1,11 +1,18 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore, parseExecutionMode } from '../core/approvals.ts';
 import { executeApprovedTool } from '../tools/approved-tool.ts';
+import { mailboxQuerySchema, sendApprovedCandidateEmail, type MailboxQuery } from '../mail/service.ts';
+import { mailboxIdentity } from '../mail/client.ts';
+import { SkillStore, parseSkill, readLocalSkill } from '../skills/store.ts';
+import { installFromCommand } from '../skills/installer.ts';
 import { runOrchestrator } from '../chat/orchestrator.ts';
 import { memoryRoute } from '../memory/http.ts';
 import { MemoryService } from '../memory/service.ts';
 import { AgentBlockedError } from '../agent-platform/store.ts';
 import { agentRoute } from '../agent-platform/http.ts';
+import { recruitmentRegistry } from '../workflows/recruitment/workflow.ts';
+import { WorkflowStore, hash as workflowHash } from '../workflow/store.ts';
+import { resumeSnapshot } from '../chat/resume.ts';
 import { workflowRoute } from '../workflow/http.ts';
 import { WorkflowUncertainError } from '../workflow/types.ts';
 import type { ChatTurn } from '../types.ts';
@@ -176,6 +183,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/memory-ui.js': { file: 'memory-ui.js', type: 'text/javascript; charset=utf-8' },
   '/agent-ui.js': { file: 'agent-ui.js', type: 'text/javascript; charset=utf-8' },
+  '/skill-ui.js': { file: 'skill-ui.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
 };
 const PDFJS_DIR = path.join(import.meta.dirname, '..', '..', 'node_modules', 'pdfjs-dist', 'build');
@@ -337,6 +345,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
     listeners: Set<(chunk: StreamToken) => void>;
     requirements: string;
     uploadFiles?: UploadedFile[];
+    mailbox?: MailboxQuery;
     resumeOnly: boolean;
   }): ActiveRun => {
     const run: ActiveRun = {
@@ -356,6 +365,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           requirements: opts.requirements,
           hitl: opts.hitl,
           uploadFiles: opts.uploadFiles,
+          mailbox: opts.mailbox,
           resumeOnly: opts.resumeOnly,
           shouldPause: () => run.pauseRequested === true,
         });
@@ -400,6 +410,47 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
    * 直接写 `createServer(async ...)` 会得到一个无人接管的 Promise：
    * 请求处理内部一旦在 catch 之外抛出，Node 只会记录 unhandledRejection，连接会挂住。
    */
+  const resuming = new Set<string>();
+  const resumeJob = async (jobId: string) => {
+    if (resuming.has(jobId)) throw new Error('该任务正在启动续跑，不能重复启动');
+    resuming.add(jobId);
+    try {
+      const ledger = new Ledger(paths.dbPath);
+      try { resumeSnapshot(ledger, jobId); } finally { ledger.close(); }
+        const job = getJob(jobId);
+        if (!job) {
+          throw new Error(`任务不存在: ${jobId}`);
+        }
+        if (runs.get(jobId)?.status === 'running' || runs.get(jobId)?.status === 'pausing') {
+          throw new Error('该任务正在运行，不能重复启动');
+        }
+        const activeProvider = await providers.getActive();
+        if (!activeProvider) {
+          throw new Error('尚未配置模型提供商：请先在「设置与模型」中添加。');
+        }
+        if (!activeProvider.apiKey) {
+          throw new Error(`模型提供商「${activeProvider.name}」未绑定 API Key。`);
+        }
+        const listeners = new Set<(chunk: StreamToken) => void>();
+        const boot = await bootstrap({
+          requirements: job.requirements,
+          jobId,
+          seed: job.seed ?? 'resume',
+          stream: makeStreamSink(listeners),
+        });
+        const hitl = new WebHitlResponder();
+        try {
+          const root = new WorkflowStore(boot.deps.ledger).root(jobId);
+          if (root) {
+            const registry = recruitmentRegistry(boot.deps, { requirements: job.requirements, hitl, resumeOnly: true });
+            if (workflowHash(registry.bundle(root.workflow_key)) !== root.definition_hash) throw new Error('旧任务的工作流实现与当前版本不一致，请使用兼容版本恢复或新建筛选会话');
+          }
+        } catch (error) { boot.close(); throw error; }
+        const run = launch({ boot, hitl, listeners, requirements: job.requirements, resumeOnly: true });
+    return { jobId, runId: run.runId, status: run.status };
+    } finally { resuming.delete(jobId); }
+  };
+
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       if (!req.url) {
@@ -460,6 +511,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         return;
       }
 
+      if (method === 'GET' && pathname === '/api/mail/status') {
+        try { json(res, 200, { ok: true, mailbox: await mailboxIdentity() }); }
+        catch (error) { json(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        return;
+      }
       if (method === 'GET' && pathname === '/api/config') {
         const config = loadPipelineConfig();
         const providerList = await providers.list();
@@ -813,7 +869,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         const uploadIds = Array.isArray(body.uploadIds)
           ? body.uploadIds.map((id) => String(id)).filter(Boolean)
           : [];
-        if (uploadIds.length === 0) {
+        const mailInput = body.mailbox === undefined ? undefined : mailboxQuerySchema.safeParse(body.mailbox);
+        if (mailInput && !mailInput.success) { json(res, 400, { ok: false, error: '邮箱参数无效：请检查关键词、日期和邮件数量（1–200）' }); return; }
+        const mailbox = mailInput?.data;
+        if (uploadIds.length === 0 && !mailbox) {
           json(res, 400, { ok: false, error: '请先上传至少一份简历（PDF/DOCX/图片/文本）' });
           return;
         }
@@ -822,7 +881,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           const file = await loadUpload(id, paths.uploadsDir);
           if (file) files.push(file);
         }
-        if (files.length === 0) {
+        if (files.length === 0 && !mailbox) {
           json(res, 400, { ok: false, error: '上传文件不存在或已过期，请重新上传' });
           return;
         }
@@ -844,7 +903,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           stream: makeStreamSink(listeners),
         });
         const hitl = new WebHitlResponder();
-        const run = launch({ boot, hitl, listeners, requirements, uploadFiles: files, resumeOnly: false });
+        const run = launch({ boot, hitl, listeners, requirements, uploadFiles: files, mailbox, resumeOnly: false });
         json(res, 200, { ok: true, jobId: run.jobId, runId: run.runId, status: run.status });
         return;
       }
@@ -865,6 +924,12 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           const approval = store.decide(id, jobId, body.decision === 'approve', 'HR(web)');
           ledger.addDecision({ jobId, node: approval.kind, question: approval.payload_json,
             answer: approval.status, actor: 'HR(web)' });
+          if (approval.kind === 'recruitment-mail' && approval.status === 'approved') {
+            await sendApprovedCandidateEmail(ledger, jobId, id);
+          }
+          if (approval.kind === 'recruitment-mail' && approval.status === 'rejected') {
+            ledger.appendChat(jobId, 'assistant', '已拒绝招聘邮件，未发送。可在对话中修改内容后重新准备。');
+          }
           if (approval.kind === 'tool' && approval.status === 'approved') {
             const result = await executeApprovedTool(store, id, jobId, mcpPlugins.managerRef());
             const payload = JSON.parse(approval.payload_json) as {
@@ -893,7 +958,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           if (approval.kind === 'tool' && approval.status === 'rejected') {
             ledger.appendChat(jobId, 'assistant', '已拒绝工具操作，未执行。可重新描述需求以生成新的操作。');
           }
-          json(res, 200, { ok: true, resumeRequired: approval.kind !== 'tool' && approval.status === 'approved' });
+          json(res, 200, { ok: true, resumeRequired: !['tool', 'recruitment-mail'].includes(approval.kind) && approval.status === 'approved' });
         } catch (error) {
           json(res, 409, { ok: false, error: error instanceof Error ? error.message : String(error) });
         } finally { ledger.close(); }
@@ -1125,13 +1190,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           return;
         }
         const runtime = runs.get(jobId);
-        if (runtime?.status === 'running' || runtime?.status === 'pausing') {
-          json(res, 409, { ok: false, error: '筛选仍在运行，完成后才能继续对话' });
-          return;
-        }
-        const runStatus = runtime?.status ?? inferStatus(job.status);
-        if (runStatus !== 'completed') {
-          json(res, 409, { ok: false, error: '筛选尚未完成，完成后才能继续和伯乐对话' });
+        if (method !== 'GET' && (runtime?.status === 'running' || runtime?.status === 'pausing')) {
+          json(res, 409, { ok: false, error: '筛选仍在运行，请先暂停后再对话' });
           return;
         }
         const ledger = new Ledger(paths.dbPath);
@@ -1198,6 +1258,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
             dataDir: paths.dataDir,
             mcp: mcpPlugins.managerRef(),
             knowledge,
+            resumeWorkflow: () => resumeJob(jobId),
           });
           json(res, 200, { ok: true, answer: result.answer, messages: result.messages });
         } catch (error) {
@@ -1240,34 +1301,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
       const resumeMatch = /^\/api\/run\/([^/]+)\/resume$/.exec(pathname);
       if (method === 'POST' && resumeMatch) {
         const jobId = decodeURIComponent(resumeMatch[1]);
-        const job = getJob(jobId);
-        if (!job) {
-          json(res, 404, { ok: false, error: `任务不存在: ${jobId}` });
-          return;
-        }
-        if (runs.get(jobId)?.status === 'running' || runs.get(jobId)?.status === 'pausing') {
-          json(res, 409, { ok: false, error: '该任务正在运行，不能重复启动' });
-          return;
-        }
-        const activeProvider = await providers.getActive();
-        if (!activeProvider) {
-          json(res, 400, { ok: false, error: '尚未配置模型提供商：请先在「设置与模型」中添加。' });
-          return;
-        }
-        if (!activeProvider.apiKey) {
-          json(res, 400, { ok: false, error: `模型提供商「${activeProvider.name}」未绑定 API Key。` });
-          return;
-        }
-        const listeners = new Set<(chunk: StreamToken) => void>();
-        const boot = await bootstrap({
-          requirements: job.requirements,
-          jobId,
-          seed: job.seed ?? 'resume',
-          stream: makeStreamSink(listeners),
-        });
-        const hitl = new WebHitlResponder();
-        const run = launch({ boot, hitl, listeners, requirements: job.requirements, resumeOnly: true });
-        json(res, 200, { ok: true, jobId, runId: run.runId, status: run.status });
+        json(res, 200, { ok: true, ...await resumeJob(jobId) });
         return;
       }
 
@@ -1281,6 +1315,53 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           tools: view.status.tools,
           servers: view.status.servers,
         });
+        return;
+      }
+      if (pathname === '/api/plugins/install' && method === 'POST') {
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          const body = await readJsonBody(req);
+          const active = await providers.getActive();
+          if (!active?.apiKey) throw new Error('请先在模型设置中配置可用模型，供 Agent 分析安装命令');
+          const llm = new LlmRouter({ provider: new DeepSeekProvider({ apiKey: active.apiKey, baseUrl: active.baseUrl, protocol: active.api, deepseekStyle: active.builtin, name: active.name }), models: { flash: active.flashModel, pro: active.proModel }, pricing: loadPipelineConfig().pricing });
+          const result = await installFromCommand(String(body.command ?? ''), { dataDir: paths.dataDir, store: new SkillStore(ledger), mcp: mcpPlugins, llm });
+          json(res, 200, { ok: true, ...result });
+        } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
+        return;
+      }
+      if (pathname === '/api/skills/preview' && method === 'POST') {
+        try {
+          const body = await readJsonBody(req);
+          const skill = typeof body.path === 'string' && body.path.trim() ? await readLocalSkill(body.path) : parseSkill(String(body.content ?? ''));
+          json(res, 200, { ok: true, skill });
+        } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        return;
+      }
+      const skillMatch = /^\/api\/skills(?:\/([a-z0-9_-]+))?$/.exec(pathname);
+      if (skillMatch && ['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) {
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          const store = new SkillStore(ledger);
+          const id = skillMatch[1];
+          if (method === 'GET' && !id) { json(res, 200, { ok: true, skills: store.list() }); return; }
+          if (method === 'POST' && !id) {
+            const body = await readJsonBody(req);
+            json(res, 201, { ok: true, skill: store.save(body), skills: store.list() }); return;
+          }
+          if (method === 'PATCH' && id) {
+            const body = await readJsonBody(req);
+            const old = store.list().find((s) => s.id === id);
+            if (!old) throw new Error('Skill 不存在');
+            const { revision: _revision, updatedAt: _updatedAt, ...definition } = old;
+            const { revision, ...patch } = body;
+            if ('id' in patch && patch.id !== id) throw new Error('Skill ID 不可修改');
+            json(res, 200, { ok: true, skill: store.save({ ...definition, ...patch, id }, Number(revision)), skills: store.list() }); return;
+          }
+          if (method === 'DELETE' && id) { store.remove(id); json(res, 200, { ok: true, skills: store.list() }); return; }
+          json(res, 405, { ok: false, error: '不支持的 Skill 操作' });
+        } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
         return;
       }
       if (method === 'GET' && pathname === '/api/mcp/plugins') {

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { deploymentEvidenceIssues } from './evidence-policy.ts';
 import { specialistReference } from '../agent-platform/specialist.ts';
 import { AgentStore } from '../agent-platform/store.ts';
 import { evaluateResumeSchema } from '../schemas.ts';
@@ -186,6 +187,7 @@ export class AssessorWorker {
       maxAttempts: deps.config.structuredOutput.maxAttempts,
       postValidate: (value) => {
         const issues: string[] = [];
+        issues.push(...deploymentEvidenceIssues(text, [...value.rationale, ...value.dimensions.map((d) => d.rationale)]));
         const expected = new Set(this.ctx.scorecard.dimensions.map((d) => d.key));
         const got = new Set(value.dimensions.map((d) => d.key));
         for (const key of expected) if (!got.has(key)) issues.push(`缺少评分卡维度：${key}`);
