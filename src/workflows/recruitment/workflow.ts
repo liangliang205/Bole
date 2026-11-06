@@ -28,7 +28,10 @@ import { defineWorkflow, task, sequence, retain, parallel, condition, loop, subw
 import type { Node, Outcome, NodeContext } from '../../workflow/index.ts';
 import { publicationSchema, summarySchema, prepareReport, publishReport } from './report.ts';
 
-export const RECRUITMENT_KEY = 'recruitment@1.4.0';
+export const RECRUITMENT_VERSION = '1.5.0';
+export const RECRUITMENT_KEY = `recruitment@${RECRUITMENT_VERSION}`;
+export const VERIFICATION_KEY = `candidate-verification@${RECRUITMENT_VERSION}`;
+export const PUBLICATION_KEY = `report-publication@${RECRUITMENT_VERSION}`;
 const inputSchema = z.object({ requirements: z.string(), files: z.array(z.object({ uploadId: z.string(), filename: z.string(), path: z.string(), size: z.number(), contentType: z.string() })), mailbox: mailboxQuerySchema.optional(), resumeOnly: z.boolean(), config: z.json() });
 const planSchema = screeningPlanSchema.extend({ source: z.enum(['agent', 'fallback']) });
 const preparedSchema = z.object({ plan: planSchema, resumeIds: z.array(z.string()), startedMs: z.number(), strict: z.boolean() });
@@ -46,11 +49,14 @@ function identity<T>(id: string, schema: z.ZodType<T>): Node<T, T> { return task
 /** Trusted source modules, including imported business handlers, are fingerprinted. */
 function implementationHash(): string {
   const files = ['./workflow.ts', './report.ts', '../../agents/coordinator.ts', '../../agents/profiler.ts', '../../agents/fetcher.ts', '../../agents/parser.ts', '../../agents/assessor.ts', '../../agents/auditor.ts', '../../agents/planner.ts', '../../agents/data.ts', '../../agent-platform/specialist.ts', '../../core/structured.ts', '../../workflow/builders.ts', '../../workflow/engine.ts', '../../scheduler/execution.ts', '../../scheduler/schema.ts', '../../scheduler/context.ts', '../../llm/router.ts', '../../agents/prompts.ts', '../../agents/evidence-policy.ts', '../../ingest/normalize.ts', '../../ingest/pdf-layout.ts', '../../../config/skills/evidence-calibration.md'];
-  files.push('../../mail/client.ts', '../../mail/service.ts');
+  files.push('../../mail/client.ts', '../../mail/service.ts', '../../mail/adapters.ts');
   return createHash('sha256').update(files.map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n')).digest('hex');
 }
+// Capture the source fingerprint when the module is loaded. A live process must
+// not mix its loaded handlers with files edited on disk after startup.
+const RECRUITMENT_IMPLEMENTATION = implementationHash();
 export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): WorkflowRegistry {
-  const implementation = implementationHash();
+  const implementation = RECRUITMENT_IMPLEMENTATION;
   const registry = new WorkflowRegistry();
   const approvals = new ApprovalStore(deps.ledger);
   let pools: { parse: CapacityPool; assess: CapacityPool; review: CapacityPool; agents: CapacityPool } | undefined;
@@ -211,7 +217,7 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
     const result = { resumeId: item.resumeId, status, score: evaluation?.evaluation.totalScore ?? 0, tier: item.evalTier, phase: item.evalPhase };
     emit('candidate.processed', { ...result, label: resume(item.resumeId).label, batchId: item.batchId, deep: item.evalPhase !== 'screen' }); return result;
   } });
-  registry.register(defineWorkflow({ id: 'candidate-verification', version: '1.4.0', input: evalSchema, output: resultSchema, implementation, body: sequence('verify-candidate', verification, finish) }));
+  registry.register(defineWorkflow({ id: 'candidate-verification', version: RECRUITMENT_VERSION, input: evalSchema, output: resultSchema, implementation, body: sequence('verify-candidate', verification, finish) }));
 
   const parseParallel = parallel('parse-candidates', { items: (b: Batch) => b.resumeIds.map((resumeId) => ({ resumeId, batchId: b.batchId, prepared: b.prepared })), key: (v) => v.resumeId, concurrency: (b) => b.prepared.plan.pools.parse, failure: 'collect', body: parse });
   const afterParse = task({ id: 'collect-parsed', input: z.object({ input: batchSchema, result: z.array(outcomeSchema(candidateSchema)) }), output: batchSchema, recovery: 'retry', handler: ({ input, result }) => {
@@ -235,7 +241,7 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
   const selectedCandidate = condition('deep-if-selected', { test: (v: z.infer<typeof candidateInputSchema>) => v.deep,
     then: sequence('selected-deep', task({ id: 'deep-input', input: candidateInputSchema, output: evalSchema, recovery: 'retry', handler: (v) => v.candidate }), deep),
     otherwise: task({ id: 'screen-only', input: candidateInputSchema, output: evalSchema, recovery: 'retry', handler: (v) => v.candidate }) });
-  const candidateBody = sequence('candidate', selectedCandidate, subworkflow('verification', 'candidate-verification@1.4.0', evalSchema, resultSchema));
+  const candidateBody = sequence('candidate', selectedCandidate, subworkflow('verification', VERIFICATION_KEY, evalSchema, resultSchema));
   const verifyParallel = parallel('evaluate-and-verify', { items: (b: Batch) => b.screened.map((candidate) => ({ candidate, deep: b.shortlist.includes(candidate.resumeId) })), key: (v) => v.candidate.resumeId, concurrency: (b) => Math.max(1, b.prepared.plan.pools.review + b.prepared.plan.pools.assess), failure: 'collect', body: candidateBody });
   const finishBatch = task({ id: 'finish-batch', input: z.object({ input: batchSchema, result: z.array(outcomeSchema(resultSchema)) }), output: batchResultSchema, recovery: 'retry', handler: ({ input, result }) => {
     const evaluated = result.filter((r) => r.ok).length;
@@ -253,8 +259,8 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
     then: approval('approve-publication', { title: '审阅并发布报告', kind: 'publish-report', input: publicationSchema, payload: (v) => ({ report: v.report }) }),
     otherwise: identity('publication-default-mode', publicationSchema) });
   const publish = task({ id: 'write-report', input: publicationSchema, output: summarySchema, recovery: 'retry', handler: (value) => publishReport(deps, opts, value) });
-  registry.register(defineWorkflow({ id: 'report-publication', version: '1.4.0', input: publicationSchema, output: summarySchema, implementation, body: sequence('publication', publishApproval, publish) }));
-  registry.register(defineWorkflow({ id: 'recruitment', version: '1.4.0', input: inputSchema, output: summarySchema, implementation,
-    body: sequence('recruitment', profile, ingest, sequence('planning', plan, planApproval), sequence('processing', retain('batch-results', batches), preparePublication), subworkflow('publish', 'report-publication@1.4.0', publicationSchema, summarySchema)) }));
+  registry.register(defineWorkflow({ id: 'report-publication', version: RECRUITMENT_VERSION, input: publicationSchema, output: summarySchema, implementation, body: sequence('publication', publishApproval, publish) }));
+  registry.register(defineWorkflow({ id: 'recruitment', version: RECRUITMENT_VERSION, input: inputSchema, output: summarySchema, implementation,
+    body: sequence('recruitment', profile, ingest, sequence('planning', plan, planApproval), sequence('processing', retain('batch-results', batches), preparePublication), subworkflow('publish', PUBLICATION_KEY, publicationSchema, summarySchema)) }));
   return registry;
 }

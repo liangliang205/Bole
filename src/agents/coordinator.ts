@@ -8,6 +8,7 @@ import { combineStopReasons } from '../core/state.ts';
 import { WorkflowPausedError, WorkflowEngine, WorkflowStore } from '../workflow/index.ts';
 import { recruitmentRegistry, RECRUITMENT_KEY } from '../workflows/recruitment/workflow.ts';
 import type { MailboxQuery } from '../mail/service.ts';
+import { freezeMailboxQuery } from '../mail/service.ts';
 
 export interface PipelineRunOptions {
   requirements: string;
@@ -102,7 +103,7 @@ export async function runPipeline(deps: AgentDeps, opts: PipelineRunOptions): Pr
   });
   try {
     return existing ? await engine.resume<RunSummary>(existing.id)
-      : await engine.start(deps.jobId, RECRUITMENT_KEY, { requirements: opts.requirements, files: opts.uploadFiles ?? [], ...(opts.mailbox ? { mailbox: opts.mailbox } : {}), resumeOnly: !!opts.resumeOnly, config: deps.config });
+      : await engine.start(deps.jobId, RECRUITMENT_KEY, { requirements: opts.requirements, files: opts.uploadFiles ?? [], ...(opts.mailbox ? { mailbox: freezeMailboxQuery(opts.mailbox, deps.ledger) } : {}), resumeOnly: !!opts.resumeOnly, config: deps.config });
   } catch (error) {
     if (error instanceof WorkflowPausedError) throw new PipelinePausedError(error.message);
     throw error;

@@ -487,7 +487,7 @@
     closeDrawer();
     document.title = '伯乐 BoLe · 对话式招聘筛选';
     renderJobs();
-    setTimeout(() => $('#new-requirements')?.focus(), 30);
+    setTimeout(() => { if ($('#mailbox-modal').classList.contains('hidden')) $('#new-requirements')?.focus(); }, 30);
   }
 
   function showChatView() {
@@ -1370,7 +1370,9 @@
     const uploaded = state.attachments.filter((file) => file.status === 'uploaded');
     const useMailbox = $('#new-mail-enabled').checked;
     if (uploaded.length === 0 && !useMailbox) { showHint('请上传简历或选择从招聘邮箱收取', true); return; }
-    const mailbox = useMailbox ? { query: $('#new-mail-query').value.trim(), maxMessages: Number($('#new-mail-limit').value), ...($('#new-mail-after').value ? { after: new Date(`${$('#new-mail-after').value}T00:00:00`).toISOString() } : {}) } : undefined;
+    if (useMailbox && !state.mailAdapters?.some((a) => a.id === $('#mail-provider').value)) { showHint('邮箱连接尚未加载或已不可用，请在招聘邮箱中重新选择', true); openMailbox(); return; }
+    if (useMailbox && !saveMailboxPreferences()) { openMailbox(); $('#new-mail-limit').focus(); return; }
+    const mailbox = useMailbox ? { providerId: $('#mail-provider').value, query: $('#new-mail-query').value.trim(), maxMessages: Number($('#new-mail-limit').value), ...($('#new-mail-after').value ? { after: new Date(`${$('#new-mail-after').value}T00:00:00`).toISOString() } : {}) } : undefined;
     if (!state.config?.providers?.length || !state.activeProviderId) {
       showHint('请先在设置中添加模型提供商并绑定 API Key', true);
       openSettings();
@@ -2290,6 +2292,68 @@
 
   // ---------------------------------------------------------------- knowledge
 
+  const MAILBOX_PREFERENCES_KEY = 'bole.mailbox.preferences';
+  function updateMailboxSummary() {
+    const enabled = $('#new-mail-enabled').checked;
+    $('#new-mail-source-state').textContent = enabled ? '已启用' : '未启用';
+    $('#new-mail-summary').classList.toggle('mail-enabled', enabled);
+    $('#new-mail-summary').title = enabled ? '从招聘邮箱收取简历，点击切换来源或修改收取范围' : '点击启用招聘邮箱，或设置邮箱连接与收取范围';
+    $$('[data-mail-source]').forEach((item) => item.setAttribute('aria-checked', String((item.dataset.mailSource === 'mail') === enabled)));
+  }
+  function restoreMailboxPreferences() {
+    try {
+      const value = JSON.parse(localStorage.getItem(MAILBOX_PREFERENCES_KEY) || 'null');
+      if (value && typeof value === 'object') {
+        $('#new-mail-enabled').checked = value.enabled === true;
+        $('#new-mail-query').value = typeof value.query === 'string' ? value.query.slice(0, 300) : '';
+        $('#new-mail-after').value = typeof value.after === 'string' ? value.after : '';
+        $('#new-mail-limit').value = Number.isInteger(value.maxMessages) && value.maxMessages >= 1 && value.maxMessages <= 200 ? value.maxMessages : 50;
+      }
+    } catch { /* Keep usable defaults if browser storage is unavailable. */ }
+    updateMailboxSummary();
+  }
+  function saveMailboxPreferences() {
+    const maxMessages = Number($('#new-mail-limit').value);
+    if (!Number.isInteger(maxMessages) || maxMessages < 1 || maxMessages > 200) {
+      $('#mailbox-settings-status').textContent = '最多检查邮件需填写 1–200 的整数。';
+      return false;
+    }
+    try {
+      localStorage.setItem(MAILBOX_PREFERENCES_KEY, JSON.stringify({ providerId: $('#mail-provider').value, enabled: $('#new-mail-enabled').checked, query: $('#new-mail-query').value.trim(), after: $('#new-mail-after').value, maxMessages }));
+      $('#mailbox-settings-status').textContent = '已保存，用于下一次新建筛选；已有任务保持原收取范围。';
+    } catch { $('#mailbox-settings-status').textContent = '当前页面已应用；浏览器未能保存，刷新后需重新设置。'; }
+    updateMailboxSummary();
+    return true;
+  }
+  async function checkMailboxConnection() {
+    const button = $('#mail-test');
+    button.disabled = true;
+    $('#mail-status').textContent = '正在检查…';
+    try {
+      const data = await api(`/api/mail/status?providerId=${encodeURIComponent($('#mail-provider').value)}`);
+      $('#mail-status').textContent = data.mailbox || data.error || '尚未授权';
+      $('#mail-status').classList.toggle('mailbox-connected', Boolean(data.mailbox));
+    } catch (error) { $('#mail-status').textContent = error.message; $('#mail-status').classList.remove('mailbox-connected'); }
+    finally { button.disabled = false; }
+  }
+  function openMailbox() {
+    closeSettings(); closeKnowledge();
+    $('#mailbox-modal').classList.remove('hidden');
+    $('#mailbox-close').focus();
+    void loadMailAdapters().then(checkMailboxConnection).catch((error) => { $('#mail-status').textContent = error.message; });
+  }
+  async function loadMailAdapters() {
+    const data = await api('/api/mail/adapters');
+    state.mailAdapters = data.adapters;
+    let selected = $('#mail-provider').value;
+    try { selected = JSON.parse(localStorage.getItem(MAILBOX_PREFERENCES_KEY) || 'null')?.providerId || selected; } catch { /* Use current selection. */ }
+    $('#mail-provider').innerHTML = data.adapters.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+    if (data.adapters.some((a) => a.id === selected)) $('#mail-provider').value = selected;
+    else { $('#mail-provider').insertAdjacentHTML('beforeend', `<option value="${esc(selected)}" selected disabled>原邮箱适配器已不可用，请重新选择</option>`); }
+    $('#mail-adapter-skill').innerHTML = '<option value="">独立 CLI（不关联 Skill）</option>' + data.skills.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}${s.id === 'agently-mail' || data.adapters.some((a) => a.skillId === s.id) ? ' · 已有适配器' : ' · 待配置适配器'}</option>`).join('');
+  }
+  function closeMailbox() { $('#mailbox-modal').classList.add('hidden'); }
+
   function setKnowledgeStatus(target, message, tone = '') {
     const el = $(target);
     if (!el) return;
@@ -2298,6 +2362,7 @@
   }
 
   async function openKnowledge() {
+    closeMailbox();
     $('#knowledge-modal').classList.remove('hidden');
     await loadKnowledge();
   }
@@ -2635,10 +2700,60 @@
       if (event.key === 'Escape' && !$('#preview-pane').classList.contains('hidden')) closeFilePreview();
     });
     $('#new-run-btn').addEventListener('click', showNewView);
-    $('#mail-test').addEventListener('click', async () => {
-      $('#mail-status').textContent = '正在检查…';
-      try { const data = await api('/api/mail/status'); $('#mail-status').textContent = data.mailbox || data.error || '尚未授权'; }
-      catch (error) { $('#mail-status').textContent = error.message; }
+    restoreMailboxPreferences();
+    void loadMailAdapters().catch(() => {});
+    $('#mail-test').addEventListener('click', checkMailboxConnection);
+    $('#open-mailbox').addEventListener('click', openMailbox);
+    const mailSourceMenu = $('#mail-source-menu');
+    const closeMailSourceMenu = () => { mailSourceMenu.classList.add('hidden'); $('#new-mail-summary').setAttribute('aria-expanded', 'false'); };
+    $('#new-mail-summary').addEventListener('click', () => {
+      const open = mailSourceMenu.classList.contains('hidden');
+      mailSourceMenu.classList.toggle('hidden', !open); $('#new-mail-summary').setAttribute('aria-expanded', String(open));
+      if (open) mailSourceMenu.querySelector('[aria-checked="true"]')?.focus();
+    });
+    $$('[data-mail-source]').forEach((item) => item.addEventListener('click', () => {
+      $('#new-mail-enabled').checked = item.dataset.mailSource === 'mail';
+      saveMailboxPreferences(); closeMailSourceMenu(); $('#new-mail-summary').focus();
+    }));
+    $('#mail-source-settings').addEventListener('click', () => { closeMailSourceMenu(); openMailbox(); });
+    mailSourceMenu.addEventListener('keydown', (event) => {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const items = [...mailSourceMenu.querySelectorAll('button')];
+      const index = items.indexOf(document.activeElement);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next].focus();
+    });
+    document.addEventListener('click', (event) => { if (!event.target.closest('.mail-source-picker')) closeMailSourceMenu(); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMailSourceMenu(); });
+    $('#mailbox-close').addEventListener('click', closeMailbox);
+    $('#mailbox-modal').addEventListener('click', (event) => { if (event.target === $('#mailbox-modal')) closeMailbox(); });
+    for (const id of ['#new-mail-enabled', '#new-mail-query', '#new-mail-after', '#new-mail-limit', '#mail-provider']) $(id).addEventListener('change', saveMailboxPreferences);
+    $('#mail-provider').addEventListener('change', () => {
+      const definition = state.mailAdapters?.find((a) => a.id === $('#mail-provider').value && !a.builtin);
+      if (definition) { $('#mail-adapter-config').value = JSON.stringify(definition, null, 2); $('#mail-adapter-skill').value = definition.skillId || ''; }
+      void checkMailboxConnection();
+    });
+    $('#mail-adapter-template').addEventListener('click', () => {
+      $('#mail-adapter-config').value = JSON.stringify({ id: 'my-mail', name: '我的招聘邮箱', command: 'your-mail-cli', baseArgs: [], operations: Object.fromEntries(['identity', 'search', 'read', 'download', 'send'].map((op) => [op, { args: [op, '--json', '{input}'], resultPath: 'data' }])), fields: { email: 'email', items: 'messages', messageId: 'id', nextCursor: 'nextCursor', sender: 'from.email', attachments: 'attachments', attachmentId: 'id', filename: 'name', size: 'size', savedPath: 'path' } }, null, 2);
+    });
+    $('#mail-adapter-save').addEventListener('click', async () => {
+      try {
+        const value = JSON.parse($('#mail-adapter-config').value);
+        if ($('#mail-adapter-skill').value) value.skillId = $('#mail-adapter-skill').value;
+        await api('/api/mail/adapters', { method: 'POST', body: JSON.stringify(value) });
+        await loadMailAdapters(); $('#mail-provider').value = value.id; saveMailboxPreferences();
+        $('#mail-adapter-status').textContent = '适配器已保存。请检查连接后新建任务使用。';
+        await checkMailboxConnection();
+      } catch (error) { $('#mail-adapter-status').textContent = error.message; }
+    });
+    $('#mailbox-new-run').addEventListener('click', () => {
+      if (!saveMailboxPreferences()) return;
+      $('#new-mail-enabled').checked = true;
+      saveMailboxPreferences();
+      closeMailbox();
+      if (state.jobId) showNewView();
+      $('#new-requirements').focus();
     });
     $('#new-start').addEventListener('click', startRun);
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
@@ -2695,55 +2810,6 @@
       }
     });
     const modeTrigger = $('#mode-trigger');
-    $$('.composer-picker').forEach((picker) => {
-      const select = picker.querySelector('select');
-      const trigger = picker.querySelector('button');
-      const menu = picker.querySelector('[role="menu"]');
-      const close = () => { menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false'); };
-      const refresh = () => {
-        const selected = select.selectedOptions[0];
-        const text = selected?.textContent || picker.dataset.pickerLabel;
-        trigger.querySelector('.picker-label').textContent = select.id === 'new-policy-version' && !select.value ? '评分标准' : text;
-        trigger.title = `${picker.dataset.pickerLabel}：${text}`;
-        trigger.setAttribute('aria-label', trigger.title);
-        menu.replaceChildren();
-        for (const option of select.options) {
-          const group = option.parentElement;
-          if (group.tagName === 'OPTGROUP' && group.firstElementChild === option) {
-            const heading = document.createElement('div'); heading.className = 'picker-group'; heading.textContent = group.label; menu.append(heading);
-          }
-          const button = document.createElement('button'); button.type = 'button';
-          button.setAttribute('role', 'menuitemradio'); button.setAttribute('aria-checked', String(option.selected)); button.disabled = option.disabled;
-          const label = document.createElement('span'); label.textContent = option.textContent;
-          const check = document.createElement('span'); check.className = 'mode-check'; check.textContent = '✓'; check.setAttribute('aria-hidden', 'true');
-          button.append(label, check); menu.append(button);
-          button.addEventListener('click', () => { select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true })); close(); trigger.focus(); });
-        }
-      };
-      const open = () => {
-        refresh(); menu.classList.remove('hidden'); trigger.setAttribute('aria-expanded', 'true');
-        menu.style.left = '0'; menu.style.right = 'auto';
-        if (menu.getBoundingClientRect().right > window.innerWidth - 12) { menu.style.left = 'auto'; menu.style.right = '0'; }
-        menu.querySelector('[aria-checked="true"]')?.focus();
-      };
-      trigger.addEventListener('click', () => { if (menu.classList.contains('hidden')) open(); else close(); });
-      select.addEventListener('change', refresh);
-      new MutationObserver(refresh).observe(select, { childList: true, subtree: true });
-      document.addEventListener('click', (event) => { if (!picker.contains(event.target)) close(); });
-      document.addEventListener('focusin', (event) => { if (!picker.contains(event.target)) close(); });
-      picker.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') { event.preventDefault(); close(); trigger.focus(); }
-        if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        if (menu.classList.contains('hidden')) { open(); return; }
-        const options = [...menu.querySelectorAll('button:not(:disabled)')];
-        if (!options.length) return;
-        const index = options.indexOf(document.activeElement);
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
-        options[next].focus();
-      });
-      refresh();
-    });
     const modeMenu = $('#mode-menu');
     const modeItems = [...modeMenu.querySelectorAll('[data-mode]')];
     const setModeMenu = (open, focus = false) => {
@@ -2938,7 +3004,7 @@
       if (row) { openDrawer('candidates', false); openCandidate(row.getAttribute('data-candidate')); }
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !$('#help-dialog').open) { closeSettings(); closeKnowledge(); closeDrawer(); }
+      if (event.key === 'Escape' && !$('#help-dialog').open) { closeSettings(); closeKnowledge(); closeMailbox(); closeDrawer(); }
       if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
         event.preventDefault();
         $('#job-search').focus();
@@ -2964,6 +3030,7 @@
       await openKnowledge();
       return;
     }
+    if (window.location.hash === '#mailbox') { showNewView(); openMailbox(); return; }
     const match = /^#job=(.+)$/.exec(window.location.hash);
     if (match && jobs.some((job) => job.id === decodeURIComponent(match[1]))) {
       await selectJob(decodeURIComponent(match[1]));

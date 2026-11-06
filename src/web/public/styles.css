@@ -854,11 +854,26 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .resume-evidence summary, .resume-parse-notes summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .resume-parse-notes { margin: 12px 0; line-height: 1.7; }
 .resume-evidence .span-meta { display: block; margin-top: 8px; }
-.mail-source-controls { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:12px 16px; font-size:12px; border-top:1px solid var(--border, #ddd); }
-.mail-source-controls label { display:flex; gap:6px; align-items:center; }
-.mail-source-controls input:not([type=checkbox]) { max-width:180px; padding:5px 7px; border:1px solid var(--border, #ddd); border-radius:6px; background:transparent; color:inherit; }
-#new-mail-limit { width:60px; }
-#mail-status { overflow-wrap:anywhere; }
+.mail-source-state { color:var(--muted); font-size:11px; }
+.mail-enabled .mail-source-state { color:var(--ok); }
+.screening-default-setting { padding:16px; margin-bottom:20px; border-radius:12px; background:var(--surface-2); display:grid; gap:8px; }
+.screening-default-setting > label { font-size:13px; font-weight:600; }
+.screening-default-setting p { margin:0; font-size:12px; }
+.mailbox-card { width:min(760px, 100%); }
+.mailbox-card h2 { margin:0 0 8px; }
+.mailbox-card h3 { font-size:15px; margin:0 0 18px; }
+.mailbox-account { display:flex; align-items:center; gap:16px; padding:22px; margin:24px 0; background:var(--surface-2); border-radius:14px; }
+.mailbox-account-icon { font-size:28px; width:52px; height:52px; display:grid; place-items:center; background:var(--surface); border-radius:12px; flex-shrink:0; }
+.mailbox-account > div:nth-child(2) { flex:1; min-width:0; }
+#mail-status { overflow-wrap:anywhere; margin-top:5px; font-size:14px; }
+#mail-status.mailbox-connected { color:var(--ok); font-weight:600; }
+.mailbox-enabled { display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; }
+.mailbox-preferences .form-grid { gap:18px; }
+.mailbox-preferences small { font-size:12px; }
+.mailbox-flow { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin:24px 0; padding:18px; background:var(--surface-2); border-radius:12px; font-size:12px; color:var(--muted); }
+.mailbox-actions { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; }
+.mailbox-actions p { font-size:12px; margin:0; max-width:380px; }
+@media(max-width:600px) { .mailbox-account { flex-wrap:wrap; padding:16px; gap:12px; } .mailbox-account #mail-test { margin-left:auto; } .mailbox-actions .btn { width:100%; } }
 #skill-roles { display:flex; flex-wrap:wrap; gap:10px 18px; border:1px solid var(--border, #ddd); margin:16px 0; padding:12px; border-radius:8px; }
 #skill-roles label { display:flex; align-items:center; gap:6px; font-size:13px; }
 #skill-content { width:100%; box-sizing:border-box; font-family:ui-monospace,monospace; margin-top:6px; }
@@ -869,3 +884,8 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .plugin-install-dialog::backdrop { background:rgba(0,0,0,.3); }
 #plugin-install-command { width:100%; box-sizing:border-box; margin:10px 0; font-family:ui-monospace,monospace; }
 #plugin-install-status { white-space:pre-wrap; overflow-wrap:anywhere; }
+.mailbox-provider-label { display:grid; gap:8px; font-size:13px; margin-bottom:20px; }
+.mailbox-adapter-editor { margin:0 0 24px; padding:14px; background:var(--surface-2); border-radius:10px; font-size:13px; }
+.mailbox-adapter-editor summary { cursor:pointer; }
+.mailbox-adapter-editor label { display:grid; gap:6px; margin:12px 0; }
+#mail-adapter-config { width:100%; box-sizing:border-box; font-family:ui-monospace,monospace; }

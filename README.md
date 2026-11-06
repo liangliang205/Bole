@@ -2,9 +2,11 @@
 
 [![CI](https://github.com/liangliang205/Bole/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/liangliang205/Bole/actions/workflows/ci.yml)
 
-**可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台上传真实简历、描述岗位需求；伯乐编排 **6 个 preset（5 个 LLM 角色 + 1 个确定性接入器）**完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查。多 Agent 扇出只发生在**多简历筛选**（上下文与成本原因，单简历不做无谓派生）；筛选完成后的追问由主 Agent 直接回答或调用工具，并按任务复杂度在 **flash/pro** 间选档；面试建议按需加载 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；平台只给建议，不做自动录用/淘汰决定。
+**可验证的多 Agent 招聘筛选平台（MVP）**。HR 在对话式控制台描述岗位需求，从招聘邮箱收取简历或上传本地文件；伯乐编排 **6 个 preset（5 个 LLM 角色 + 1 个确定性接入器）**完成 JD 结构化、并发解析、匹配评估、证据核查与合规检查。多 Agent 扇出只发生在**多简历筛选**（上下文与成本原因，单简历不做无谓派生）；筛选完成后的追问由主 Agent 直接回答或调用工具，并按任务复杂度在 **flash/pro** 间选档；面试建议按需加载 skill，不进入筛选流水线。所有结论都必须能回到简历原文的字符区间；HR 选定人选并批准具体邮件后，平台可发送联系邮件，不做自动录用/淘汰决定。
 
 > 当前版本只接真实模型 API，不包含 mock 模型、演示 JD、故障注入或预置黄金简历。没有可用的模型提供商时流水线会明确失败，而不是悄悄回退到模拟数据。
+
+当前招聘主流程、候选人核查和报告发布工作流版本为 **1.5.0**。工作流版本和软件包版本分别管理；旧任务保持原绑定，恢复需要匹配的旧实现，不会自动迁移到新版。
 
 ## 30 秒启动
 
@@ -16,31 +18,43 @@ pnpm web                   # http://127.0.0.1:8787
 
 首次进入 Web 会自动检查模型提供商；没有可用 Key 时会打开设置并定位到 DeepSeek 密钥。默认带一个 DeepSeek 内置提供商，也可以添加任意 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages 网关，并选择当前使用的提供商。自定义提供商支持「获取可用模型」、模型目录、手动添加模型，并分别选择 Flash/Pro 模型。Key 使用 AES-256-GCM 加密持久化在 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重填；不通过环境变量读取，也不写入台账/报告。
 
+使用内置腾讯 Agent Mail 时，在 PowerShell 中完成一次邮箱授权：
+
+```powershell
+$env:AGENTLY_WORKSPACE = 'codex'
+pnpm exec agently-cli auth login
+pnpm exec agently-cli +me
+```
+
+BoLe 的授权工作区优先读取 `BOLE_MAIL_WORKSPACE`，其次读取显式的 `AGENTLY_WORKSPACE`，默认使用 `codex`。其他邮箱适配器使用各自 CLI 的授权方式。启用 Skill 和完成邮箱授权是两个独立步骤。
+
 ### 页面里能做什么
 
 - 插件：统一管理工具和技能。点击「添加插件」粘贴安装命令，由 Agent 识别并安装；也可手动配置 MCP 或导入 SKILL.md。技能可启停、编辑和分配角色，新任务冻结技能快照。使用范围、命令示例和 API 见 [插件安装说明](docs/PLUGIN_INSTALLATION.md)。
 
-- 招聘邮箱：已接入腾讯 Agent Mail CLI。在新建任务中勾选「从招聘邮箱收取简历」，设置邮件关键词、起始日期及数量后，输入岗位需求即可处理收件箱附件。筛选完成后对伯乐说「我选 R01，请发邮件邀请面试，并说明……」，伯乐准备具体邮件，HR 审阅候选人、收件地址与正文后批准发送；默认模式也必须审批。安装、API 与限制见 [招聘邮箱接入](docs/AGENT_MAIL.md)。
+- 招聘邮箱：侧栏入口位于知识库上方，可选择连接、检查授权并保存简历收取范围。腾讯 Agent Mail 为内置适配器，其他邮箱 Skill 可声明 CLI 命令和 JSON 返回字段映射，见 [通用邮箱适配](docs/MAIL_ADAPTERS.md)。筛选完成后由 HR 选人，具体联系邮件仍需审阅批准；见 [招聘邮箱接入](docs/AGENT_MAIL.md)。
+
+- 新建筛选工具栏：保留附件、默认/严格模式和高频的「招聘邮箱」入口，可快速切换邮箱收取、仅上传简历，或进入邮箱连接与收取范围设置。评分标准和团队选择集中在设置页，不在输入框中展示；默认选择与邮箱收取偏好保存在当前浏览器，用于新任务。
 
 - 可靠执行：每个角色固定绑定一个 Agent 版本，能力发现用于开发者选择；持久化执行队列统一管理跨会话容量，保留等待原因和恢复记录。任务面板“工作流”内可展开执行队列。实现范围与 review 结论见 [可靠执行层](docs/RELIABLE_EXECUTION.md)。
 
-- Agent 团队：在“设置 → Agent 团队”管理角色草稿、不可变版本、活动指针与团队配置。可复制内置角色为新版本，或基于 `structured-llm.v1` 新建专职检查角色，注册后无需重启即可按能力发现和绑定。退役只停止新任务使用，已绑定任务仍可继续执行。新建会话可选择团队，任务详情可查看确切版本和调用记录。初次启动从原配置幂等导入六个 preset；之后文件修改需在“配置导入预览”中显式创建新版本。
+- Agent 团队：在“设置 → Agent 团队”管理角色草稿、不可变版本、活动指针与团队配置。可复制内置角色为新版本，或基于 `structured-llm.v1` 新建专职检查角色，注册后无需重启即可按能力发现和绑定。退役只停止新任务使用，已绑定任务仍可继续执行。在设置中选择新筛选默认团队，任务详情可查看确切版本和调用记录。初次启动从原配置幂等导入六个 preset；之后文件修改需在“配置导入预览”中显式创建新版本。
 - 工作流：招聘流程使用代码化 `sequence / parallel / condition / loop / subworkflow` 编排，节点状态与父子运行持久化，暂停后可从检查点续跑。任务面板的“工作流”页签展示分支、核查修正轮次及审批子流程。开发接入参见 [工作流指南](docs/WORKFLOW_GUIDE.md)，运行 `pnpm workflow:example` 可查看无 API Key 的确定性 SDK 控制结构示例。
 - 专职检查：可选专职节点在解析之后、初筛之前运行，输出必须附原文引用；结果供评估/核查参考，不直接改变评分卡或淘汰候选人。角色通过实际团队流程验证，工具操作沿用所选模式的审批。CLI 可用 `--agent-team <id@version>` 选择团队，`pnpm bole agents` 查看当前版本状态。
 
 二次开发步骤、实际 JSON 定义和版本语义见 [Agent 扩展指南](docs/AGENT_EXTENSION_GUIDE.md)。
 
-- 岗位与评分标准（记忆管理）：从“设置 → 岗位与评分标准”进入，创建岗位族，从已完成画像的会话或历史版本载入参考，调整权重或完整评分卡，填写规则、原因与应用方式，提交修订提案。无论默认/严格模式，均需人工批准才能发布版本。新建会话可选择已批准版本，画像后确认是否采用；评分卡与结论阈值随任务冻结，之后的修订或退役不改变旧任务。来源任务删除后，关联版本转为待复核并停止新任务使用。长对话按上下文预算生成带水位和引用的提取式摘要，必要时主 Agent 可读取本 job 的原始消息。
+- 岗位与评分标准（记忆管理）：从“设置 → 岗位与评分标准”进入，创建岗位族，从已完成画像的会话或历史版本载入参考，调整权重或完整评分卡，填写规则、原因与应用方式，提交修订提案。无论默认/严格模式，均需人工批准才能发布版本。在设置中选择新筛选默认评分标准，画像后确认是否采用；评分卡与结论阈值随任务冻结，之后的修订或退役不改变旧任务。来源任务删除后，关联版本转为待复核并停止新任务使用。长对话按上下文预算生成带水位和引用的提取式摘要，必要时主 Agent 可读取本 job 的原始消息。
 
 - 执行模式：新建会话选择「默认」或「严格」，创建后该会话沿用选定模式。默认模式保持原流程；严格模式需要批准筛选计划、逐次工具操作及最终报告发布。解析、检索、评分和已批准预算内的核查重评自动执行，不逐次打断。MCP 暂无统一可信的读写风险标记，因此严格模式下全部工具调用（含导出、依赖准备、Python 与 MCP）逐次审批。
 - 严格审批：先显示具体计划、工具参数或候选报告，批准后继续；拒绝即停止该操作，修改需求时重新发起。审批存储于 SQLite，等待时释放执行资源，服务重启后仍可审批；计划和发布批准后自动续跑，也可点「续跑」恢复。工具批准后执行保存的参数并继续原对话，后续工具再次审批。执行过程中崩溃的工具不自动重放，需人工核对外部结果。严格模式是授权机制，不替代输出校验，也不提供代码沙箱。
 
 CLI 使用 `pnpm bole run --mode strict --jd "招聘需求" --files ./resumes`。严格模式需要交互终端，不允许 `--yes` 自动批准；旧会话默认使用默认模式。HTTP 创建任务可传 `executionMode: "strict"`；`GET /api/run/:id` 返回审批记录，`POST /api/run/:id/approvals/:approvalId` 接受 `{ "decision": "approve" | "reject" }`，不接受替换操作参数。该接口沿用本地单用户部署边界，不提供独立身份认证。
 
-- 设置：侧栏「⚙ 设置」打开，内含「模型 / 插件 / Agent 团队 / 岗位与评分标准」四个页签。模型页管理提供商与 Key（DeepSeek 为内置提供商，不可删除；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；支持获取可用模型、模型目录、手动添加和 Flash/Pro 选择）；插件页管理 MCP；Agent 团队内的“运行检查”提供环境自检，角色信息统一由动态注册表管理。清空台账只在 CLI 提供。
+- 设置：侧栏「⚙ 设置」打开，内含「模型 / 插件 / Agent 团队 / 岗位与评分标准」四个页签。模型页管理提供商与 Key（DeepSeek 为内置提供商，不可删除；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；支持获取可用模型、模型目录、手动添加和 Flash/Pro 选择）；插件页统一管理 MCP 和 Skills；「Agent 团队」与「岗位与评分标准」分别设置新筛选的默认团队、默认评分标准。Agent 团队内的“运行检查”提供环境自检，角色信息统一由动态注册表管理。清空台账只在 CLI 提供。
 - 知识库：原生 SQLite 本地知识库（`data/knowledge.db`）；侧栏仅提供入口，在知识库页面启用/停用并多选适用 Agent：伯乐、画像师、录事、相马官、监军。默认仅供相马官检索，旧库自动迁移保留原行为；未勾选角色则不参与自动检索。伯乐的规划与后续对话均按角色绑定检索；接入器是确定性代码，不提供知识库角色绑定。支持文档上传、Markdown 智能分块、Ollama/OpenAI 兼容 embedding、可选 rerank、Top K 和上下文预算。
 - 主题：默认日间白底黑字；右上角「☾ 暗夜」切换为黑底白字，偏好保存在浏览器 localStorage。
-- 新建对话：上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历，输入招聘需求。
+- 新建对话：输入招聘需求，通过工具栏启用招聘邮箱，或上传 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / BMP / TIFF 简历；两种来源也可同时使用。
 - 实时对话：里程碑消息 + 可折叠工具轨迹 + **token 级流式生成**（服务端用 `partial-json` 把未完成 JSON 转成字段/分数/理由，前端不展示原始 JSON）。
 - 文件预览：对话内生成的 DOCX/PDF 可点击卡片，在右侧分栏用 PDF.js 预览；DOCX 先经 LibreOffice Kit 转 PDF，支持拖拽调宽和原文件下载。
 - 对话附件：输入区左侧「＋」可上传图片、PDF、Word（DOCX）、Markdown/TXT/HTML；服务端抽取文本注入主 Agent，界面只显示附件名，不上传原文。
@@ -57,13 +71,13 @@ CLI 使用 `pnpm bole run --mode strict --jd "招聘需求" --files ./resumes`�
 ## 流水线
 
 ```text
-HR 上传文件 + 招聘需求
+HR 描述招聘需求 + 选择招聘邮箱 / 上传文件
    │
    ▼
 画像师（pro）── 结构化 JD / 评分卡 / 受保护属性剥离 ── HITL
    │
    ▼
-探马（确定性代码）── 上传 → 去重（sha256 + 身份指纹）→ 归一化（PDF.js / DOCX / OCR / HTML）
+探马（确定性代码）── 邮箱附件 / 上传文件 → 去重 → 归一化（PDF.js / DOCX / OCR / HTML）
    │
    ▼
 主 Agent（pro）── 读 screening-plan skill → 决定 single/batch、批大小、并发、是否深评
@@ -80,14 +94,23 @@ HR 上传文件 + 招聘需求
    │
    ▼
 伯乐按需工具（pro）── 仅在 HR 明确要求时调用 export_word / office_export_pdf ── 对话内下载链接
+   │
+   ▼
+HR 选定邮箱来源候选人 → 伯乐准备联系邮件 → HR 审阅并批准 → 按来源适配器发信
 ```
 
 档位在 `config/agents.json` 与 `config/pipeline.json` 中配置：
 - `flash` → `deepseek-flash`：解析、初筛等扇出型工作（显式关闭 thinking，优先吞吐）；
 - `pro` → `deepseek-v4-pro`：画像、深评、核查、建议等判断/否决型工作（thinking enabled + reasoning_effort=high）；
-- 自环重评复用原评估 Worker 与档位，`eval_tasks` 记录 `tier/phase=screen|deep|revise`。
+- 自环重评沿用任务冻结的评估角色与原档位，显式携带核查反馈和修订链；`eval_tasks` 记录 `tier/phase=screen|deep|revise`。
 
-## 外接 MCP（插件化）
+## 插件：MCP 与 Skills
+
+「设置 → 插件」使用统一的「＋ 添加插件」窗口。粘贴安装命令并点击「交给 Agent 安装」，由当前配置的 LLM 分析插件用途和适用角色，再按原命令中的来源安装。支持 `npx skills add …`、MCP 的 `npx` / `pnpm dlx` 启动命令、单个 npm 包安装命令和 MCP HTTPS 端点；也保留手动配置工具、导入技能文件入口。
+
+Skills 可编辑、启停和分配角色；新任务冻结内容及修订号。安装产物保存在 `data/skill-packages/`，注册信息保存在台账的 `skill_plugins` 表。技能本身不新增工具权限，也不自动执行配套脚本或安装额外依赖。详见 [插件安装说明](docs/PLUGIN_INSTALLATION.md)。
+
+下面介绍 MCP 服务的具体配置与边界。
 
 外接 MCP 服务在伯乐里是**插件**：`设置 → 插件` 里安装、启停、编辑、删除，改完即时生效。插件暴露的工具会自动进入「完成后对话」主 Agent 的工具池（`mcp__<插件>__<工具>`），并受 `config/agents.json` 的 `mcp` 白名单约束。没装插件时一切照旧，只用内置工具。
 
@@ -101,7 +124,7 @@ HR 上传文件 + 招聘需求
 
 | 操作 | 入口 |
 |---|---|
-| 安装 | 「＋ 添加插件」填写 MCP 服务（stdio 命令 / HTTP 端点） |
+| 安装 | 「＋ 添加插件」粘贴安装命令；也可选择「手动配置工具」填写 stdio 命令 / HTTP 端点 |
 | 启停 | 插件行左侧开关；停用立即断开该服务，不影响其它插件 |
 | 测试 | 行内「测试」/ 编辑器「测试连接」：临时连一次、列工具、立刻关闭 |
 | 编辑 | 行内「编辑」；保存后自动重建连接 |
@@ -118,7 +141,7 @@ HR 上传文件 + 招聘需求
 | `allowTools` / `denyTools` | `["*"]` / `[]` | `*`、`server`、`server:tool`；deny 优先 |
 | `startTimeoutMs` / `callTimeoutMs` | 20000 / 60000 | 连接（含工具发现）/ 单次调用超时 |
 
-运行时默认用 `pnpm dlx`（等价 `npx -y`）；单插件最多暴露 32 个工具、单次结果回灌上限 8000 字符，防止把上下文打爆。工具名先把原始名清洗成 `[A-Za-z0-9_-]`（`im.v1.message.create` → `im_v1_message_create`），超过 64 字符用短哈希兜底；内部保留「全名 → 原始工具」映射，调用时回填原名。
+命令安装的 MCP npm 包通过项目配套的 npm/npx 运行，不修改系统全局包；手动配置按保存的启动命令运行。单插件最多暴露 32 个工具、单次结果回灌上限 8000 字符，防止把上下文打爆。工具名先把原始名清洗成 `[A-Za-z0-9_-]`（`im.v1.message.create` → `im_v1_message_create`），超过 64 字符用短哈希兜底；内部保留「全名 → 原始工具」映射，调用时回填原名。
 
 **白名单**在 `config/agents.json`：`"mcp": ["*"]` 全部放行，`["lark"]` 放行某个插件，`["lark:calendar.v4.calendarEvent.create"]` 精确到工具；缺省或空数组 = 不允许调用（目前只有 `coordinator` 开启）。
 
@@ -182,7 +205,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | PATCH | `/api/jobs/:id` | `{title?,pinned?,archived?}` 重命名/置顶/归档 |
 | DELETE | `/api/jobs/:id` | 删除会话及其台账/运行产物 |
 | POST | `/api/uploads` | `{filename, contentBase64}` → `uploadId` |
-| POST | `/api/run` | `{requirements, uploadIds[]}` 使用当前提供商创建并启动 |
+| POST | `/api/run` | `{requirements, uploadIds[]?, mailbox?:{providerId?,query?,after?,maxMessages?}, executionMode?,agentTeamKey?,policyVersionId?}`；使用当前提供商创建并启动，邮箱适配配置在服务端冻结 |
 | GET | `/api/run/:jobId` | run 状态 + 快照 |
 | GET | `/api/run/:jobId/stream` | SSE：`status` / `snapshot` / `log` / `token` / `done` |
 | GET | `/api/run/:jobId/events` | 增量事件 |
@@ -196,6 +219,13 @@ pnpm bole web --port 8787     # 对话式控制台
 | POST | `/api/run/:jobId/pause` | 请求在批次/阶段边界暂停 |
 | GET/POST | `/api/run/:jobId/chat` | 读取 / 追加筛选完成后的主 Agent 对话 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |
+| POST | `/api/run/:jobId/approvals/:approvalId` | 批准/拒绝具体操作；招聘邮件在默认/严格模式下均需批准，不接受替换参数 |
+| GET | `/api/mail/status?providerId=...` | 检查所选适配器的邮箱身份和连接；默认内置 Agent Mail |
+| GET/POST | `/api/mail/adapters` | 列出 / 保存邮箱 CLI 操作与 JSON 字段映射，可关联已安装 Skill |
+| POST | `/api/plugins/install` | `{command}`：由 Agent 分析并安装插件，需要有效模型配置 |
+| GET/POST | `/api/skills` | 列出 / 注册 Skill |
+| POST | `/api/skills/preview` | `{content}` 或 `{path}`：预览 Markdown / 本机技能目录 |
+| PATCH/DELETE | `/api/skills/:id` | 编辑、启停 / 删除；编辑需传当前 `revision`，已有任务快照保留 |
 | POST | `/api/agents` / `/api/doctor` | 注册表 / 自检 |
 | GET | `/api/mcp` | 外接 MCP 概览（连接状态 + 工具数，兼容旧调用） |
 | GET | `/api/mcp/plugins` | 插件库 + 连接状态 + 工具 |
@@ -226,6 +256,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | `BOLE_OCR_KEY` | 空 | 外部 OCR Bearer token |
 | `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
 | `BOLE_MCP_CONFIG` | `config/mcp.json` | 旧式 MCP 配置文件（仅在首次导入插件库时读取；插件库优先） |
+| `BOLE_MAIL_WORKSPACE` | 显式的 `AGENTLY_WORKSPACE`，否则 `codex` | 内置 Agent Mail 的 OAuth 凭据工作区，避免终端启动方式变化导致找不到已有授权 |
 | `BOLE_BATCH_SIZE` | 8 | 批大小 |
 | `BOLE_MAX_BATCHES_IN_FLIGHT` | 2 | 在途批上限 |
 | `BOLE_MAX_ACTIVE_AGENTS` | 8 | 统一子 Agent 总并发上限（跨阶段共享） |
@@ -237,6 +268,10 @@ pnpm bole web --port 8787     # 对话式控制台
 bole/
 ├─ src/
 │  ├─ agents/            # coordinator + profiler/fetcher/parser/assessor/auditor
+│  ├─ agent-platform/    # Agent 草稿、版本、团队和任务绑定
+│  ├─ workflow/          # 代码化工作流、节点检查点与恢复
+│  ├─ workflows/         # 招聘、核查及报告发布业务流程
+│  ├─ scheduler/         # 持久化资源队列与容量调度
 │  ├─ chat/              # 完成后对话、按需面试建议 skill
 │  ├─ core/              # 台账、状态机、容量池、批流动、结构化两阶段提交
 │  ├─ ingest/            # 上传、PDF.js/DOCX/HTML 归一化、DeepSeek Vision/Tesseract OCR、去重、PII
@@ -246,6 +281,9 @@ bole/
 │  ├─ tools/             # Tools Call 注册表（OpenAI Function Calling）+ 导出/Python 工具
 │  ├─ settings/          # 模型提供商、Key 加密持久化（服务端）
 │  ├─ knowledge/         # 原生知识库：SQLite、分块、embedding、rerank、检索
+│  ├─ memory/            # 评分标准版本、人工提案与岗位对话记忆
+│  ├─ mail/              # 邮箱能力适配、简历导入、来源追踪及审批后发信
+│  ├─ skills/            # Skill 注册、任务快照和命令安装
 │  ├─ mcp/               # 外接 MCP 客户端：配置校验、连接、工具适配、白名单路由
 │  ├─ web/               # HTTP API + 对话式前端（无构建步骤）
 │  └─ cli/               # web / run / audit / report / doctor / reset
@@ -261,7 +299,7 @@ bole/
 ```bash
 pnpm typecheck   # tsc --noEmit（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
-pnpm test:all    # 177 个测试
+pnpm test:all    # 178 个测试
 pnpm check       # 以上三项串行跑一遍
 ```
 
@@ -269,7 +307,9 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
-当前 **177 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+当前 **178 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+
+补充覆盖：Skill 命令安装、角色注入与任务快照，邮箱 OAuth 工作区一致性，非 QQ CLI 的字段映射与完整筛选链路，HR 邮件审批、来源配置冻结、重复发送拦截，以及已有旧工作流定义时发布新版的回归验证。浏览器中另行验证了邮箱工具栏切换、刷新后保留选择，以及设置页的默认团队/评分标准入口；这些手工验证不计入上述 178 项测试。
 
 ## 文档
 
@@ -282,6 +322,9 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | 当前真实限制与已知失败模式 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本机/Docker 部署、OCR、环境变量、排障 |
 | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | 8–10 分钟演示流程 |
+| [docs/PLUGIN_INSTALLATION.md](docs/PLUGIN_INSTALLATION.md) | 统一插件入口、Agent 安装命令与 Skill 管理 |
+| [docs/MAIL_ADAPTERS.md](docs/MAIL_ADAPTERS.md) | 通用邮箱能力、CLI/JSON 字段映射和配置快照 |
+| [docs/AGENT_MAIL.md](docs/AGENT_MAIL.md) | 内置邮箱授权、招聘操作流程、审批与恢复 |
 | [config/skills/screening-plan.md](config/skills/screening-plan.md) | 上传后由主 Agent 决定扇出/并发/深评的 skill |
 
 > 需求规格与 MVP 方案在工作区根目录（`伯乐BoLe-需求文档.md`、`BoLe_MVP开发方案.md`、`BoLe_记忆管理设计.md`），已同步为 v1.1/实现对齐版；本仓库 `docs/` 是实现的权威说明。
@@ -290,8 +333,8 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 
 - 图片 OCR 默认使用 **DeepSeek V4 Flash Vision**（JPEG/PNG/GIF/WebP，逐字转写，token 计入成本；图片会以 base64 发送给 DeepSeek API）；失败或 BMP/TIFF 自动回退本地 Tesseract。手写体/低分辨率仍可能识别错误，可通过 `BOLE_OCR_MODE=local` 完全避免外发。
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
-- 支持上传简历或通过腾讯 Agent Mail 收取普通附件；每个附件独立处理，不做 IMAP/Exchange 直连，也不抓取邮件中的外链简历。
+- 支持上传简历或通过所选邮箱适配器收取普通附件。内置腾讯 Agent Mail，通用驱动适用于返回 JSON 的本机 CLI；MCP 邮箱工具、仅返回人类可读文本的 CLI 或只有文档的 Skill，需要额外驱动或桥接。每个附件独立处理，不做 IMAP/Exchange 直连，也不抓取邮件中的外链简历。
 - 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。
 - 外接 MCP 只在「完成后对话」生效；筛选流水线不调用外部工具，避免第三方延迟/故障进入批次关键路径。MCP 服务的权限等同当前用户，接入前需自行评估。
 - 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。各提供商 Key 由服务端加密持久化在 `data/providers.json`，请保护数据目录权限。
-- 真实模型质量取决于 DeepSeek；温度=0 仍可能有 ±1 分波动。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。
+- 真实模型质量取决于当前选择的提供商和模型；温度=0 仍可能有波动，尚未完成真实模型质量 A/B 评测。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。

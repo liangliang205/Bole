@@ -89,6 +89,10 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     stream: (chunk) => tokens.push(chunk.delta),
   });
   try {
+    // A deployed database may already contain an immutable, different 1.4.0 implementation.
+    const oldSnapshot = { id: 'recruitment', version: '1.4.0', implementation: 'previous-deployment' };
+    const oldStore = new WorkflowStore(boot.deps.ledger);
+    const oldHash = oldStore.define('recruitment@1.4.0', oldSnapshot);
     const auto = new AutoHitlResponder();
     const summary = await runPipeline(boot.deps, {
       requirements: boot.job.requirements,
@@ -133,8 +137,9 @@ test('真实上传 → 并发流水线 → 证据报告（Markdown+JSON，无 HT
     assert.ok(events.some((event) => event.type === 'deep_eval.shortlist'));
     assert.ok(events.some((event) => event.type === 'selfloop.revise'), '伪造结论应被验真环打回');
     const workflow = new WorkflowStore(boot.deps.ledger).inspect(boot.job.id);
-    assert.equal(workflow.runs.find((r) => !r.parent_run_id)?.workflow_key, 'recruitment@1.4.0');
-    assert.ok(workflow.runs.some((r) => r.workflow_key === 'candidate-verification@1.4.0' && r.parent_run_id));
+    assert.equal(workflow.runs.find((r) => !r.parent_run_id)?.workflow_key, 'recruitment@1.5.0');
+    assert.equal(oldStore.define('recruitment@1.4.0', oldSnapshot), oldHash, '发布新版不修改旧版本定义');
+    assert.ok(workflow.runs.some((r) => r.workflow_key === 'candidate-verification@1.5.0' && r.parent_run_id));
     assert.ok(workflow.runs.every((r) => r.status === 'succeeded'));
     const execution = new ExecutionScheduler(boot.deps.ledger).list(boot.job.id);
     assert.ok(execution.some((r) => r.label.startsWith('model:profiler:')));

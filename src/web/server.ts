@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore, parseExecutionMode } from '../core/approvals.ts';
 import { executeApprovedTool } from '../tools/approved-tool.ts';
 import { mailboxQuerySchema, sendApprovedCandidateEmail, type MailboxQuery } from '../mail/service.ts';
-import { mailboxIdentity } from '../mail/client.ts';
+import { MailAdapterStore, resolveMailAdapter } from '../mail/adapters.ts';
 import { SkillStore, parseSkill, readLocalSkill } from '../skills/store.ts';
 import { installFromCommand } from '../skills/installer.ts';
 import { runOrchestrator } from '../chat/orchestrator.ts';
@@ -511,9 +511,26 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         return;
       }
 
+      if (pathname === '/api/mail/adapters' && ['GET', 'POST'].includes(method)) {
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          const store = new MailAdapterStore(ledger);
+          if (method === 'POST') store.save(await readJsonBody(req));
+          json(res, 200, { ok: true, adapters: [{ id: 'agently-mail', name: '腾讯 Agent Mail', builtin: true }, ...store.list()], skills: new SkillStore(ledger).list().filter((s) => s.enabled).map((s) => ({ id: s.id, name: s.name })) });
+        } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
+        return;
+      }
       if (method === 'GET' && pathname === '/api/mail/status') {
-        try { json(res, 200, { ok: true, mailbox: await mailboxIdentity() }); }
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          const id = url.searchParams.get('providerId') || 'agently-mail';
+          const definition = id === 'agently-mail' ? undefined : new MailAdapterStore(ledger).list().find((a) => a.id === id);
+          if (id !== 'agently-mail' && !definition) throw new Error('邮箱适配器尚未配置');
+          json(res, 200, { ok: true, providerId: id, mailbox: await resolveMailAdapter(definition).identity() });
+        }
         catch (error) { json(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
+        finally { ledger.close(); }
         return;
       }
       if (method === 'GET' && pathname === '/api/config') {

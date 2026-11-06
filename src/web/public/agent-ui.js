@@ -1,6 +1,11 @@
 (() => {
   'use strict';
   const $ = (s) => document.querySelector(s);
+  const defaultTeamKey = 'bole.screening.defaultTeam';
+  $('#new-agent-team').addEventListener('change', () => {
+    try { localStorage.setItem(defaultTeamKey, $('#new-agent-team').value); status('默认团队已保存，将用于新建筛选。'); }
+    catch { status('当前选择已应用，浏览器未能保存；刷新后需重新选择。'); }
+  });
   const dialog = $('#agent-dialog');
   const environmentTab = document.createElement('button');
   environmentTab.type = 'button'; environmentTab.dataset.agentTab = 'environment'; environmentTab.textContent = '运行检查';
@@ -102,9 +107,11 @@
       return preferred === v.version_key ? card : `<details class="agent-history"><summary>${esc(d.name)} · 历史版本 ${esc(v.version)}</summary>${card}</details>`;
     }).join('');
     $('#agent-draft-list').innerHTML = '<option value="">选择草稿</option>' + data.drafts.map((r) => `<option value="${esc(r.id)}">${esc(parsed(r).name)} · ${esc(parsed(r).version)} · r${r.revision}</option>`).join('');
-    const selected = $('#new-agent-team').value;
+    let selected = $('#new-agent-team').value;
+    try { selected = localStorage.getItem(defaultTeamKey) || selected; } catch { /* Use current selection. */ }
     $('#new-agent-team').innerHTML = teams.map((t) => `<option value="${esc(t.team_key)}">${t.team_key === 'builtin@1.0.0' ? '内置团队' : esc(t.team_key)}</option>`).join('');
     if (teams.some((t) => t.team_key === selected)) $('#new-agent-team').value = selected;
+    else { try { localStorage.removeItem(defaultTeamKey); } catch { /* Storage may be unavailable. */ } }
     $('#agent-team-list').innerHTML = teams.map((t) => `<details class="memory-item"><summary>${esc(t.team_key)}</summary><pre class="approval-preview">${esc(JSON.stringify(parsed(t), null, 2))}</pre></details>`).join('');
     const previous = Object.fromEntries([...$('#agent-team-slots').querySelectorAll('select')].map((el) => [el.dataset.slot, el.value]));
     const slotField = (slot) => `<label class="memory-weight">${esc({ coordinator: '主 Agent', profiler: '画像', fetcher: '接入', parser: '解析', assessor: '评估', auditor: '核查', specialist: '增加专职检查（可选）' }[slot])}<select class="input" data-slot="${slot}">${slot === 'specialist' ? '<option value="">不增加额外检查</option>' : `<option value="active:${slot}">沿用内置角色的当前启用版本</option>`}${data.versions.filter((v) => v.status === 'registered' && catalog.templates[parsed(v).templateId].slot === slot).map((v) => `<option value="${esc(v.version_key)}">${esc(parsed(v).name)} · v${esc(v.version)}</option>`).join('')}</select></label>`;

@@ -47,10 +47,12 @@
     const oldSource = $('#memory-source').value;
     $('#memory-source').innerHTML = '<option value="">选择来源会话或版本</option>' + versions.map((v) => `<option value="version:${esc(v.id)}">版本 v${v.version} · ${esc(JSON.parse(v.profile_json).jd.title)}</option>`).join('') + jobs.map((j) => `<option value="job:${esc(j.id)}">会话 · ${esc(j.title)}</option>`).join('');
     if ([...$('#memory-source').options].some((o) => o.value === oldSource)) $('#memory-source').value = oldSource;
-    const selectedVersion = $('#new-policy-version').value;
+    let selectedVersion = $('#new-policy-version').value;
+    try { selectedVersion = localStorage.getItem('bole.screening.defaultPolicy') ?? selectedVersion; } catch { /* Use current selection. */ }
     const now = new Date().toISOString();
     $('#new-policy-version').innerHTML = '<option value="">按本次需求生成</option>' + data.families.map((f) => `<optgroup label="${esc(f.name)}">${data.versions.filter((v) => v.family_id === f.id && v.status === 'approved' && v.valid_from <= now && (!v.valid_to || v.valid_to > now)).slice(0, 5).map((v) => `<option value="${esc(v.id)}">${esc(f.name)} · v${v.version}</option>`).join('')}</optgroup>`).join('');
     if ([...$('#new-policy-version').options].some((o) => o.value === selectedVersion)) $('#new-policy-version').value = selectedVersion;
+    else { try { localStorage.removeItem('bole.screening.defaultPolicy'); } catch { /* Storage may be unavailable. */ } }
   }
   async function load() {
     const previous = familyId();
@@ -73,6 +75,10 @@
   dialog.querySelectorAll('[data-memory-tab]').forEach((button) => button.addEventListener('click', () => {
     if (button.dataset.memoryTab === 'job') action(showJob); else tab(button.dataset.memoryTab);
   }));
+  $('#new-policy-version').addEventListener('change', () => {
+    try { localStorage.setItem('bole.screening.defaultPolicy', $('#new-policy-version').value); status('默认评分标准已保存，将用于新建筛选。'); }
+    catch { status('当前选择已应用，浏览器未能保存；刷新后需重新选择。'); }
+  });
   $('#memory-family').addEventListener('change', () => { baseline = null; sourceJobId = undefined; $('#memory-profile').value = ''; $('#memory-dimensions').innerHTML = ''; render(); });
   $('#memory-family-create').addEventListener('click', () => action(async () => {
     const result = await api('/api/memory/families', { name: $('#memory-family-name').value });

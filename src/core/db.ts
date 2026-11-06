@@ -5,6 +5,7 @@ import { WORKFLOW_SCHEMA } from '../workflow/schema.ts';
 import { EXECUTION_SCHEMA } from '../scheduler/schema.ts';
 import { MAIL_SCHEMA } from '../mail/service.ts';
 import { SKILL_SCHEMA } from '../skills/schema.ts';
+import { MAIL_ADAPTER_SCHEMA } from '../mail/adapters.ts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -228,6 +229,8 @@ export function openDatabase(dbPath: string): DatabaseSync {
   db.exec(EXECUTION_SCHEMA);
   db.exec(MAIL_SCHEMA);
   db.exec(SKILL_SCHEMA);
+  db.exec(MAIL_ADAPTER_SCHEMA);
+  if (!(db.prepare('PRAGMA table_info(recruitment_mail_sources)').all() as { name: string }[]).some((c) => c.name === 'adapter_json')) db.exec('ALTER TABLE recruitment_mail_sources ADD COLUMN adapter_json TEXT');
   return db;
 }
 
