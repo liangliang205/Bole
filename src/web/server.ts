@@ -57,6 +57,13 @@ interface WebServerOptions {
   port?: number;
 }
 
+const drainHandlers = new WeakMap<Server, (timeoutMs: number) => Promise<void>>();
+export async function drainWebServer(server: Server, timeoutMs = 60000): Promise<void> {
+  const handler = drainHandlers.get(server);
+  if (handler) await handler(timeoutMs);
+  else await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+}
+
 interface ActiveRun {
   jobId: string;
   runId: string;
@@ -196,6 +203,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
   const host = options.host ?? '127.0.0.1';
   const port = options.port ?? 8787;
   const runs = new Map<string, ActiveRun>();
+  let draining = false;
   const paths = resolvePaths();
   const providers = new ProviderStore(paths.dataDir);
   const knowledge = new KnowledgeService(paths.knowledgeDbPath);
@@ -460,6 +468,12 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
       const url = new URL(req.url, `http://${req.headers.host ?? `${host}:${port}`}`);
       const pathname = url.pathname;
       const method = req.method ?? 'GET';
+      if (pathname === '/healthz' || pathname === '/readyz') {
+        json(res, pathname === '/readyz' && draining ? 503 : 200, { ok: !draining }); return;
+      }
+      if (draining && method !== 'GET' && method !== 'HEAD') {
+        res.setHeader('Retry-After', '30'); json(res, 503, { ok: false, error: '服务正在停止，请稍后重试' }); return;
+      }
       if (/^\/api\/run\/[^/]+\/workflow(?:\/confirm)?$/.test(pathname)) {
         const ledger = new Ledger(paths.dbPath);
         try { json(res, 200, { ok: true, ...(workflowRoute(ledger, method, pathname, method === 'GET' ? {} : await readJsonBody(req)) as object) }); }
@@ -1466,6 +1480,19 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
 
   const server = createServer((req, res) => {
     void handleRequest(req, res);
+  });
+  drainHandlers.set(server, async (timeoutMs) => {
+    draining = true;
+    for (const run of runs.values()) run.pauseRequested = true;
+    const deadline = Date.now() + timeoutMs;
+    while ([...runs.values()].some((run) => run.status === 'running' && !run.hitl.currentQuestion()) && Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    }
+    if ([...runs.values()].some((run) => run.status === 'running')) process.stderr.write('Shutdown: 未完成任务保留检查点；人工问题需恢复后重新触发，外部操作不自动重放。\n');
+    const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+    server.closeAllConnections();
+    await closed;
+    await mcpPlugins.close();
   });
 
   await new Promise<void>((resolve, reject) => {

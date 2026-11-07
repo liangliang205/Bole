@@ -1,0 +1,53 @@
+name: Docker verification
+on:
+  pull_request:
+  push:
+    branches: [master, dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check backup script syntax
+        run: bash -n scripts/backup.sh
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: bole:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify hardened container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name bole-ci --init --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --memory 2g --tmpfs /tmp:rw,nosuid,nodev,size=536870912 -v bole-ci-data:/app/data -v bole-ci-runs:/app/runs bole:ci
+          for i in $(seq 1 60); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' bole-ci)
+            if [ "$state" = healthy ]; then break; fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' bole-ci)" = healthy
+          test "$(docker exec bole-ci id -u)" = 1000
+          docker exec bole-ci sh -c 'test ! -d /app/node_modules/typescript; touch /app/data/permission-test /app/runs/permission-test'
+          docker stop --time 90 bole-ci
+          test "$(docker inspect --format '{{.State.ExitCode}}' bole-ci)" = 0
+      - name: Validate production gateway and port isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.production.example -f docker-compose.yml -f docker-compose.production.yml config --format json > /tmp/bole-compose.json
+          python3 -c 'import json; s=json.load(open("/tmp/bole-compose.json"))["services"]; assert not s["bole"].get("ports"); assert s["gateway"].get("ports")'
+          hash=$(docker run --rm caddy:2-alpine caddy hash-password --plaintext ci-only-password)
+          docker run --rm -e BOLE_DOMAIN=jobs.example.com -e BOLE_AUTH_USER=hr -e BOLE_AUTH_HASH="$hash" -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Logs
+        if: always()
+        run: docker logs bole-ci || true
+      - name: Cleanup
+        if: always()
+        run: docker rm -f bole-ci || true

@@ -16,6 +16,8 @@ pnpm ocr:download          # 本地 Tesseract 回退语言数据（模型 OCR �
 pnpm web                   # http://127.0.0.1:8787
 ```
 
+Docker 默认只发布到宿主机回环地址，镜像以非 root 用户运行，启用只读根文件系统、健康检查、资源限制和日志轮转。生产 HTTPS/鉴权入口使用 `docker-compose.production.yml`；配置、停机备份、恢复与升级步骤见 [部署说明](docs/DEPLOYMENT.md)。应用仍为单机单实例架构，不能将容器加固等同于多租户或工具沙箱。
+
 首次进入 Web 会自动检查模型提供商；没有可用 Key 时会打开设置并定位到 DeepSeek 密钥。默认带一个 DeepSeek 内置提供商，也可以添加任意 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages 网关，并选择当前使用的提供商。自定义提供商支持「获取可用模型」、模型目录、手动添加模型，并分别选择 Flash/Pro 模型。Key 使用 AES-256-GCM 加密持久化在 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重填；不通过环境变量读取，也不写入台账/报告。
 
 使用内置腾讯 Agent Mail 时，在 PowerShell 中完成一次邮箱授权：
@@ -299,7 +301,7 @@ bole/
 ```bash
 pnpm typecheck   # tsc --noEmit（strict）
 pnpm lint        # ESLint 9 flat config + typescript-eslint（零 warning）
-pnpm test:all    # 178 个测试
+pnpm test:all    # 179 个测试
 pnpm check       # 以上三项串行跑一遍
 ```
 
@@ -307,9 +309,9 @@ ESLint 规则见 [`eslint.config.js`](eslint.config.js)：除基础正确性规�
 
 CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR 到 `master`、`dev` 都在 Node 24 上跑 `typecheck → lint → test:all`，测试不需要任何 API Key（用 `tests/fixtures/fake-provider.ts` 作为测试替身，LibreOffice 缺失时 PDF 测试自动 skip）。
 
-当前 **178 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
+当前 **179 个测试通过**：容量池拒绝而非排队、**统一子 Agent 总上限（跨阶段共享）**、状态机单调守卫、span 定位、评分重算、上传/去重、DOCX/HTML/PDF 归一化、DeepSeek SSE 流解析与档位映射、OpenAI Chat/Responses 与 Anthropic Messages 协议、暂停/续跑、Qwen thinking 关闭与 max-tokens 扩容重试、Vision OCR 与本地回退、多提供商 Key 加密与迁移、知识库分块/检索/启用开关/自动召回、完成后主 Agent 多轮对话与稳定前缀、**Agent 筛选计划（single/batch 与并发）、对话档位选择（flash/pro）、注册表工具声明一致性**、对话附件文本注入与客户端脱敏、按需面试建议 skill、按需工具调用与 Word/PDF 导出、模型目录/获取模型（含阿里云 MaaS）、峰谷成本、流式 JSON 人类可读预览、schema 同轮重试、真实上传端到端、`.doc` 失败不阻塞、检查点续跑、报告不含 HTML、外接 MCP（工具名清洗/白名单/stdio 连接/失败降级/结果截断/路由桥接）、MCP 插件库（凭据加密与 `***` 保留语义、主密钥丢失降级、旧配置导入、损坏不炸、启停与删除即时生效）。
 
-补充覆盖：Skill 命令安装、角色注入与任务快照，邮箱 OAuth 工作区一致性，非 QQ CLI 的字段映射与完整筛选链路，HR 邮件审批、来源配置冻结、重复发送拦截，以及已有旧工作流定义时发布新版的回归验证。浏览器中另行验证了邮箱工具栏切换、刷新后保留选择，以及设置页的默认团队/评分标准入口；这些手工验证不计入上述 178 项测试。
+补充覆盖：Skill 命令安装、角色注入与任务快照，邮箱 OAuth 工作区一致性，非 QQ CLI 的字段映射与完整筛选链路，HR 邮件审批、来源配置冻结、重复发送拦截，以及已有旧工作流定义时发布新版的回归验证。浏览器中另行验证了邮箱工具栏切换、刷新后保留选择，以及设置页的默认团队/评分标准入口；这些手工验证不计入上述 179 项测试。
 
 ## 文档
 

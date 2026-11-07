@@ -1,17 +1,34 @@
 services:
   bole:
-    build: .
-    container_name: bole-mvp
+    image: ${BOLE_IMAGE:-bole:local}
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+    init: true
     environment:
-      BOLE_OCR_DIR: /app/ocr
-      NO_COLOR: "1"
+      BOLE_SHUTDOWN_TIMEOUT_MS: "60000"
+      NODE_OPTIONS: "--max-old-space-size=1280"
     ports:
-      - "8787:8787"
+      - "127.0.0.1:${BOLE_PORT:-8787}:8787"
     volumes:
       - bole-runs:/app/runs
       - bole-data:/app/data
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=536870912,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: ${BOLE_MEMORY_LIMIT:-2g}
+    cpus: ${BOLE_CPUS:-2.0}
+    stop_grace_period: 90s
     restart: unless-stopped
-
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 volumes:
   bole-runs:
   bole-data:

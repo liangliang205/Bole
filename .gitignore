@@ -21,3 +21,10 @@ data/mcp/
 *.log
 .DS_Store
 coverage/
+.env
+.env.production
+backups/
+data/home/
+data/mail-auth/
+data/npm-cache/
+data/skill-packages/

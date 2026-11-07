@@ -1,122 +1,101 @@
 # 部署与运行
 
-## 1. 环境要求
+## 部署边界
 
-| 项 | 要求 |
-|---|---|
-| Node.js | **24**（开发 / CI / Dockerfile 均为 24；项目直接运行 `.ts`，且使用 `node:sqlite`。22.13+ 理论可用但未验证） |
-| 包管理 | pnpm 10（`packageManager` 锁定 10.25.0） |
-| 网络 | 真实 DeepSeek API；默认图片 OCR 也走 DeepSeek Vision |
-| 磁盘 | 运行产物 + 上传缓存；本地回退 OCR 语言数据约 31MB |
-| 浏览器 | Chromium / Edge / Firefox 现代版本（EventSource、FileReader） |
+本配置面向单机、单实例、可信 HR 管理员使用的生产部署。SQLite、本地文件和进程内 HITL 状态不支持简单地把应用横向扩容；不要设置多个 bole 副本，也不要让多台服务器共享 SQLite 卷。平台尚无应用内身份、角色权限或工具沙箱；共享网关账号不等于多租户隔离。完成后对话中的 Python 和已安装 MCP/Skill 可执行程序拥有应用用户的数据权限，只给受信任管理员开放。
 
-## 2. 本机启动
+生产主机建议 Linux，Docker Engine 与 Compose >= 2.24.4。当前项目直接运行 TypeScript，镜像使用 Node 24。2GB 内存是默认资源上限，不是已经压测的容量承诺；大量 OCR、Office 导出及并发筛选应根据实测调整。
+
+## 本地与 Docker 启动
+
+本机仍使用 `pnpm install`、`pnpm ocr:download`、`pnpm web`。Docker 默认只把应用发布到宿主机回环地址：
 
 ```bash
-pnpm install
-pnpm ocr:download
-pnpm web
-# http://127.0.0.1:8787
+docker compose build --pull
+docker compose up -d --wait
+docker compose ps
+curl --fail http://127.0.0.1:8787/readyz
 ```
 
-首次进入页面会自动检查模型提供商；没有可用 Key 时打开设置并定位到 DeepSeek 密钥。DeepSeek 是内置提供商（不可删除）；自定义模型 API 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages，填写 Provider ID、显示名称、API 地址与密钥；可「获取可用模型」、维护模型目录并选择 Flash/Pro 模型。Key 使用 AES-256-GCM 加密写入 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重复输入。CLI 不会读取环境变量；需要时用 `--key` 临时覆盖当前提供商的 Key。
+镜像采用独立依赖阶段，只安装生产依赖。运行阶段使用 node 用户（UID/GID 1000），有 CA、Git、Python 3 和中日韩字体；并不包含所有 Python 数据科学库或平台之外的 CLI。OCR 数据在构建阶段下载到 /app/ocr，不会被数据卷遮盖。模型提供商 Key 首次从设置页面录入，加密保存在数据卷，不能把宿主机 data 目录打进镜像。
 
-知识库默认没有数据，入口在左侧「知识库」。创建知识库并勾选「启用自动检索」后，画像完成后会用 JD + 评分卡生成检索词，**只有评估阶段**会注入命中的相关片段（面试建议/完成后对话不查知识库）；未启用时不召回。知识库存放在 `data/knowledge.db`，可配置 Ollama/OpenAI 兼容 embedding 与可选 rerank。
+默认启用 init、只读根文件系统、可写 /tmp、能力移除、禁止提权、PID/内存/CPU 限制及日志轮转。`/app/data` 与 `/app/runs` 是可写持久卷，HOME、npm 缓存和邮件配置目录都位于 data 内。命名卷首次创建时继承镜像中的目录所有权；已有 root 所有的旧卷需在维护窗口按实际目录修复为 1000:1000，不能直接假定旧卷权限正确。不要挂载宿主机 Docker socket。
 
-### OCR 说明
+## HTTPS 与鉴权生产入口
 
-- **默认 `BOLE_OCR_MODE=deepseek`**：图片以 `image_url` + base64 发给 `deepseek-flash`，逐字转写为文本；图片 token（每张最多约 1024）计入成本。
-- Vision 支持 JPEG/PNG/GIF/WebP；BMP/TIFF 或 Vision 失败时，默认回退本地 Tesseract（`BOLE_OCR_FALLBACK=true`）。
-- `BOLE_OCR_MODE=local` 强制 Tesseract；`url` 使用外部 `BOLE_OCR_URL`。
-- 本地 Tesseract 需要 `data/ocr/eng.traineddata.gz` 与 `data/ocr/chi_sim.traineddata.gz`；`pnpm ocr:download` 会下载。
-- 扫描版 PDF 仍不渲染页面 OCR：请导出为 PNG/JPG 上传。
-
-## 3. 页面操作
-
-1. 打开「设置 → 模型」：DeepSeek 内置（不可删除，首次使用会定位到密钥）；添加自定义模型 API（三种协议），获取/维护模型目录并选择 Flash/Pro，选择当前使用项。
-2. 新建会话 → 上传一份或多份简历（支持 PDF / DOCX / TXT / MD / HTML / PNG / JPG / WebP / GIF / BMP / TIFF，单文件 ≤25MB）。
-3. 填写招聘需求 → 开始筛选。
-4. 对话区实时展示里程碑、工具轨迹、token 流；遇到 HITL 在卡片里选推荐项或输入自定义回答。
-5. 完成后在对话中查看 Top 推荐与合规摘要；点「查看证据链」或右侧「任务面板」查看候选人证据链、合规与成本。不提供 Markdown/JSON 下载。
-6. 中断后可点「续跑」从批次检查点恢复；不会重复上传。
-7. 筛选完成后底部输入框可继续追问伯乐；主 Agent 直接回答或调用工具，按问题复杂度自动选择 flash/pro，多轮消息保存在任务内并复用稳定上下文前缀。
-
-## 4. CLI
+先把真实域名的 DNS 指向部署主机，开放 TCP 80/443。自动证书申请需要访问证书服务。复制环境示例并生成密码哈希：
 
 ```bash
-pnpm bole run --jd "招 Java 后端，3-5 年，base 上海" --files ./resumes --yes
-pnpm bole status
-pnpm bole audit --resume R01
-pnpm bole report
-pnpm bole cost
-pnpm bole doctor
-pnpm bole reset --yes
+cp .env.production.example .env.production
+docker run --rm -it caddy:2-alpine caddy hash-password
 ```
 
-- `run` 的 `--files` 直接读取本地目录，不经过 HTTP 上传；这是自动化/验收路径。
-- 不带 `--yes` 时在终端交互回答 HITL；非 TTY 自动采纳推荐项。
-- `reset` 删除台账、`runs/`、`data/uploads/`，不删除知识库与 OCR 数据。
-
-## 5. Docker
+编辑 .env.production 的 BOLE_DOMAIN、BOLE_AUTH_USER、BOLE_AUTH_HASH。域名填写裸域名，例如 jobs.example.com。密码哈希用单引号包裹，避免 Compose 对 `$` 插值；不要使用示例占位哈希。该文件已经 gitignore，但仍需设置主机访问权限。
 
 ```bash
-docker compose build
-docker compose up
-# 打开 http://127.0.0.1:8787，首次进入按提示绑定 Key
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml config --quiet
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml up -d --build --wait
 ```
 
-- Key 绑定持久化在 `bole-data` 卷的 `providers.json`（主密钥 `keyring.key`）；容器重启后仍然有效。不要通过环境变量注入 Key。
-- 镜像构建时执行 `pnpm ocr:download`，OCR 数据位于 `/app/ocr`（`BOLE_OCR_DIR`），不会被 `/app/data` 数据卷覆盖。
-- `bole-data` 卷保存台账与上传缓存；`bole-runs` 保存运行产物。
-- 容器内监听 `0.0.0.0:8787`，compose 会把端口发布到宿主机。**当前应用没有登录鉴权**：只在本机使用时建议把 compose 端口改成 `127.0.0.1:8787:8787`；需要给他人访问时，必须在前置反向代理上做鉴权与 TLS。
+生产覆盖配置会清除 bole 的宿主端口，只允许通过 Caddy 访问。Caddy 提供 TLS、Basic Auth、40MB 请求上限和实时 SSE 转发，并拒绝带不匹配 Origin 的浏览器写请求。需要企业 SSO/MFA 时，将 Basic Auth 替换为经过验证的身份网关，保持应用端口私有。外部请求未认证应返回 401，认证后才能访问页面；禁止仅凭容器健康就认为外部鉴权已验收。
 
-## 6. 环境变量
+健康检查 /healthz 表示 HTTP 进程存活；/readyz 在正常监听时返回 200，排空时返回 503。它们不调用模型或邮箱、不代表第三方服务或模型质量正常。Docker unhealthy 状态本身不会自动重启进程，需要监控告警；restart 策略只处理进程退出。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `BOLE_FLASH_MODEL` / `BOLE_PRO_MODEL` | `deepseek-flash` / `deepseek-v4-pro` | 临时覆盖当前提供商模型 |
-| `BOLE_DATA_DIR` | `data` | 数据根 |
-| `BOLE_DB` | `data/ledger.db` | SQLite |
-| `BOLE_UPLOADS` | `data/uploads` | 上传缓存 |
-| `BOLE_RUNS` | `runs` | 运行产物 |
-| `BOLE_OCR_MODE` | `deepseek` | `deepseek`（Vision）/ `local` / `url` |
-| `BOLE_OCR_MODEL` | `deepseek-flash` | Vision OCR 模型 |
-| `BOLE_OCR_FALLBACK` | `true` | Vision 失败/不支持格式时回退本地 |
-| `BOLE_OCR_DIR` | `data/ocr` | 本地回退 OCR 语言数据 |
-| `BOLE_OCR_URL` / `BOLE_OCR_KEY` | 空 | 外部 OCR |
-| `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
-| `BOLE_BATCH_SIZE` | 8 | 批大小 |
-| `BOLE_MAX_BATCHES_IN_FLIGHT` | 2 | 在途批 |
-| `BOLE_DEEP_EVAL_PERCENT` | 40 | 深评比例 |
+## 邮箱、插件与容器授权
 
-## 7. 验收
+通过输入框工具栏「招聘邮箱」切换简历来源，从侧栏邮箱面板配置适配器。评分标准和默认团队在设置中修改。其他 CLI 适配器的可执行程序必须实际安装在镜像中；宿主机 Windows 路径不能用于 Linux 容器，按需构建自定义镜像，不在运行中的只读根文件系统中临时 apt install。
+
+内置 Agent Mail 的授权工作区固定为 codex，配置目录为 /app/data/mail-auth。容器中手动登录：
 
 ```bash
-pnpm typecheck
-pnpm lint              # ESLint 9，零 warning
-pnpm test:all          # 116 个测试
-pnpm check             # 以上三项串行
-curl -s http://127.0.0.1:8787/api/doctor
+docker compose exec bole node node_modules/@tencent-qqmail/agently-cli/scripts/run.js auth login
+docker compose exec bole node node_modules/@tencent-qqmail/agently-cli/scripts/run.js +me
 ```
 
-CI（`.github/workflows/ci.yml`）在 Node 24 上执行同样的 `typecheck → lint → test:all`，测试不需要 API Key。
+使用生产覆盖文件时，所有 compose 命令应带上相同的 --env-file 和 -f 参数。Windows DPAPI 凭据不能直接迁移给 Linux，必须在目标运行环境重新授权；Linux keyring/CLI 持久化能力应在目标主机验收，不能只凭设置目录就假定重建后仍能登录。MCP/Skill 安装包及缓存保存在 data 中，但启动命令、平台二进制和外部依赖需要在目标镜像验证。
 
-手工冒烟：
-1. 上传一份 TXT + 一份 DOCX + 一张图片简历，确认均进入批次；
-2. 观察 SSE `/api/run/:id/stream` 的 `token` 事件；
-3. 完成后确认对话内出现 Top 推荐与合规摘要；内部的 `report.json` 存在但不再对外提供下载；没有 `report.html`；
-4. 打开候选人详情，确认每个维度都有原文 quote 与字符区间。
+## 停止、升级和回滚
 
-## 8. 常见问题
+容器入口捕获 SIGTERM/SIGINT：先让 readiness 失败、拒绝新的写请求，再请求任务在检查点暂停，最长等待 60 秒，Compose 90 秒后才强制停止。之后关闭 SSE/HTTP 连接。超时或等待 HITL 时会保留已提交结果；普通人工问题在内存中，恢复后需重新触发。发信等外部副作用执行结果不确定时必须人工核对，禁止自动重放。
 
-| 现象 | 处理 |
-|---|---|
-| 页面提示没有可用提供商 | 在「设置 → 模型」添加/编辑提供商并绑定 Key；持久化到 `data/providers.json` |
-| 绑定失败 401/403 | Key 无效或已撤销；重新生成后绑定 |
-| 绑定提示网络 warning | Key 已保存，但 `/models` 校验未成功；检查该提供商的 Base URL 与网络后运行 |
-| 图片简历失败，提示缺 OCR 语言数据 | 仅本地回退需要：`pnpm ocr:download`；或设置 `BOLE_OCR_MODE=deepseek` 使用 Vision |
-| PDF 失败，提示无文本层 | 扫描件导出为 PNG/JPG 后上传 |
-| SSE 不显示 token | 检查反向代理是否缓冲 SSE（关闭 `proxy_buffering`）；本机直连正常 |
-| 端口被占用 | `pnpm bole web --port 8788` |
-| 台账需要清空 | `pnpm bole reset --yes`（CLI；页面已不提供清空入口） |
-| 旧运行报告仍存在 | 报告按 `jobId` 关联；reset 会删 `runs/`，或手工删除对应目录 |
+更新前安排维护窗口，处理人工问题并暂停筛选，然后备份。每次发布使用独立 BOLE_IMAGE 标签并记录镜像 digest、代码版本和工作流版本；示例 NODE_IMAGE/CADDY_IMAGE 使用可更新标签，正式发布应替换成审核过的 digest。当前工作流 1.5.0，执行代码改变时发布新工作流版本并保留旧镜像。不要通过覆盖数据库指纹绕过版本检查。
+
+```bash
+# 使用唯一发布标签，例如 bole:2026-11-07.1
+# 修改环境文件后构建、启动；基础镜像更新也应重新验收。
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml build --pull
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml up -d --no-build --wait
+```
+
+回滚时使用原镜像及匹配的数据备份。数据库迁移不承诺向后兼容，不能只切旧镜像并复用已升级数据库。不要在仍有旧工作流运行时无计划地覆盖它所依赖的镜像。
+
+## 一致性备份与恢复
+
+不能在 SQLite 正在写入时直接分别复制 db、wal、shm。提供的 Linux 主机脚本会停止应用，打包完整 data 与 runs（包括密钥、知识库、简历、插件与邮箱配置），计算 SHA-256，最后恢复先前运行状态。关闭网关并非必须，但停机期间请求会失败；应安排维护窗口。
+
+```bash
+bash scripts/backup.sh --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml
+sha256sum -c backups/bole-时间戳.tgz.sha256
+```
+
+备份含敏感简历和解密密钥，应另行加密并复制到受控异地存储。环境文件、镜像 digest 和部署配置另行备份；caddy-data 保存证书账号，需纳入主机/卷备份策略。不要使用 `docker compose down -v`，该命令会删除数据卷。
+
+恢复演练使用新的 Compose 项目和空卷，避免覆盖唯一生产数据。先校验可信备份，核对 tar 中仅有 data/ 和 runs/，再在匹配版本镜像下恢复：
+
+```bash
+# 先在隔离环境准备好匹配镜像；恢复到新项目的空卷。
+docker compose -p bole-restore create bole
+docker compose -p bole-restore run --rm --no-deps --user 0:0 --entrypoint sh -v "$PWD/backups:/backup:ro" bole -ec 'tar -xzf /backup/已校验的备份.tgz -C /app'
+# 原服务占用 8787 时先设置 BOLE_PORT=8789，再启动恢复实例进行验收。
+BOLE_PORT=8789 docker compose -p bole-restore up -d --wait
+```
+
+验证模型 Key 可解密、知识库/历史报告可读、邮箱可用，再决定切流。恢复实例不要同时执行生产筛选或发信。备份保留期、加密、异地复制和定时执行由部署方配置，脚本不会自动删除备份。
+
+## 运维与验证
+
+`docker compose logs --tail=200 bole` 查看运行日志，`docker stats` 观察内存/PID/CPU，监控磁盘空间、备份年龄、HTTP 5xx 和证书状态。数据卷达到容量上限时应停止新任务，先扩容或按保留策略清理，不直接删除 SQLite WAL。长时间任务和 SSE 需要网关与上游负载均衡器具备匹配的空闲超时。
+
+`.github/workflows/docker.yml` 在 Linux 构建真实镜像，检查非 root 身份、只读运行、卷写入、健康状态、停止退出码、生产端口隔离及 Caddy 配置。应用检查使用 `pnpm check`。本次本机 Docker 引擎未运行，因此不能声称本机完成了构建、TLS、重启持久化、Office/OCR 或备份恢复实测；上线前需通过 CI 并在目标主机执行这些验收。
+
+参考：[Compose 合并规则](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/)、[Compose 服务配置](https://docs.docker.com/reference/compose-file/services/)、[Caddy Basic Auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth)。

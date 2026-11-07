@@ -1,0 +1,22 @@
+{$BOLE_DOMAIN} {
+    basic_auth {
+        {$BOLE_AUTH_USER} {$BOLE_AUTH_HASH}
+    }
+    request_body {
+        max_size 40MB
+    }
+    @crossOrigin {
+        method POST PUT PATCH DELETE
+        header Origin *
+        not header Origin https://{$BOLE_DOMAIN}
+    }
+    respond @crossOrigin 403
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        X-Frame-Options DENY
+    }
+    reverse_proxy bole:8787 {
+        flush_interval -1
+    }
+}
