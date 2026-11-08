@@ -9,6 +9,10 @@ import type { UploadedFile } from '../types.ts';
 import type { Ledger } from '../core/ledger.ts';
 import { ApprovalStore } from '../core/approvals.ts';
 import { MailAdapterStore, mailAdapterSchema, resolveMailAdapter } from './adapters.ts';
+import { isLikelySpam, matchResumeKeyword } from './triage.ts';
+import { detectFileKind, detectImageMime, kindMatchesExtension } from './file-kind.ts';
+import { classifyImageResume, classifyResume, type ResumeVerdict } from './resume-classifier.ts';
+import { imageMimeType, normalizeDocument } from '../ingest/normalize.ts';
 
 export const MAIL_SCHEMA = `CREATE TABLE IF NOT EXISTS recruitment_mail_sources (
  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE, upload_id TEXT NOT NULL,
@@ -28,61 +32,102 @@ export function freezeMailboxQuery(query: MailboxQuery, ledger: Ledger): Mailbox
   if (!query.providerId || query.providerId === 'agently-mail') { const { adapter: _adapter, ...value } = query; return value; }
   const definition = new MailAdapterStore(ledger).list().find((a) => a.id === query.providerId);
   if (!definition) throw new Error('邮箱适配器不存在，请先在招聘邮箱面板配置');
-  if (definition.skillId) {
+  if (definition.kind === 'cli' && definition.skillId) {
     const skill = ledger.db.prepare('SELECT definition_json FROM skill_plugins WHERE id=?').get(definition.skillId);
     if (!skill || !JSON.parse(String(skill.definition_json)).enabled) throw new Error('邮箱适配器关联的 Skill 尚未启用');
   }
   return { ...query, adapter: mailAdapterSchema.parse(definition) };
 }
 const pageSchema = z.object({ data: z.array(z.object({ message_id: z.string().min(1).max(512) })), pagination: z.object({ has_more: z.boolean(), next_cursor: z.string().nullable().optional() }).optional() });
-const messageSchema = z.object({ message_id: z.string(), from: z.object({ email: z.email() }), attachments: z.array(z.object({ attachment_id: z.string().min(1).max(512).optional(), filename: z.string(), size: z.coerce.number().nonnegative().optional() })) });
+const messageSchema = z.object({ message_id: z.string(), from: z.object({ email: z.email() }), subject: z.string().optional(), attachments: z.array(z.object({ attachment_id: z.string().min(1).max(512).optional(), filename: z.string(), size: z.coerce.number().nonnegative().optional() })) });
 
 /** Bounded inbox import. Search filters survive pagination; no mark-read, deletion or URL fetching. */
 export async function collectMailbox(deps: AgentDeps, query: MailboxQuery, command: MailCommand = mailCommand): Promise<UploadedFile[]> {
   const adapter = resolveMailAdapter(query.adapter, command);
-  const mailbox = await adapter.identity();
-  const files: UploadedFile[] = [];
-  let cursor: string | undefined;
-  let count = 0;
-  const cursors = new Set<string>();
-  deps.events.emit(deps.jobId, 'fetcher', 'mail.import.started', { mailbox, ...query });
-  do {
-    const page = pageSchema.parse(await adapter.search(query, cursor));
-    for (const summary of page.data) {
-      if (count++ >= query.maxMessages) break;
-      const message = messageSchema.parse(await adapter.read(summary.message_id));
-      if (message.message_id !== summary.message_id) throw new Error('邮箱消息 ID 不一致');
-      for (const attachment of message.attachments) {
-        if (!isSupportedUpload(attachment.filename) || !attachment.attachment_id || (attachment.size ?? 0) > 25 * 1024 * 1024) {
-          deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.skipped', { messageId: message.message_id, filename: attachment.filename, reason: '不支持的格式、超大附件或无普通附件 ID' });
+  try {
+    const mailbox = await adapter.identity();
+    const files: UploadedFile[] = [];
+    let cursor: string | undefined;
+    let count = 0;
+    const cursors = new Set<string>();
+    deps.events.emit(deps.jobId, 'fetcher', 'mail.import.started', { mailbox, ...query });
+    do {
+      const page = pageSchema.parse(await adapter.search(query, cursor));
+      for (const summary of page.data) {
+        if (count++ >= query.maxMessages) break;
+        const message = messageSchema.parse(await adapter.read(summary.message_id));
+        if (message.message_id !== summary.message_id) throw new Error('邮箱消息 ID 不一致');
+        const triage = isLikelySpam({ from: message.from.email, subject: message.subject, mailbox });
+        if (triage.spam) {
+          deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, from: message.from.email, subject: message.subject ?? '', reason: triage.reason });
           continue;
         }
-        const old = deps.ledger.db.prepare('SELECT upload_id FROM recruitment_mail_sources WHERE job_id=? AND mailbox=? AND message_id=? AND attachment_id=?').get(deps.jobId, mailbox, message.message_id, attachment.attachment_id);
-        if (old) continue;
-        const dir = path.join(deps.runDir, 'mail-downloads', randomUUID());
-        await mkdir(dir, { recursive: true });
-        try {
-          const downloaded = z.object({ saved_to: z.string() }).parse(await adapter.download(message.message_id, attachment.attachment_id, dir));
-          const saved = await realpath(path.resolve(dir, downloaded.saved_to));
-          const root = await realpath(dir);
-          const relative = path.relative(root, saved);
-          if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('下载附件路径越界');
-          if ((await stat(saved)).size > 25 * 1024 * 1024) throw new Error('附件超过 25MB');
-          const file = await saveUpload({ filename: attachment.filename, contentBase64: (await readFile(saved)).toString('base64') }, deps.paths.uploadsDir);
-          deps.ledger.db.prepare('INSERT INTO recruitment_mail_sources(job_id,upload_id,message_id,attachment_id,sender_email,mailbox,filename,adapter_json) VALUES(?,?,?,?,?,?,?,?)').run(deps.jobId, file.uploadId, message.message_id, attachment.attachment_id, message.from.email, mailbox, file.filename, query.adapter ? JSON.stringify(query.adapter) : null);
-          files.push(file);
-          deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.imported', { messageId: message.message_id, uploadId: file.uploadId, filename: file.filename });
-        } catch (error) {
-          deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.failed', { messageId: message.message_id, filename: attachment.filename, error: error instanceof Error ? error.message : String(error) });
+        const keyword = matchResumeKeyword(message.subject ?? '', message.attachments.map((attachment) => attachment.filename));
+        deps.events.emit(deps.jobId, 'fetcher', 'mail.triage.keyword', { messageId: message.message_id, keyword, matched: keyword !== null });
+        for (const attachment of message.attachments) {
+          if (!isSupportedUpload(attachment.filename) || !attachment.attachment_id || (attachment.size ?? 0) > 25 * 1024 * 1024) {
+            deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.skipped', { messageId: message.message_id, filename: attachment.filename, reason: '不支持的格式、超大附件或无普通附件 ID' });
+            continue;
+          }
+          const old = deps.ledger.db.prepare('SELECT upload_id FROM recruitment_mail_sources WHERE job_id=? AND mailbox=? AND message_id=? AND attachment_id=?').get(deps.jobId, mailbox, message.message_id, attachment.attachment_id);
+          if (old) continue;
+          const dir = path.join(deps.runDir, 'mail-downloads', randomUUID());
+          await mkdir(dir, { recursive: true });
+          try {
+            const downloaded = z.object({ saved_to: z.string() }).parse(await adapter.download(message.message_id, attachment.attachment_id, dir));
+            const saved = await realpath(path.resolve(dir, downloaded.saved_to));
+            const root = await realpath(dir);
+            const relative = path.relative(root, saved);
+            if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('下载附件路径越界');
+            if ((await stat(saved)).size > 25 * 1024 * 1024) throw new Error('附件超过 25MB');
+            const buffer = await readFile(saved);
+            const kind = detectFileKind(buffer, attachment.filename);
+            if (!kind) {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, filename: attachment.filename, stage: 'filetype', reason: '文件头不是 PDF、Word、图片或文本，已丢弃' });
+              continue;
+            }
+            if (!kindMatchesExtension(kind, attachment.filename)) {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, filename: attachment.filename, stage: 'filetype', reason: '扩展名与文件内容不一致，已丢弃' });
+              continue;
+            }
+            let verdict: ResumeVerdict;
+            if (kind === 'doc') {
+              verdict = { verdict: 'unknown', reason: '旧版 doc 无法在导入阶段抽取文本，放行交给后续解析' };
+            } else if (kind === 'image') {
+              const mimeType = detectImageMime(buffer) ?? imageMimeType(attachment.filename);
+              verdict = await classifyImageResume(deps.llm, { mimeType, base64: buffer.toString('base64') });
+            } else {
+              try {
+                verdict = await classifyResume(deps.llm, (await normalizeDocument(buffer, attachment.filename)).text);
+              } catch (error) {
+                verdict = { verdict: 'unknown', reason: `文本提取失败：${error instanceof Error ? error.message : String(error)}` };
+              }
+            }
+            if (verdict.verdict === 'not_resume') {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, filename: attachment.filename, stage: 'classifier', reason: verdict.reason });
+              continue;
+            }
+            if (verdict.verdict === 'unknown') {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.classifier.unknown', { messageId: message.message_id, filename: attachment.filename, keyword, reason: verdict.reason });
+            }
+            const file = await saveUpload({ filename: attachment.filename, contentBase64: buffer.toString('base64') }, deps.paths.uploadsDir);
+            deps.ledger.db.prepare('INSERT INTO recruitment_mail_sources(job_id,upload_id,message_id,attachment_id,sender_email,mailbox,filename,adapter_json) VALUES(?,?,?,?,?,?,?,?)').run(deps.jobId, file.uploadId, message.message_id, attachment.attachment_id, message.from.email, mailbox, file.filename, query.adapter ? JSON.stringify(query.adapter) : null);
+            files.push(file);
+            deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.imported', { messageId: message.message_id, uploadId: file.uploadId, filename: file.filename });
+          } catch (error) {
+            deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.failed', { messageId: message.message_id, filename: attachment.filename, error: error instanceof Error ? error.message : String(error) });
+          }
         }
       }
-    }
-    cursor = page.pagination?.has_more ? page.pagination.next_cursor ?? undefined : undefined;
-    if (cursor && cursors.has(cursor)) throw new Error('邮箱返回重复分页游标');
-    if (cursor) cursors.add(cursor);
-  } while (cursor && count < query.maxMessages);
-  deps.events.emit(deps.jobId, 'fetcher', 'mail.import.completed', { messages: Math.min(count, query.maxMessages), imported: files.length, capped: !!cursor && count >= query.maxMessages });
-  return files;
+      cursor = page.pagination?.has_more ? page.pagination.next_cursor ?? undefined : undefined;
+      if (cursor && cursors.has(cursor)) throw new Error('邮箱返回重复分页游标');
+      if (cursor) cursors.add(cursor);
+    } while (cursor && count < query.maxMessages);
+    deps.events.emit(deps.jobId, 'fetcher', 'mail.import.completed', { messages: Math.min(count, query.maxMessages), imported: files.length, capped: !!cursor && count >= query.maxMessages });
+    return files;
+  } finally {
+    await adapter.close?.();
+  }
 }
 
 const draftSchema = z.object({ candidate: z.string().min(1), subject: z.string().trim().min(1).max(1000), body: z.string().trim().min(1).max(30000) }).strict();
@@ -107,8 +152,8 @@ export async function sendApprovedCandidateEmail(ledger: Ledger, jobId: string, 
   if (!approval || approval.kind !== 'recruitment-mail') throw new Error('招聘邮件审批不存在');
   const payload = approvalSchema.parse(JSON.parse(approval.payload_json));
   if (!store.claim(approvalId, jobId)) throw new Error('邮件未获批准或已执行，不会重复发送');
+  const adapter = resolveMailAdapter(payload.adapter, command);
   try {
-    const adapter = resolveMailAdapter(payload.adapter, command);
     if (await adapter.identity() !== payload.mailbox) throw new Error('当前邮箱与简历来源邮箱不一致，请切回原邮箱');
     // --confirmed is used only AFTER HR approves the exact persisted recipient and content.
     const result = await adapter.send(payload);
@@ -118,5 +163,7 @@ export async function sendApprovedCandidateEmail(ledger: Ledger, jobId: string, 
     store.finish(approvalId, jobId, false, { error: String(error), uncertain: true });
     ledger.appendChat(jobId, 'assistant', '招聘邮件未确认发送成功。请核对已发送邮箱后再决定是否重新发起；系统不会自动重发。');
     throw error;
+  } finally {
+    await adapter.close?.();
   }
 }
