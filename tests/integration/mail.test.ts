@@ -12,6 +12,7 @@ import { AutoHitlResponder } from '../../src/agents/hitl.ts';
 import { ApprovalStore } from '../../src/core/approvals.ts';
 import { runOrchestrator } from '../../src/chat/orchestrator.ts';
 import type { ReportData } from '../../src/report/builder.ts';
+import { makeDocx } from '../fixtures/documents.ts';
 
 const resume = '姓名：张伟\n工作年限：5年\n技能：Java、Spring Boot、MySQL\n项目：负责支付系统，优化接口性能。';
 
@@ -23,8 +24,8 @@ test('邮箱分页保留条件、附件入库进入完整筛选；HR 审批精�
     calls.push(args);
     if (args[0] === '+me') return { aliases: [{ email: 'hr@agent.qq.com', is_primary: true }] };
     if (args[1] === '+search') return { data: args.includes('--cursor') ? [] : [{ message_id: 'msg_one' }], pagination: { has_more: !args.includes('--cursor'), next_cursor: 'page2' } };
-    if (args[1] === '+read') return { message_id: 'msg_one', from: { email: 'candidate@example.com' }, attachments: [{ attachment_id: 'att_one', filename: 'resume.txt', size: 100 }, { filename: 'large.pdf', download_url: 'https://untrusted.invalid/' }, { attachment_id: 'att_exe', filename: 'evil.exe' }] };
-    if (args[0] === 'attachment') { const file = path.join(cwd!, 'resume.txt'); await writeFile(file, resume); return { saved_to: file }; }
+    if (args[1] === '+read') return { message_id: 'msg_one', from: { email: 'candidate@example.com' }, subject: '应聘 Java 后端工程师', attachments: [{ attachment_id: 'att_one', filename: 'resume.docx', size: 100 }, { filename: 'large.pdf', download_url: 'https://untrusted.invalid/' }, { attachment_id: 'att_exe', filename: 'evil.exe' }] };
+    if (args[0] === 'attachment') { const file = path.join(cwd!, 'resume.docx'); await writeFile(file, makeDocx(resume)); return { saved_to: file }; }
     if (args[1] === '+send') return { message_id: 'msg_sent' };
     throw new Error(`Unexpected command: ${args.join(' ')}`);
   };

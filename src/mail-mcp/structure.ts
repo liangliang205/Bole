@@ -8,7 +8,11 @@ export interface BodyNode {
   childNodes?: BodyNode[];
 }
 
-const RESUME_EXTENSIONS = new Set(['pdf', 'docx', 'doc']);
+const RESUME_EXTENSIONS = new Set([
+  'pdf', 'docx', 'doc',
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff',
+  'txt', 'md', 'markdown', 'html', 'htm',
+]);
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 /** 递归取 bodystructure 的叶子节点，只有叶子才带 part 号，才能下载 */
@@ -33,7 +37,7 @@ export function extensionOf(name: string): string {
 }
 
 /**
- * 第一层过滤：只放行 pdf/docx/doc 且不超过 25MB。
+ * 第一层过滤：只放行 pdf/docx/doc、图片和纯文本/HTML，且不超过 25MB。
  * 这里不做简历判定，判定在 Bole 侧 triage 里做。
  */
 export function isResumeCandidate(node: BodyNode): boolean {

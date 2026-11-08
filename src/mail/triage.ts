@@ -22,11 +22,30 @@ export interface MailTriageResult {
 /** 只匹配本地部分，域名不参与判断（不同厂商的退信域名不统一）。 */
 const AUTOMATED_SENDER = /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?)([+._-].*)?$/i;
 
-const SPAM_SUBJECT_HINTS = ['unsubscribe', '退订', '广告', '营销', '促销', '推广', 'newsletter'];
+const SPAM_SUBJECT_HINTS = ['unsubscribe', '退订', 'newsletter'];
+
+const RESUME_KEYWORDS = ['简历', '应聘', '求职', '履历', '面试', 'resume', 'cv', 'application'];
 
 export function isAutomatedSender(address: string): boolean {
   const local = address.trim().toLowerCase().split('@')[0] ?? '';
   return AUTOMATED_SENDER.test(local);
+}
+
+/**
+ * 关键词粗筛：主题或附件名命中任一简历关键词即视为高置信度。
+ * 未命中不代表不是简历（例如主题为空、附件名是“个人资料.pdf”），调用方应继续走文件头和模型判定。
+ */
+export function matchResumeKeyword(subject: string, filenames: string[]): string | null {
+  const texts = [subject, ...filenames].map((value) => value.toLowerCase());
+  for (const keyword of RESUME_KEYWORDS) {
+    const needle = keyword.toLowerCase();
+    const ascii = /^[a-z]+$/.test(needle);
+    const pattern = ascii ? new RegExp(`(^|[^a-z])${needle}([^a-z]|$)`) : null;
+    for (const text of texts) {
+      if (pattern ? pattern.test(text) : text.includes(needle)) return keyword;
+    }
+  }
+  return null;
 }
 
 export function isLikelySpam(input: MailTriageInput): MailTriageResult {

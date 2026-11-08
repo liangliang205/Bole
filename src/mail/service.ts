@@ -9,7 +9,10 @@ import type { UploadedFile } from '../types.ts';
 import type { Ledger } from '../core/ledger.ts';
 import { ApprovalStore } from '../core/approvals.ts';
 import { MailAdapterStore, mailAdapterSchema, resolveMailAdapter } from './adapters.ts';
-import { isLikelySpam } from './triage.ts';
+import { isLikelySpam, matchResumeKeyword } from './triage.ts';
+import { detectFileKind, detectImageMime, kindMatchesExtension } from './file-kind.ts';
+import { classifyImageResume, classifyResume, type ResumeVerdict } from './resume-classifier.ts';
+import { imageMimeType, normalizeDocument } from '../ingest/normalize.ts';
 
 export const MAIL_SCHEMA = `CREATE TABLE IF NOT EXISTS recruitment_mail_sources (
  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE, upload_id TEXT NOT NULL,
@@ -59,6 +62,8 @@ export async function collectMailbox(deps: AgentDeps, query: MailboxQuery, comma
           deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, from: message.from.email, subject: message.subject ?? '', reason: triage.reason });
           continue;
         }
+        const keyword = matchResumeKeyword(message.subject ?? '', message.attachments.map((attachment) => attachment.filename));
+        deps.events.emit(deps.jobId, 'fetcher', 'mail.triage.keyword', { messageId: message.message_id, keyword, matched: keyword !== null });
         for (const attachment of message.attachments) {
           if (!isSupportedUpload(attachment.filename) || !attachment.attachment_id || (attachment.size ?? 0) > 25 * 1024 * 1024) {
             deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.skipped', { messageId: message.message_id, filename: attachment.filename, reason: '不支持的格式、超大附件或无普通附件 ID' });
@@ -75,7 +80,37 @@ export async function collectMailbox(deps: AgentDeps, query: MailboxQuery, comma
             const relative = path.relative(root, saved);
             if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('下载附件路径越界');
             if ((await stat(saved)).size > 25 * 1024 * 1024) throw new Error('附件超过 25MB');
-            const file = await saveUpload({ filename: attachment.filename, contentBase64: (await readFile(saved)).toString('base64') }, deps.paths.uploadsDir);
+            const buffer = await readFile(saved);
+            const kind = detectFileKind(buffer, attachment.filename);
+            if (!kind) {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, filename: attachment.filename, stage: 'filetype', reason: '文件头不是 PDF、Word、图片或文本，已丢弃' });
+              continue;
+            }
+            if (!kindMatchesExtension(kind, attachment.filename)) {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, filename: attachment.filename, stage: 'filetype', reason: '扩展名与文件内容不一致，已丢弃' });
+              continue;
+            }
+            let verdict: ResumeVerdict;
+            if (kind === 'doc') {
+              verdict = { verdict: 'unknown', reason: '旧版 doc 无法在导入阶段抽取文本，放行交给后续解析' };
+            } else if (kind === 'image') {
+              const mimeType = detectImageMime(buffer) ?? imageMimeType(attachment.filename);
+              verdict = await classifyImageResume(deps.llm, { mimeType, base64: buffer.toString('base64') });
+            } else {
+              try {
+                verdict = await classifyResume(deps.llm, (await normalizeDocument(buffer, attachment.filename)).text);
+              } catch (error) {
+                verdict = { verdict: 'unknown', reason: `文本提取失败：${error instanceof Error ? error.message : String(error)}` };
+              }
+            }
+            if (verdict.verdict === 'not_resume') {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.message.skipped', { messageId: message.message_id, filename: attachment.filename, stage: 'classifier', reason: verdict.reason });
+              continue;
+            }
+            if (verdict.verdict === 'unknown') {
+              deps.events.emit(deps.jobId, 'fetcher', 'mail.classifier.unknown', { messageId: message.message_id, filename: attachment.filename, keyword, reason: verdict.reason });
+            }
+            const file = await saveUpload({ filename: attachment.filename, contentBase64: buffer.toString('base64') }, deps.paths.uploadsDir);
             deps.ledger.db.prepare('INSERT INTO recruitment_mail_sources(job_id,upload_id,message_id,attachment_id,sender_email,mailbox,filename,adapter_json) VALUES(?,?,?,?,?,?,?,?)').run(deps.jobId, file.uploadId, message.message_id, attachment.attachment_id, message.from.email, mailbox, file.filename, query.adapter ? JSON.stringify(query.adapter) : null);
             files.push(file);
             deps.events.emit(deps.jobId, 'fetcher', 'mail.attachment.imported', { messageId: message.message_id, uploadId: file.uploadId, filename: file.filename });

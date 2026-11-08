@@ -77,9 +77,14 @@ pnpm bole mail-account remove qq-hr
 
 `--vendor` 支持 `qq`、`163`、`126`、`icloud`；自建或企业邮箱改用 `--host imap.example.com [--port 993]`。`add` 会提示输入 IMAP 授权码且不回显，`test` 会真正登录一次并返回邮箱地址，用来先排除授权与网络问题。
 
-MCP 侧搜索只返回带 pdf/docx/doc 附件且单附件不超过 25MB 的邮件；`query` 按主题或发件人在本地过滤（中文搜索条件在 QQ/163 服务端不可靠，因此不依赖 IMAP SEARCH 的关键词）。附件格式、大小和落盘路径在 Bole 侧再次校验。
+MCP 侧搜索只返回带可导入附件（PDF/Word、图片、TXT/MD/HTML）且单附件不超过 25MB 的邮件；`query` 按主题或发件人在本地过滤（中文搜索条件在 QQ/163 服务端不可靠，因此不依赖 IMAP SEARCH 的关键词）。附件格式、大小和落盘路径在 Bole 侧再次校验。
 
-下载附件前，Bole 侧还会做确定性的垃圾邮件 triage，命中任一条即跳过整封邮件并记录 `mail.message.skipped` 事件，不下载附件：发件人为空；发件人就是当前招聘邮箱自身；发件人本地部分是 `noreply`、`mailer-daemon`、`postmaster`、`bounces` 等自动地址；主题包含退订、广告、营销、促销、推广、`newsletter`、`unsubscribe`。规则不调用模型，结果可审计。
+下载附件前的筛选分四步，任何一步判定为非简历都会记录 `mail.message.skipped` 并跳过该附件：
+
+1. 发件人与主题规则：发件人为空、发件人就是当前招聘邮箱自身、发件人本地部分是 `noreply`、`mailer-daemon`、`postmaster`、`bounces` 等自动地址，或主题包含退订、`newsletter`、`unsubscribe`，整封邮件跳过。
+2. 关键词粗筛：主题或附件名命中简历、应聘、求职、履历、面试、`resume`、`cv`、`application` 时记为高置信命中（`mail.triage.keyword` 事件）。未命中不会丢弃，继续后面两步，避免主题为空或写法特殊的真实简历漏掉。
+3. 文件头校验：下载后读取文件头，放行 PDF（`%PDF-`）、DOCX（ZIP 且含 `word/` 或 `[Content_Types].xml`）、DOC（OLE 头），以及 JPEG/PNG/GIF/WebP/BMP/TIFF 图片；TXT/MD/HTML 没有魔数，按扩展名加 UTF-8/GBK 可打印字符比例判断。扩展名和实际类型必须同族，否则丢弃。
+4. 模型二次识别：PDF/DOCX/TXT/MD/HTML 提取正文前 1500 字，用 flash 档模型判定是否为个人简历；图片直接用 flash 视觉模型判定（`detail=low`），不做 OCR 转写。明确判定为非简历才拦截；旧版 doc、无文本层的扫描版 PDF、视觉模型不支持的 BMP/TIFF 返回 unknown 放行，交给后续解析；模型异常时同样放行并记录 `mail.classifier.unknown`，避免因模型故障漏简历。
 
 ## 任务与版本
 
