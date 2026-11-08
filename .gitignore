@@ -26,5 +26,9 @@ coverage/
 backups/
 data/home/
 data/mail-auth/
+data/mail/
+data/mail-cache/
+tools/
 data/npm-cache/
 data/skill-packages/
+.agently/

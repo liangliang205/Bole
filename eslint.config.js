@@ -20,6 +20,9 @@ export default tseslint.config(
       '.trash/**',
       'coverage/**',
       'pnpm-lock.yaml',
+      // 本机下载的第三方 CLI（如腾讯 Agent Mail），不属于仓库源码
+      'tools/**',
+      '.claude/**',
     ],
   },
 
