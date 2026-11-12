@@ -14,7 +14,7 @@ RUN node scripts/download-ocr.ts
 FROM ${NODE_IMAGE} AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git python3 fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-ENV NODE_ENV=production NO_COLOR=1 HOME=/app/data/home BOLE_DATA_DIR=/app/data BOLE_RUNS=/app/runs BOLE_OCR_DIR=/app/ocr npm_config_cache=/app/data/npm-cache AGENTLY_CLI_CONFIG_DIR=/app/data/mail-auth BOLE_MAIL_WORKSPACE=codex
+ENV NODE_ENV=production NO_COLOR=1 HOME=/app/data/home BOLE_DATA_DIR=/app/data BOLE_RUNS=/app/runs BOLE_OCR_DIR=/app/ocr npm_config_cache=/app/data/npm-cache AGENTLY_CLI_CONFIG_DIR=/app/data/mail-auth BOLE_MAIL_WORKSPACE=bole
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/ocr ./ocr
 COPY package.json ./

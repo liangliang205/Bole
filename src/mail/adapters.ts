@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { execFile } from 'node:child_process';
 import type { Ledger } from '../core/ledger.ts';
-import { mailCommand, mailboxIdentity, type MailCommand } from './client.ts';
+import { mailCommand, mailboxIdentity, mailEnvironment, type MailCommand } from './client.ts';
 
 const operationSchema = z.object({ args: z.array(z.string()).max(100), resultPath: z.string().default('') }).strict();
 export const mailAdapterSchema = z.object({
@@ -42,9 +42,9 @@ export function agentlyAdapter(command: MailCommand = mailCommand): MailAdapter 
     send: (v) => command(['message', '+send', '--to', v.to, '--subject', v.subject, '--body', v.body, '--body-format', 'plain', '--confirmed']),
   };
 }
-export type AdapterRunner = (command: string, args: string[], cwd?: string) => Promise<unknown>;
-const run: AdapterRunner = (command, args, cwd) => new Promise((resolve, reject) => {
-  execFile(command, args, { cwd, windowsHide: true, timeout: 90000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+export type AdapterRunner = (command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) => Promise<unknown>;
+const run: AdapterRunner = (command, args, cwd, env) => new Promise((resolve, reject) => {
+  execFile(command, args, { cwd, env, windowsHide: true, timeout: 90000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
     try {
       const value: unknown = JSON.parse(stdout);
       if (error || value && typeof value === 'object' && 'ok' in value && value.ok === false) { reject(new Error('邮箱适配器调用失败，请检查对应 CLI 的授权与接口配置；发信结果不确定时请人工核对，勿自动重发')); return; }
@@ -61,7 +61,7 @@ export function configuredAdapter(definition: MailAdapterDefinition, runner: Ada
   const d = mailAdapterSchema.parse(definition);
   const invoke = async (op: keyof typeof d.operations, input: Record<string, unknown>, cwd?: string) => {
     const replace = (s: string) => s.replace(/\{([a-zA-Z]+)\}/g, (_all, name: string) => name === 'input' ? JSON.stringify(input) : String(input[name] ?? ''));
-    const value = await runner(d.command, [...d.baseArgs, ...d.operations[op].args.map(replace)], cwd);
+    const value = await runner(d.command, [...d.baseArgs, ...d.operations[op].args.map(replace)], cwd, d.skillId === 'agently-mail' ? mailEnvironment() : undefined);
     return field(value, d.operations[op].resultPath);
   };
   return {

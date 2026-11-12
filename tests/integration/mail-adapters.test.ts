@@ -52,3 +52,14 @@ console.log(JSON.stringify({payload}));`);
     await assert.rejects(broken.send({ to: 'candidate@example.org', subject: 'x', body: 'x' }), /发送回执/);
   } finally { boot.close(); await env.restore(); }
 });
+
+test('agently-mail 适配器的身份检查与认证使用同一独立凭据环境', async () => {
+  let childEnv: NodeJS.ProcessEnv | undefined;
+  const definition = mailAdapterSchema.parse({ id: 'isolated-mail', name: '隔离邮箱', skillId: 'agently-mail', command: 'mail-cli',
+    operations: Object.fromEntries(['identity', 'search', 'read', 'download', 'send'].map((op) => [op, { args: [op], resultPath: 'data' }])),
+    fields: { email: 'email', items: 'items', messageId: 'id', sender: 'from', attachments: 'files', attachmentId: 'id', filename: 'name', savedPath: 'path' } });
+  const adapter = configuredAdapter(definition, async (_command, _args, _cwd, env) => { childEnv = env; return { data: { email: 'hr@example.org' } }; });
+  assert.equal(await adapter.identity(), 'hr@example.org');
+  assert.equal(childEnv?.AGENTLY_WORKSPACE, 'bole');
+  assert.match(String(childEnv?.AGENTLY_CLI_CONFIG_DIR), /[\\/]data[\\/]mail-auth$/);
+});

@@ -513,6 +513,7 @@
     closeDrawer();
     if (window.innerWidth > 1100) openDrawer('candidates', false);
     await loadRun(true);
+    if (state.snapshot?.job?.seed === 'workspace-chat') closeDrawer();
   }
 
   // ---------------------------------------------------------------- run / events
@@ -575,6 +576,7 @@
     $('#reply-send').setAttribute('aria-busy', state.sending ? 'true' : 'false');
     const placeholder = run.pendingHitl
       ? '回答 HITL 问题，或点击上方选项…'
+      : state.snapshot?.job?.seed === 'workspace-chat' ? '继续和伯乐对话，例如：我已完成授权，请检查连接…'
       : canChat ? '继续追问伯乐，例如：为什么 R08 不推荐？' : '筛选完成后可继续和伯乐对话…';
     $('#reply-input').setAttribute('data-placeholder', placeholder);
     $('#reply-input').setAttribute('aria-disabled', run.pendingHitl || canChat ? 'false' : 'true');
@@ -954,7 +956,7 @@
     const attachments = fileNames.length
       ? `<div class="attach-chips">${fileNames.map((name) => `<span class="chip"><span class="name">${esc(name)}</span></span>`).join('')}</div>`
       : '';
-    parts.push(messageHtml('user', 'HR', fmtTime(job.created_ts), `<div class="msg-text">${esc(job.requirements || '')}</div>`, attachments));
+    if (job.seed !== 'workspace-chat') parts.push(messageHtml('user', 'HR', fmtTime(job.created_ts), `<div class="msg-text">${esc(job.requirements || '')}</div>`, attachments));
 
     let toolGroup = [];
     const flushTools = () => {
@@ -1010,7 +1012,7 @@
         `<div class="msg-text chat-markdown">${renderChatMarkdown(message.content)}</div>${attachmentChips}${files.length ? fileCardsHtml(files) : ''}`,
       ));
     }
-    if (state.sending && state.run?.status === 'completed' && !state.run?.pendingHitl) {
+    if (state.sending && ['completed', 'paused', 'failed', 'idle'].includes(state.run?.status) && !state.run?.pendingHitl) {
       parts.push(messageHtml('assistant', '伯乐', '', '<div class="msg-text muted">正在思考…</div>'));
     }
     const scroll = $('#chat-scroll');
@@ -1202,7 +1204,7 @@
     const button = $('#reply-send');
     const approvalBlocked = (run.approvals || []).some((item) => ['screening-plan', 'publish-report', 'workflow'].includes(item.kind) && ['pending', 'rejected'].includes(item.status));
     const action = run.pendingHitl ? 'send' : run.status === 'pausing' ? 'waiting' : run.status === 'running' ? 'pause'
-      : ['paused', 'failed', 'idle'].includes(run.status) && empty ? 'resume' : 'send';
+      : state.snapshot?.job?.seed !== 'workspace-chat' && ['paused', 'failed', 'idle'].includes(run.status) && empty ? 'resume' : 'send';
     const label = { send: '发送', pause: '暂停筛选', resume: approvalBlocked ? '请先处理审批；拒绝后需新建会话' : '从检查点续跑', waiting: '正在安全暂停…' }[action];
     button.title = label;
     button.setAttribute('aria-label', label);
@@ -1297,9 +1299,16 @@
         body: JSON.stringify({
           message: value,
           uploadIds: ready.map((item) => item.uploadId),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          preferredMailProviderId: $('#mail-provider').value || undefined,
         }),
       });
       state.chat = data.messages || state.chat;
+      if (state.snapshot?.job?.seed === 'workspace-chat') {
+        await loadMailAdapters(data.mailboxConnection?.id);
+        if (data.mailboxConnection) saveMailboxPreferences();
+        window.dispatchEvent(new CustomEvent('bole-plugins-refresh'));
+      }
       clearChatAttachments();
       await loadRun(false);
     } catch (error) {
@@ -1366,13 +1375,10 @@
 
   async function startRun() {
     const requirements = $('#new-requirements').value.trim();
-    if (requirements.length < 5) { showHint('请填写至少 5 个字符的招聘需求', true); return; }
     const uploaded = state.attachments.filter((file) => file.status === 'uploaded');
-    const useMailbox = $('#new-mail-enabled').checked;
-    if (uploaded.length === 0 && !useMailbox) { showHint('请上传简历或选择从招聘邮箱收取', true); return; }
-    if (useMailbox && !state.mailAdapters?.some((a) => a.id === $('#mail-provider').value)) { showHint('邮箱连接尚未加载或已不可用，请在招聘邮箱中重新选择', true); openMailbox(); return; }
-    if (useMailbox && !saveMailboxPreferences()) { openMailbox(); $('#new-mail-limit').focus(); return; }
-    const mailbox = useMailbox ? { providerId: $('#mail-provider').value, query: $('#new-mail-query').value.trim(), maxMessages: Number($('#new-mail-limit').value), ...($('#new-mail-after').value ? { after: new Date(`${$('#new-mail-after').value}T00:00:00`).toISOString() } : {}) } : undefined;
+    const conversation = uploaded.length === 0;
+    if (requirements.length < (conversation ? 1 : 5)) { showHint(conversation ? '请输入消息或邮箱安装文档地址' : '请填写至少 5 个字符的招聘需求', true); return; }
+    if (state.attachments.some((file) => file.status === 'uploading' || file.status === 'error')) { showHint('请等待简历上传完成，或移除上传失败的文件', true); return; }
     if (!state.config?.providers?.length || !state.activeProviderId) {
       showHint('请先在设置中添加模型提供商并绑定 API Key', true);
       openSettings();
@@ -1386,11 +1392,19 @@
     }
     const button = $('#new-start');
     button.disabled = true;
-    showHint('正在创建会话并启动真实模型流水线…');
+    showHint(conversation ? '正在创建对话…' : '正在创建会话并启动真实模型流水线…');
     try {
+      if (conversation) {
+        const data = await api('/api/conversations', { method: 'POST', body: JSON.stringify({ message: requirements, executionMode: $('#new-execution-mode').value }) });
+        showHint('');
+        await loadJobs(); await selectJob(data.jobId);
+        $('#reply-input').textContent = requirements;
+        await sendChat();
+        return;
+      }
       const data = await api('/api/run', {
         method: 'POST',
-        body: JSON.stringify({ requirements, mailbox, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined, agentTeamKey: $('#new-agent-team').value }),
+        body: JSON.stringify({ requirements, uploadIds: uploaded.map((file) => file.uploadId), executionMode: $('#new-execution-mode').value, policyVersionId: $('#new-policy-version').value || undefined, agentTeamKey: $('#new-agent-team').value }),
       });
       state.attachments = [];
       renderAttachments();
@@ -2294,10 +2308,10 @@
 
   const MAILBOX_PREFERENCES_KEY = 'bole.mailbox.preferences';
   function updateMailboxSummary() {
-    const enabled = $('#new-mail-enabled').checked;
-    $('#new-mail-source-state').textContent = enabled ? '已启用' : '未启用';
+    const enabled = Boolean(state.mailAdapters?.length);
+    $('#new-mail-source-state').textContent = state.mailAdapters?.length ? '已接入' : '未接入';
     $('#new-mail-summary').classList.toggle('mail-enabled', enabled);
-    $('#new-mail-summary').title = enabled ? '从招聘邮箱收取简历，点击切换来源或修改收取范围' : '点击启用招聘邮箱，或设置邮箱连接与收取范围';
+    $('#new-mail-summary').title = '通过对话接入邮箱、指定时间范围和人才要求，由伯乐执行';
     $$('[data-mail-source]').forEach((item) => item.setAttribute('aria-checked', String((item.dataset.mailSource === 'mail') === enabled)));
   }
   function restoreMailboxPreferences() {
@@ -2321,38 +2335,129 @@
     try {
       localStorage.setItem(MAILBOX_PREFERENCES_KEY, JSON.stringify({ providerId: $('#mail-provider').value, enabled: $('#new-mail-enabled').checked, query: $('#new-mail-query').value.trim(), after: $('#new-mail-after').value, maxMessages }));
       $('#mailbox-settings-status').textContent = '已保存，用于下一次新建筛选；已有任务保持原收取范围。';
-    } catch { $('#mailbox-settings-status').textContent = '当前页面已应用；浏览器未能保存，刷新后需重新设置。'; }
+      const selected = state.mailAdapters?.find((adapter) => adapter.id === $('#mail-provider').value);
+      $('#mail-selection-note').textContent = selected ? `已选择“${selected.name}”，主页伯乐将默认使用此邮箱。` : '尚未选择默认邮箱，可在主页对话中指定。';
+    } catch {
+      $('#mailbox-settings-status').textContent = '当前页面已应用；浏览器未能保存，刷新后需重新设置。';
+      $('#mail-selection-note').textContent = '当前选择已应用；浏览器未能保存，刷新后需重新选择。';
+    }
     updateMailboxSummary();
     return true;
   }
   async function checkMailboxConnection() {
     const button = $('#mail-test');
+    const providerId = $('#mail-provider').value;
+    if (!state.mailAdapters?.some((adapter) => adapter.id === providerId)) {
+      $('#mail-status').textContent = state.mailAdapters?.length ? '已发现邮箱连接，可以直接告诉伯乐要收取和筛选哪些简历。' : '尚未接入邮箱。把安装文档或插件命令告诉伯乐，由它完成接入。';
+      $('#mail-status').classList.remove('mailbox-connected');
+      return;
+    }
     button.disabled = true;
     $('#mail-status').textContent = '正在检查…';
     try {
-      const data = await api(`/api/mail/status?providerId=${encodeURIComponent($('#mail-provider').value)}`);
+      const data = await api(`/api/mail/status?providerId=${encodeURIComponent(providerId)}`);
+      if ($('#mail-provider').value !== providerId) return;
       $('#mail-status').textContent = data.mailbox || data.error || '尚未授权';
       $('#mail-status').classList.toggle('mailbox-connected', Boolean(data.mailbox));
-    } catch (error) { $('#mail-status').textContent = error.message; $('#mail-status').classList.remove('mailbox-connected'); }
-    finally { button.disabled = false; }
+      if (data.error) { $('#mail-auth').textContent = '重新认证'; $('#mail-auth').dataset.retry = 'true'; }
+    } catch (error) { if ($('#mail-provider').value === providerId) { $('#mail-status').textContent = error.message; $('#mail-status').classList.remove('mailbox-connected'); } }
+    finally { button.disabled = !$('#mail-provider').value; }
+  }
+  let mailAuthorizationTimer;
+  function clearMailAuthorization() {
+    clearTimeout(mailAuthorizationTimer);
+    $('#mail-auth-panel').classList.add('hidden');
+    $('#mail-auth-message').textContent = '';
+    $('#mail-auth-links').replaceChildren();
+    $('#mail-auth').dataset.retry = '';
+    $('#mail-auth').textContent = '认证邮箱';
+  }
+  function renderMailAuthorization(data) {
+    const panel = $('#mail-auth-panel');
+    const message = $('#mail-auth-message');
+    const links = $('#mail-auth-links');
+    panel.classList.remove('hidden'); links.replaceChildren();
+    if (data.state === 'missing') { clearMailAuthorization(); return; }
+    if (data.state === 'waiting') {
+      message.textContent = data.urls?.length ? '请点击或复制以下链接在浏览器中完成授权：' : '正在生成授权链接…';
+      for (const url of data.urls || []) {
+        const link = document.createElement('a'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = url; links.append(link);
+      }
+      $('#mail-auth').textContent = '等待授权';
+      $('#mail-auth').disabled = true; $('#mail-test').disabled = true;
+    } else if (data.mailbox) {
+      message.textContent = `邮箱地址 ${data.mailbox} 已授权成功，可以用它来收发邮件了。`;
+      $('#mail-auth').textContent = '重新认证'; $('#mail-auth').dataset.retry = 'true';
+      $('#mail-status').textContent = data.mailbox; $('#mail-status').classList.add('mailbox-connected');
+      $('#mail-auth').disabled = false; $('#mail-test').disabled = false;
+    } else if (data.state === 'completed') {
+      message.textContent = `授权流程已结束，但邮箱身份验证失败：${data.verificationError || '请检查连接'}`;
+      $('#mail-auth').textContent = '重新认证'; $('#mail-auth').dataset.retry = 'true';
+      $('#mail-auth').disabled = false; $('#mail-test').disabled = false;
+    } else {
+      message.textContent = data.error || '认证未完成，请检查错误后再决定是否重新认证。';
+      $('#mail-auth').textContent = '重新认证'; $('#mail-auth').dataset.retry = 'true';
+      $('#mail-auth').disabled = false; $('#mail-test').disabled = false;
+    }
+  }
+  async function pollMailAuthorization(providerId) {
+    if ($('#mail-provider').value !== providerId || $('#mailbox-modal').classList.contains('hidden')) return;
+    try {
+      const data = await api(`/api/mail/adapters/${encodeURIComponent(providerId)}/authorization`);
+      renderMailAuthorization(data);
+      if (data.state === 'waiting') mailAuthorizationTimer = setTimeout(() => void pollMailAuthorization(providerId), 1500);
+    } catch (error) { renderMailAuthorization({ state: 'failed', error: error.message }); }
+  }
+  async function authorizeMailbox() {
+    const providerId = $('#mail-provider').value;
+    if (!providerId) return;
+    clearTimeout(mailAuthorizationTimer); $('#mail-auth').disabled = true;
+    try {
+      const data = await api(`/api/mail/adapters/${encodeURIComponent(providerId)}/authorization`, { method: 'POST', body: JSON.stringify({ restart: $('#mail-auth').dataset.retry === 'true' }) });
+      renderMailAuthorization(data);
+      if (data.state === 'waiting') mailAuthorizationTimer = setTimeout(() => void pollMailAuthorization(providerId), 1500);
+    } catch (error) { renderMailAuthorization({ state: 'failed', error: error.message }); }
+    finally { if ($('#mail-auth').textContent !== '等待授权') $('#mail-auth').disabled = false; }
   }
   function openMailbox() {
     closeSettings(); closeKnowledge();
     $('#mailbox-modal').classList.remove('hidden');
     $('#mailbox-close').focus();
-    void loadMailAdapters().then(checkMailboxConnection).catch((error) => { $('#mail-status').textContent = error.message; });
+    void loadMailAdapters().then(async () => {
+      await checkMailboxConnection();
+      if ($('#mail-provider').value) await pollMailAuthorization($('#mail-provider').value);
+    }).catch((error) => { $('#mail-status').textContent = error.message; });
   }
-  async function loadMailAdapters() {
+  async function loadMailAdapters(preferredId) {
     const data = await api('/api/mail/adapters');
+    // Ignore presets returned by an older server during a rolling page refresh.
+    data.adapters = data.adapters.filter((adapter) => !adapter.builtin);
     state.mailAdapters = data.adapters;
-    let selected = $('#mail-provider').value;
-    try { selected = JSON.parse(localStorage.getItem(MAILBOX_PREFERENCES_KEY) || 'null')?.providerId || selected; } catch { /* Use current selection. */ }
-    $('#mail-provider').innerHTML = data.adapters.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+    let selected = preferredId || $('#mail-provider').value;
+    try { if (!preferredId) selected = JSON.parse(localStorage.getItem(MAILBOX_PREFERENCES_KEY) || 'null')?.providerId || selected; } catch { /* Use current selection. */ }
+    $('#mail-provider').innerHTML = '<option value="">' + (data.adapters.length ? '请选择邮箱连接' : '尚未接入邮箱') + '</option>' + data.adapters.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
     if (data.adapters.some((a) => a.id === selected)) $('#mail-provider').value = selected;
-    else { $('#mail-provider').insertAdjacentHTML('beforeend', `<option value="${esc(selected)}" selected disabled>原邮箱适配器已不可用，请重新选择</option>`); }
-    $('#mail-adapter-skill').innerHTML = '<option value="">独立 CLI（不关联 Skill）</option>' + data.skills.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}${s.id === 'agently-mail' || data.adapters.some((a) => a.skillId === s.id) ? ' · 已有适配器' : ' · 待配置适配器'}</option>`).join('');
+    else {
+      $('#mail-provider').value = '';
+      $('#new-mail-enabled').checked = false;
+      try {
+        const preferences = JSON.parse(localStorage.getItem(MAILBOX_PREFERENCES_KEY) || '{}');
+        localStorage.setItem(MAILBOX_PREFERENCES_KEY, JSON.stringify({ ...preferences, providerId: '', enabled: false }));
+      } catch { /* Current page still clears the unavailable connection. */ }
+      $('#mail-status').textContent = data.adapters.length ? '原邮箱连接已不可用，可以告诉伯乐要使用哪个邮箱。' : '尚未接入邮箱。把安装文档或插件命令告诉伯乐，由它完成接入。';
+      $('#mail-status').classList.remove('mailbox-connected');
+      $('#mail-adapter-config').value = '';
+      updateMailboxSummary();
+    }
+    const available = data.adapters.some((a) => a.id === $('#mail-provider').value);
+    $('#mail-test').disabled = !available;
+    $('#mail-auth').disabled = !available;
+    $('#new-mail-enabled').disabled = !available;
+    $('#mailbox-new-run').disabled = !available;
+    updateMailboxSummary();
+    $('#mail-adapter-skill').innerHTML = '<option value="">独立 CLI（不关联 Skill）</option>' + data.skills.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}${data.adapters.some((a) => a.skillId === s.id) ? ' · 已有适配器' : ' · 待配置适配器'}</option>`).join('');
   }
-  function closeMailbox() { $('#mailbox-modal').classList.add('hidden'); }
+  function closeMailbox() { clearTimeout(mailAuthorizationTimer); $('#mailbox-modal').classList.add('hidden'); }
 
   function setKnowledgeStatus(target, message, tone = '') {
     const el = $(target);
@@ -2727,10 +2832,17 @@
     document.addEventListener('click', (event) => { if (!event.target.closest('.mail-source-picker')) closeMailSourceMenu(); });
     document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMailSourceMenu(); });
     $('#mailbox-close').addEventListener('click', closeMailbox);
+    $('#mail-auth').addEventListener('click', authorizeMailbox);
+    $('#mail-plugin-add').addEventListener('click', () => { closeMailbox(); openSettings('plugins'); window.dispatchEvent(new CustomEvent('bole-plugin-add')); });
     $('#mailbox-modal').addEventListener('click', (event) => { if (event.target === $('#mailbox-modal')) closeMailbox(); });
     for (const id of ['#new-mail-enabled', '#new-mail-query', '#new-mail-after', '#new-mail-limit', '#mail-provider']) $(id).addEventListener('change', saveMailboxPreferences);
     $('#mail-provider').addEventListener('change', () => {
-      const definition = state.mailAdapters?.find((a) => a.id === $('#mail-provider').value && !a.builtin);
+      clearMailAuthorization();
+      const available = state.mailAdapters?.some((a) => a.id === $('#mail-provider').value);
+      $('#new-mail-enabled').disabled = !available;
+      $('#mailbox-new-run').disabled = !available;
+      if (!available) { $('#new-mail-enabled').checked = false; saveMailboxPreferences(); }
+      const definition = state.mailAdapters?.find((a) => a.id === $('#mail-provider').value);
       if (definition) { $('#mail-adapter-config').value = JSON.stringify(definition, null, 2); $('#mail-adapter-skill').value = definition.skillId || ''; }
       void checkMailboxConnection();
     });
@@ -2743,6 +2855,9 @@
         if ($('#mail-adapter-skill').value) value.skillId = $('#mail-adapter-skill').value;
         await api('/api/mail/adapters', { method: 'POST', body: JSON.stringify(value) });
         await loadMailAdapters(); $('#mail-provider').value = value.id; saveMailboxPreferences();
+        $('#mail-test').disabled = false;
+        $('#new-mail-enabled').disabled = false;
+        $('#mailbox-new-run').disabled = false;
         $('#mail-adapter-status').textContent = '适配器已保存。请检查连接后新建任务使用。';
         await checkMailboxConnection();
       } catch (error) { $('#mail-adapter-status').textContent = error.message; }
@@ -2903,7 +3018,10 @@
     $('#plugin-add').addEventListener('click', () => window.dispatchEvent(new CustomEvent('bole-plugin-add')));
     window.addEventListener('bole-plugin-manual', (event) => { if (event.detail === 'mcp') openPluginEditor(null); });
     window.addEventListener('bole-plugins-refresh', () => { void loadPlugins(); });
-    window.addEventListener('bole-skills-updated', (event) => { state.skillPlugins = event.detail; renderPlugins(); });
+    window.addEventListener('bole-skills-updated', (event) => {
+      state.skillPlugins = event.detail; renderPlugins();
+      void loadMailAdapters().catch((error) => { $('#mail-status').textContent = error.message; });
+    });
     $('#plugin-refresh').addEventListener('click', loadPlugins);
     $('#plugin-save').addEventListener('click', savePlugin);
     $('#plugin-cancel').addEventListener('click', closePluginEditor);

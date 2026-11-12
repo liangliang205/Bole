@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { z } from 'zod';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -8,8 +9,10 @@ const envelope = z.object({ ok: z.boolean(), data: z.unknown().optional(), error
 
 /** OAuth credentials are workspace-scoped. Do not let the server's launcher select another account store. */
 export function mailEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const workspace = env.BOLE_MAIL_WORKSPACE?.trim() || env.AGENTLY_WORKSPACE?.trim() || 'codex';
-  return { ...env, AGENTLY_WORKSPACE: workspace };
+  const workspace = env.BOLE_MAIL_WORKSPACE?.trim() || 'bole';
+  const dataDir = path.resolve(env.BOLE_DATA_DIR?.trim() || 'data');
+  const configDir = env.BOLE_MAIL_AUTH_DIR?.trim() || path.join(dataDir, 'mail-auth');
+  return { ...env, AGENTLY_WORKSPACE: workspace, AGENTLY_CLI_CONFIG_DIR: configDir };
 }
 
 /** Run the packaged native binary directly: no shell, command interpolation or credential copying. */
