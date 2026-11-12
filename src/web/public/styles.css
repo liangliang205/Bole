@@ -697,7 +697,6 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .input { border: 0; background: var(--input); border-radius: 9px; padding: 9px 10px; color: var(--text); width: 100%; }
 .input::placeholder { color: var(--dim); }
 .settings-status { border: 0; border-radius: 9px; padding: 8px 10px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
-.settings-status:empty { display: none; }
 .settings-status.ok { color: var(--ok); background: var(--ok-bg); }
 .settings-status.warn { color: var(--warn); background: var(--warn-bg); }
 .settings-status.error { color: var(--danger); background: var(--danger-bg); }
@@ -866,12 +865,8 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .mailbox-account { display:flex; align-items:center; gap:16px; padding:22px; margin:24px 0; background:var(--surface-2); border-radius:14px; }
 .mailbox-account-icon { font-size:28px; width:52px; height:52px; display:grid; place-items:center; background:var(--surface); border-radius:12px; flex-shrink:0; }
 .mailbox-account > div:nth-child(2) { flex:1; min-width:0; }
-.mailbox-account-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 #mail-status { overflow-wrap:anywhere; margin-top:5px; font-size:14px; }
 #mail-status.mailbox-connected { color:var(--ok); font-weight:600; }
-.mail-auth-panel { margin:-12px 0 20px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); }
-.mail-auth-panel p { margin:0 0 8px; }
-.mail-auth-panel a { display:block; overflow-wrap:anywhere; color:var(--accent); margin-top:6px; }
 .mailbox-enabled { display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; }
 .mailbox-preferences .form-grid { gap:18px; }
 .mailbox-preferences small { font-size:12px; }

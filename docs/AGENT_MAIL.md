@@ -1,7 +1,5 @@
 # 招聘邮箱接入
 
-> 本页保留早期 Agent Mail 接入及历史任务的说明。当前招聘邮箱不再提供预设服务商选项，新连接统一使用 [通用邮箱适配](MAIL_ADAPTERS.md)，配置后显式选择连接；安装同名 Skill 不会自动创建邮箱连接。以下默认邮箱 API 示例仅适用于历史实现。
-
 BoLe 通过腾讯官方 Agent Mail CLI 导入投递简历，并在 HR 选定候选人、批准具体邮件后发送联系邮件。官方安装说明：https://agent.qq.com/doc/cli-setup.md 。
 
 ## 安装与授权
@@ -13,7 +11,7 @@ pnpm exec agently-cli auth login
 pnpm exec agently-cli +me
 ```
 
-CLI 按配置目录和 workspace 隔离授权。BoLe 的认证、检查、收信与发信统一使用 `BOLE_MAIL_AUTH_DIR`（默认 `<BOLE_DATA_DIR>/mail-auth`）和 `BOLE_MAIL_WORKSPACE`（默认 `bole`），避免与 Codex 等其他 Agent 争用凭据锁。建议直接通过 BoLe 的“重新认证”按钮操作；如需手工排障，必须同时设置 `AGENTLY_CLI_CONFIG_DIR` 和 `AGENTLY_WORKSPACE` 与 BoLe 保持一致。只更换终端或重启服务不应要求重复授权。
+CLI 按 workspace 隔离授权。BoLe 子进程固定使用 `BOLE_MAIL_WORKSPACE`，未设置时沿用显式的 `AGENTLY_WORKSPACE`，两者都未设置时默认 `codex`，以复用首次在 Codex 中完成的授权。普通 PowerShell 中手工授权时先设置 `$env:AGENTLY_WORKSPACE = 'codex'`，再运行上述登录命令；否则 CLI 可能把凭据存到 `default`，导致服务找不到已有授权。只更换终端或重启服务不应要求重复授权。
 
 在 CLI 提供的浏览器链接中完成授权。凭据由官方 CLI 管理，BoLe 不复制 OAuth token、不把 token 写入模型上下文。服务须以完成授权的同一操作系统用户启动。仅安装全局 CLI 或 Codex 邮件技能，不会自行赋予 BoLe 收取简历的能力；本项目的原生接入负责整个招聘流程。
 

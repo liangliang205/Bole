@@ -54,10 +54,10 @@
     <section id="empty-view" class="empty-view">
       <div class="hero">
         <h1>今天想寻找什么样的人才？</h1>
-          <p class="hero-copy">描述招聘需求，或直接告诉伯乐如何接入你的招聘邮箱。</p>
+          <p class="hero-copy">描述岗位需求，从招聘邮箱收取简历，或添加本地简历。</p>
         <div class="new-composer dsh-composer">
         <div class="composer dsh-composer-card">
-          <textarea id="new-requirements" rows="3" aria-label="招聘需求或消息" placeholder="描述招聘需求，或粘贴邮箱安装文档，让伯乐帮你接入…"></textarea>
+          <textarea id="new-requirements" rows="3" aria-label="岗位需求" placeholder="描述岗位、技能与经验要求…"></textarea>
           <div id="new-attachments" class="attachments"></div>
           <div class="dsh-composer-row">
             <div class="dsh-composer-tools">
@@ -78,13 +78,13 @@
               <div class="mode-picker mail-source-picker">
                 <button class="mode-trigger" id="new-mail-summary" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="mail-source-menu"><span aria-hidden="true">✉</span><span>招聘邮箱</span><span id="new-mail-source-state" class="mail-source-state">未启用</span><span aria-hidden="true">⌃</span></button>
                 <div id="mail-source-menu" class="mode-menu hidden" role="menu" aria-label="简历来源">
-                  <button type="button" role="menuitemradio" class="hidden" aria-checked="false" data-mail-source="mail"><span>从招聘邮箱收取</span></button>
-                  <button type="button" role="menuitemradio" class="hidden" aria-checked="true" data-mail-source="upload"><span>仅使用上传简历</span></button>
-                  <button type="button" role="menuitem" id="mail-source-settings"><span>让伯乐处理招聘邮箱<small>直接说明接入方式、时间范围和人才要求</small></span><span aria-hidden="true">›</span></button>
+                  <button type="button" role="menuitemradio" aria-checked="false" data-mail-source="mail"><span>从招聘邮箱收取<small>按已保存的邮箱与范围筛选</small></span><span class="mode-check" aria-hidden="true">✓</span></button>
+                  <button type="button" role="menuitemradio" aria-checked="true" data-mail-source="upload"><span>仅使用上传简历<small>本次不从邮箱收取</small></span><span class="mode-check" aria-hidden="true">✓</span></button>
+                  <button type="button" role="menuitem" id="mail-source-settings"><span>邮箱连接与收取范围设置</span><span aria-hidden="true">›</span></button>
                 </div>
               </div>
             </div>
-            <button class="dsh-composer-primary" id="new-start" title="发送" aria-label="发送"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13V3m-4 4 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="dsh-composer-primary" id="new-start" title="开始筛选" aria-label="开始筛选"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13V3m-4 4 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
         </div>
         </div>
@@ -288,7 +288,7 @@
         </div>
         <div class="plugin-section" id="skills-section">
           <div class="hidden"><span id="skill-count"></span><button id="skill-refresh" type="button">刷新</button><button id="skill-add" type="button">添加 Skill</button></div>
-          <div id="skill-status" class="settings-status hidden" role="status"></div>
+          <div id="skill-status" class="settings-status" role="status"></div>
           <div id="skill-editor" class="plugin-editor hidden">
             <h3 id="skill-editor-title">添加 Skill</h3>
             <div class="form-grid">
@@ -386,21 +386,18 @@
 
 <div id="mailbox-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="mailbox-title">
   <section class="modal-card mailbox-card">
-    <div class="modal-head"><div><h2 id="mailbox-title">招聘邮箱</h2><p class="muted">管理已接入的邮箱，选择伯乐默认使用的邮箱。</p></div><button class="btn ghost" id="mailbox-close" type="button" aria-label="关闭招聘邮箱">✕</button></div>
+    <div class="modal-head"><div><h2 id="mailbox-title">招聘邮箱</h2><p class="muted">接收投递简历，交给伯乐筛选，再由 HR 确认人选和联系邮件。</p></div><button class="btn ghost" id="mailbox-close" type="button" aria-label="关闭招聘邮箱">✕</button></div>
     <div class="mailbox-account">
       <div class="mailbox-account-icon" aria-hidden="true">✉</div><div><span class="muted">当前邮箱</span><div id="mail-status" role="status" aria-live="polite">尚未检查连接</div></div>
-      <div class="mailbox-account-actions"><button type="button" class="btn" id="mail-auth">认证邮箱</button><button type="button" class="btn ghost" id="mail-test">检查邮箱连接</button></div>
+      <button type="button" class="btn ghost" id="mail-test">检查邮箱连接</button>
     </div>
-    <div id="mail-auth-panel" class="mail-auth-panel hidden" role="status" aria-live="polite"><p id="mail-auth-message"></p><div id="mail-auth-links"></div></div>
-    <label class="mailbox-provider-label">已接入的邮箱<select id="mail-provider" class="input"><option value="">请选择邮箱连接</option></select></label>
-    <p class="muted" id="mail-selection-note" role="status">选择后自动保存。接入邮箱和收取简历，请直接在主页与伯乐对话。</p>
-    <button id="mail-plugin-add" type="button" class="btn ghost hidden">添加邮箱插件</button>
-    <details class="mailbox-adapter-editor hidden"><summary>高级连接配置</summary><p class="muted">由伯乐根据已安装插件的接口说明维护。</p>
+    <label class="mailbox-provider-label">邮箱连接 / 适配器<select id="mail-provider" class="input"><option value="agently-mail">腾讯 Agent Mail</option></select></label>
+    <details class="mailbox-adapter-editor"><summary>接入其他邮箱 Skill</summary><p class="muted">选择已安装的 Skill，配置其 CLI 的身份、搜索、读信、附件和发信能力。命令与 JSON 返回字段可按不同邮箱声明映射。</p>
       <label>关联 Skill<select id="mail-adapter-skill" class="input"><option value="">独立 CLI（不关联 Skill）</option></select></label>
       <label>适配器配置<textarea id="mail-adapter-config" class="input" rows="12" spellcheck="false" aria-label="邮箱适配器 JSON 配置"></textarea></label>
       <button id="mail-adapter-template" type="button" class="btn ghost">填入通用示例</button><button id="mail-adapter-save" type="button" class="btn">保存适配器</button><p id="mail-adapter-status" class="settings-status" role="status"></p>
     </details>
-    <div class="mailbox-preferences hidden">
+    <div class="mailbox-preferences">
       <h3>简历收取范围</h3>
       <label class="mailbox-enabled"><input type="checkbox" id="new-mail-enabled"> 新建筛选时从招聘邮箱收取简历</label>
       <div class="form-grid">
@@ -410,7 +407,8 @@
       </div>
       <p class="settings-status" id="mailbox-settings-status" role="status">收取范围用于下一次新建筛选，不改变已运行的任务。</p>
     </div>
-    <button type="button" class="btn primary hidden" id="mailbox-new-run">使用邮箱新建筛选</button>
+    <div class="mailbox-flow"><span>收取附件</span><span aria-hidden="true">→</span><span>多 Agent 筛选与核查</span><span aria-hidden="true">→</span><span>HR 选定人选</span><span aria-hidden="true">→</span><span>审阅后发信</span></div>
+    <div class="mailbox-actions"><p class="muted">简历通过普通附件接收，原文证据与投递来源随任务保留。</p><button type="button" class="btn primary" id="mailbox-new-run">使用邮箱新建筛选</button></div>
   </section>
 </div>
 

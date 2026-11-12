@@ -5,14 +5,7 @@
   let skills = [];
   let editing = null;
   let busy = false;
-  let statusTimer;
-  const status = (text, transient = false) => {
-    clearTimeout(statusTimer);
-    const element = $('skill-status');
-    element.textContent = text;
-    element.classList.toggle('hidden', !text);
-    if (transient && text) statusTimer = setTimeout(() => status(''), 3000);
-  };
+  const status = (text) => { $('skill-status').textContent = text; };
   async function api(url, method = 'GET', body) {
     const response = await fetch(url, { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
     const data = await response.json();
@@ -85,20 +78,20 @@
   $('skill-save').addEventListener('click', () => mutate(async () => {
     const body = { id: $('skill-id').value.trim(), name: $('skill-name').value.trim(), description: $('skill-desc').value.trim(), content: $('skill-content').value, enabled: $('skill-enabled').checked, roles: [...$('skill-roles').querySelectorAll('input:checked')].map((i) => i.value), ...($('skill-path').value.trim() ? { sourcePath: $('skill-path').value.trim() } : {}) };
     await api(editing ? `/api/skills/${encodeURIComponent(editing.id)}` : '/api/skills', editing ? 'PATCH' : 'POST', { ...body, ...(editing ? { revision: editing.revision } : {}) });
-    $('skill-editor').classList.add('hidden'); editing = null; status('Skill 已保存，将在新任务中生效。', true);
+    $('skill-editor').classList.add('hidden'); editing = null; status('Skill 已保存，将在新任务中生效。');
   }));
   $('skill-list').addEventListener('click', (event) => {
     if (busy) return;
     const edit = event.target.closest('[data-skill-edit]');
     if (edit) { open(skills.find((s) => s.id === edit.dataset.skillEdit)); return; }
     const del = event.target.closest('[data-skill-delete]');
-    if (del && window.confirm('删除此 Skill？已有任务的技能快照会保留。')) void mutate(async () => { await api(`/api/skills/${encodeURIComponent(del.dataset.skillDelete)}`, 'DELETE'); status('Skill 已删除。', true); });
+    if (del && window.confirm('删除此 Skill？已有任务的技能快照会保留。')) void mutate(async () => { await api(`/api/skills/${encodeURIComponent(del.dataset.skillDelete)}`, 'DELETE'); status('Skill 已删除。'); });
   });
   $('skill-list').addEventListener('change', (event) => {
     const input = event.target.closest('[data-skill-toggle]');
     const s = skills.find((item) => item.id === input?.dataset.skillToggle);
-    if (s) void mutate(async () => { await api(`/api/skills/${encodeURIComponent(s.id)}`, 'PATCH', { enabled: input.checked, revision: s.revision }); status(input.checked ? 'Skill 已启用，新任务生效。' : 'Skill 已停用，已有任务快照保留。', true); });
+    if (s) void mutate(async () => { await api(`/api/skills/${encodeURIComponent(s.id)}`, 'PATCH', { enabled: input.checked, revision: s.revision }); status(input.checked ? 'Skill 已启用，新任务生效。' : 'Skill 已停用，已有任务快照保留。'); });
   });
-  window.addEventListener('bole-settings-tab', (event) => { status(''); if (event.detail === 'plugins') void load(); });
+  window.addEventListener('bole-settings-tab', (event) => { if (event.detail === 'plugins') void load(); });
   if (!$('settings-plugins').classList.contains('hidden')) void load();
 })();

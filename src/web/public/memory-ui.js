@@ -8,22 +8,12 @@
   let sourceJobId;
   let baseline = null;
   let busy = false;
-  let statusTimer;
-  const status = (text, transient = false) => {
-    clearTimeout(statusTimer);
-    $('#memory-status').textContent = text;
-    if (transient && text) statusTimer = setTimeout(() => status(''), 3000);
-  };
+  const status = (text) => { $('#memory-status').textContent = text; };
   async function api(path, body) {
-    try {
-      const response = await fetch(path, { signal: AbortSignal.timeout(30000), ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || '请求失败');
-      return result;
-    } catch (error) {
-      if (error.name === 'TimeoutError') throw new Error(body === undefined ? '加载超时，请稍后重新打开此页面。' : '请求超时，操作结果尚未确认，请刷新查看后再决定是否重试。');
-      throw error;
-    }
+    const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || '请求失败');
+    return result;
   }
   async function action(operation) {
     if (busy) return;
@@ -31,10 +21,7 @@
     dialog.setAttribute('aria-busy', 'true');
     try { status('处理中…'); await operation(); }
     catch (error) { status(error.message); }
-    finally {
-      busy = false; dialog.removeAttribute('aria-busy');
-      if ($('#memory-status').textContent === '处理中…') status('');
-    }
+    finally { busy = false; dialog.removeAttribute('aria-busy'); }
   }
   function tab(name) {
     dialog.querySelectorAll('[data-memory-section]').forEach((el) => el.classList.toggle('hidden', el.dataset.memorySection !== name));
@@ -89,7 +76,7 @@
     if (button.dataset.memoryTab === 'job') action(showJob); else tab(button.dataset.memoryTab);
   }));
   $('#new-policy-version').addEventListener('change', () => {
-    try { localStorage.setItem('bole.screening.defaultPolicy', $('#new-policy-version').value); status('默认评分标准已保存，将用于新建筛选。', true); }
+    try { localStorage.setItem('bole.screening.defaultPolicy', $('#new-policy-version').value); status('默认评分标准已保存，将用于新建筛选。'); }
     catch { status('当前选择已应用，浏览器未能保存；刷新后需重新选择。'); }
   });
   $('#memory-family').addEventListener('change', () => { baseline = null; sourceJobId = undefined; $('#memory-profile').value = ''; $('#memory-dimensions').innerHTML = ''; render(); });
@@ -97,7 +84,7 @@
     const result = await api('/api/memory/families', { name: $('#memory-family-name').value });
     baseline = null; sourceJobId = undefined;
     $('#memory-profile').value = ''; $('#memory-dimensions').innerHTML = '';
-    $('#memory-family-name').value = ''; await load(); $('#memory-family').value = result.family.id; render(); status('岗位族已创建', true);
+    $('#memory-family-name').value = ''; await load(); $('#memory-family').value = result.family.id; render(); status('岗位族已创建');
   }));
   $('#memory-load-source').addEventListener('click', () => action(async () => {
     if (!familyId()) throw new Error('请先创建或选择岗位族');
@@ -132,12 +119,12 @@
     if (!button) return;
     const proposal = data.proposals.find((p) => p.id === button.dataset.proposal);
     if (button.dataset.decision === 'approve' && !window.confirm(`批准「${proposal.rule}」并发布新版本？仅影响之后选择该版本的新任务。`)) return;
-    action(async () => { await api(`/api/memory/proposals/${encodeURIComponent(proposal.id)}/decision`, { decision: button.dataset.decision, contentHash: proposal.content_hash }); await load(); status('决定已保存', true); });
+    action(async () => { await api(`/api/memory/proposals/${encodeURIComponent(proposal.id)}/decision`, { decision: button.dataset.decision, contentHash: proposal.content_hash }); await load(); status('决定已保存'); });
   });
   $('#memory-versions').addEventListener('click', (event) => {
     const button = event.target.closest('[data-retire]');
     if (!button || !window.confirm('停止将此版本用于新任务？已有任务保持原快照。')) return;
-    action(async () => { await api(`/api/memory/versions/${encodeURIComponent(button.dataset.retire)}/retire`, {}); await load(); status('版本已退役', true); });
+    action(async () => { await api(`/api/memory/versions/${encodeURIComponent(button.dataset.retire)}/retire`, {}); await load(); status('版本已退役'); });
   });
   load().catch((error) => status(`记忆服务不可用：${error.message}。如刚升级，请重启服务。`));
 })();

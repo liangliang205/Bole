@@ -37,7 +37,6 @@
     "idb-keyval": "^6.3.0",
     "is-url": "^1.2.4",
     "node-fetch": "^2.7.0",
-    "node-pty": "1.1.0",
     "npm": "^11.21.2",
     "partial-json": "^0.1.7",
     "pdfjs-dist": "4.10.38",

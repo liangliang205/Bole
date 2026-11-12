@@ -25,24 +25,16 @@
   function describeTemplate() { $('#agent-template-description').textContent = labels[$('#agent-template').value]?.[1] || ''; }
   const status = (text) => { $('#agent-status').textContent = text; };
   async function api(path, body, method = 'POST') {
-    try {
-      const response = await fetch(path, { signal: AbortSignal.timeout(30000), ...(body === undefined ? {} : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || '请求失败');
-      return result;
-    } catch (error) {
-      if (error.name === 'TimeoutError') throw new Error(body === undefined ? '加载超时，请稍后重新打开此页面。' : '请求超时，操作结果尚未确认，请刷新查看后再决定是否重试。');
-      throw error;
-    }
+    const response = await fetch(path, body === undefined ? {} : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || '请求失败');
+    return result;
   }
   async function action(fn) {
     if (busy) return;
     busy = true; dialog.setAttribute('aria-busy', 'true');
     try { status('处理中…'); await fn(); } catch (error) { status(error.message); }
-    finally {
-      busy = false; dialog.removeAttribute('aria-busy');
-      if ($('#agent-status').textContent === '处理中…') status('');
-    }
+    finally { busy = false; dialog.removeAttribute('aria-busy'); }
   }
   function tab(name) {
     dialog.querySelectorAll('[data-agent-section]').forEach((el) => el.classList.toggle('hidden', el.dataset.agentSection !== name));

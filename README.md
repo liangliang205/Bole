@@ -20,17 +20,23 @@ Docker 默认只发布到宿主机回环地址，镜像以非 root 用户运行�
 
 首次进入 Web 会自动检查模型提供商；没有可用 Key 时会打开设置并定位到 DeepSeek 密钥。默认带一个 DeepSeek 内置提供商，也可以添加任意 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages 网关，并选择当前使用的提供商。自定义提供商支持「获取可用模型」、模型目录、手动添加模型，并分别选择 Flash/Pro 模型。Key 使用 AES-256-GCM 加密持久化在 `data/providers.json`（主密钥 `data/keyring.key`），刷新/重启无需重填；不通过环境变量读取，也不写入台账/报告。
 
-邮箱不预设服务商。可直接在首页发送「请阅读这个安装文档，帮我安装并连接招聘邮箱」并附文档地址，无需先上传简历。伯乐通过对话读取文档、安装组件、自动配置接口并引导授权；在浏览器完成授权后回复「已授权，请检查连接」。只有实际验证邮箱身份成功才算接入完成。详见 [通用邮箱适配](docs/MAIL_ADAPTERS.md)。
+使用内置腾讯 Agent Mail 时，在 PowerShell 中完成一次邮箱授权：
 
-接入后可继续说「帮我筛选上周收到的 Java 后端工程师简历，熟悉 MySQL 和支付系统」。Agent 发现可用邮箱、解析时间范围与岗位要求，在当前会话启动收取和多 Agent 筛选，不需要勾选开关或填写日期表单。只有一个可用邮箱时直接使用；多个且未说明时询问。时间范围需要对应 CLI 的搜索能力，不能支持时明确说明，不会忽略截止时间扩大收取范围。HR 保留账号授权、选人和具体联系邮件的确认权。
+```powershell
+$env:AGENTLY_WORKSPACE = 'codex'
+pnpm exec agently-cli auth login
+pnpm exec agently-cli +me
+```
+
+BoLe 的授权工作区优先读取 `BOLE_MAIL_WORKSPACE`，其次读取显式的 `AGENTLY_WORKSPACE`，默认使用 `codex`。其他邮箱适配器使用各自 CLI 的授权方式。启用 Skill 和完成邮箱授权是两个独立步骤。
 
 ### 页面里能做什么
 
 - 插件：统一管理工具和技能。点击「添加插件」粘贴安装命令，由 Agent 识别并安装；也可手动配置 MCP 或导入 SKILL.md。技能可启停、编辑和分配角色，新任务冻结技能快照。使用范围、命令示例和 API 见 [插件安装说明](docs/PLUGIN_INSTALLATION.md)。
 
-- 招聘邮箱：侧栏入口位于知识库上方，只显示用户配置的可用连接。不同邮箱通过 CLI 命令和 JSON 返回字段映射接入，可检查授权并保存简历收取范围，见 [通用邮箱适配](docs/MAIL_ADAPTERS.md)。筛选完成后由 HR 选人，具体联系邮件仍需审阅批准。
+- 招聘邮箱：侧栏入口位于知识库上方，可选择连接、检查授权并保存简历收取范围。腾讯 Agent Mail 为内置适配器，其他邮箱 Skill 可声明 CLI 命令和 JSON 返回字段映射，见 [通用邮箱适配](docs/MAIL_ADAPTERS.md)。筛选完成后由 HR 选人，具体联系邮件仍需审阅批准；见 [招聘邮箱接入](docs/AGENT_MAIL.md)。
 
-- 新建筛选工具栏：保留附件、默认/严格模式和高频的「招聘邮箱」入口。无附件消息进入 Agent 对话，由 Agent 按用户要求决定接入、收取和筛选；上传简历可直接筛选，旧邮箱表单偏好不会额外触发收取。评分标准和团队选择集中在设置页，不在输入框中展示。
+- 新建筛选工具栏：保留附件、默认/严格模式和高频的「招聘邮箱」入口，可快速切换邮箱收取、仅上传简历，或进入邮箱连接与收取范围设置。评分标准和团队选择集中在设置页，不在输入框中展示；默认选择与邮箱收取偏好保存在当前浏览器，用于新任务。
 
 - 可靠执行：每个角色固定绑定一个 Agent 版本，能力发现用于开发者选择；持久化执行队列统一管理跨会话容量，保留等待原因和恢复记录。任务面板“工作流”内可展开执行队列。实现范围与 review 结论见 [可靠执行层](docs/RELIABLE_EXECUTION.md)。
 
@@ -216,7 +222,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | GET/POST | `/api/run/:jobId/chat` | 读取 / 追加筛选完成后的主 Agent 对话 |
 | POST | `/api/run/:jobId/resume` | 从检查点续跑 |
 | POST | `/api/run/:jobId/approvals/:approvalId` | 批准/拒绝具体操作；招聘邮件在默认/严格模式下均需批准，不接受替换参数 |
-| GET | `/api/mail/status?providerId=...` | 检查所选适配器的邮箱身份和连接；必须指定已配置的连接 |
+| GET | `/api/mail/status?providerId=...` | 检查所选适配器的邮箱身份和连接；默认内置 Agent Mail |
 | GET/POST | `/api/mail/adapters` | 列出 / 保存邮箱 CLI 操作与 JSON 字段映射，可关联已安装 Skill |
 | POST | `/api/plugins/install` | `{command}`：由 Agent 分析并安装插件，需要有效模型配置 |
 | GET/POST | `/api/skills` | 列出 / 注册 Skill |
@@ -252,8 +258,7 @@ pnpm bole web --port 8787     # 对话式控制台
 | `BOLE_OCR_KEY` | 空 | 外部 OCR Bearer token |
 | `BOLE_OCR_LANG` | `chi_sim+eng` | Tesseract 语言 |
 | `BOLE_MCP_CONFIG` | `config/mcp.json` | 旧式 MCP 配置文件（仅在首次导入插件库时读取；插件库优先） |
-| `BOLE_MAIL_WORKSPACE` | `bole` | Agent Mail 的独立 OAuth 凭据工作区，避免与 Codex 等其他 Agent 争用凭据锁 |
-| `BOLE_MAIL_AUTH_DIR` | `<BOLE_DATA_DIR>/mail-auth` | Agent Mail 独立凭据目录；认证、检查、收信和发信使用同一目录 |
+| `BOLE_MAIL_WORKSPACE` | 显式的 `AGENTLY_WORKSPACE`，否则 `codex` | 内置 Agent Mail 的 OAuth 凭据工作区，避免终端启动方式变化导致找不到已有授权 |
 | `BOLE_BATCH_SIZE` | 8 | 批大小 |
 | `BOLE_MAX_BATCHES_IN_FLIGHT` | 2 | 在途批上限 |
 | `BOLE_MAX_ACTIVE_AGENTS` | 8 | 统一子 Agent 总并发上限（跨阶段共享） |
@@ -330,7 +335,7 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 
 - 图片 OCR 默认使用 **DeepSeek V4 Flash Vision**（JPEG/PNG/GIF/WebP，逐字转写，token 计入成本；图片会以 base64 发送给 DeepSeek API）；失败或 BMP/TIFF 自动回退本地 Tesseract。手写体/低分辨率仍可能识别错误，可通过 `BOLE_OCR_MODE=local` 完全避免外发。
 - PDF 仅提取文本层；扫描版 PDF 需要先转图片（平台会明确提示）。
-- 支持上传简历或通过所选邮箱适配器收取普通附件。不预设邮箱服务商，通用驱动适用于返回 JSON 的本机 CLI；MCP 邮箱工具、仅返回人类可读文本的 CLI 或只有文档的 Skill，需要额外驱动或桥接。每个附件独立处理，不做 IMAP/Exchange 直连，也不抓取邮件中的外链简历。
+- 支持上传简历或通过所选邮箱适配器收取普通附件。内置腾讯 Agent Mail，通用驱动适用于返回 JSON 的本机 CLI；MCP 邮箱工具、仅返回人类可读文本的 CLI 或只有文档的 Skill，需要额外驱动或桥接。每个附件独立处理，不做 IMAP/Exchange 直连，也不抓取邮件中的外链简历。
 - 报告在对话内汇总，不提供 Markdown/JSON 下载；内部仍保留 `report.json` 供 UI 与后续 MCP 使用，不生成 HTML 报告。
 - 外接 MCP 只在「完成后对话」生效；筛选流水线不调用外部工具，避免第三方延迟/故障进入批次关键路径。MCP 服务的权限等同当前用户，接入前需自行评估。
 - 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。各提供商 Key 由服务端加密持久化在 `data/providers.json`，请保护数据目录权限。

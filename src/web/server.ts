@@ -3,10 +3,6 @@ import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore, parseExecut
 import { executeApprovedTool } from '../tools/approved-tool.ts';
 import { mailboxQuerySchema, sendApprovedCandidateEmail, type MailboxQuery } from '../mail/service.ts';
 import { MailAdapterStore, resolveMailAdapter } from '../mail/adapters.ts';
-import { mailConnections, requireMailConnection } from './mail-connections.ts';
-import { chatWithMailSetup, SETUP_CHAT_SEED } from '../mail/setup-chat.ts';
-import { MailSetupRuntime } from '../mail/setup-runtime.ts';
-import { prepareMailScreening } from './mail-screening.ts';
 import { SkillStore, parseSkill, readLocalSkill } from '../skills/store.ts';
 import { installFromCommand } from '../skills/installer.ts';
 import { runOrchestrator } from '../chat/orchestrator.ts';
@@ -209,8 +205,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
   const runs = new Map<string, ActiveRun>();
   let draining = false;
   const paths = resolvePaths();
-  const mailSetup = new MailSetupRuntime(paths.dataDir);
-  const setupChats = new Set<string>();
   const providers = new ProviderStore(paths.dataDir);
   const knowledge = new KnowledgeService(paths.knowledgeDbPath);
   // 外接 MCP：以插件形式管理（安装/启停/编辑），后台启动，不阻塞控制台打开。
@@ -426,7 +420,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
    */
   const resuming = new Set<string>();
   const resumeJob = async (jobId: string) => {
-    if (getJob(jobId)?.seed === SETUP_CHAT_SEED) throw new Error('这是工作台对话，请在新会话中选择简历来源后开始筛选');
     if (resuming.has(jobId)) throw new Error('该任务正在启动续跑，不能重复启动');
     resuming.add(jobId);
     try {
@@ -537,33 +530,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         try {
           const store = new MailAdapterStore(ledger);
           if (method === 'POST') store.save(await readJsonBody(req));
-          json(res, 200, { ok: true, ...mailConnections(ledger) });
-        } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
-        finally { ledger.close(); }
-        return;
-      }
-      const mailAuthorizationMatch = /^\/api\/mail\/adapters\/([^/]+)\/authorization$/.exec(pathname);
-      if (mailAuthorizationMatch && ['GET', 'POST'].includes(method)) {
-        const ledger = new Ledger(paths.dbPath);
-        try {
-          const id = decodeURIComponent(mailAuthorizationMatch[1]);
-          const definition = requireMailConnection(ledger, id);
-          const isAgently = definition.skillId === 'agently-mail' || definition.baseArgs.some((arg) => /(?:^|[\\/])@tencent-qqmail[\\/]agently-cli(?:[\\/]|$)/i.test(arg));
-          if (!isAgently) throw new Error('该邮箱插件尚未声明可执行的认证方式，请在主页对话中让伯乐读取插件文档并完成认证');
-          const key = `mail-authorization:${id}`;
-          const cli = { package: definition.skillId || definition.id, command: definition.command, baseArgs: definition.baseArgs };
-          let status = mailSetup.authStatus(key);
-          if (method === 'POST') {
-            const restart = Boolean((await readJsonBody(req)).restart);
-            status = await mailSetup.startAuth(key, cli, ['auth', 'login'], restart);
-          }
-          let mailbox: string | undefined;
-          let verificationError: string | undefined;
-          if (status.state === 'completed') {
-            try { mailbox = await resolveMailAdapter(definition).identity(); }
-            catch (error) { verificationError = error instanceof Error ? error.message : String(error); }
-          }
-          json(res, 200, { ok: true, providerId: id, ...status, mailbox, verificationError });
+          json(res, 200, { ok: true, adapters: [{ id: 'agently-mail', name: '腾讯 Agent Mail', builtin: true }, ...store.list()], skills: new SkillStore(ledger).list().filter((s) => s.enabled).map((s) => ({ id: s.id, name: s.name })) });
         } catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
         finally { ledger.close(); }
         return;
@@ -571,13 +538,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
       if (method === 'GET' && pathname === '/api/mail/status') {
         const ledger = new Ledger(paths.dbPath);
         try {
-          const id = url.searchParams.get('providerId') || undefined;
-          const definition = requireMailConnection(ledger, id);
-          const authorization = mailSetup.authStatus(`mail-authorization:${definition.id}`);
-          if (authorization.state === 'waiting') {
-            json(res, 200, { ok: true, providerId: definition.id, authorizationState: 'waiting', error: '邮箱认证仍在进行中，请先在浏览器完成授权。' });
-            return;
-          }
+          const id = url.searchParams.get('providerId') || 'agently-mail';
+          const definition = id === 'agently-mail' ? undefined : new MailAdapterStore(ledger).list().find((a) => a.id === id);
+          if (id !== 'agently-mail' && !definition) throw new Error('邮箱适配器尚未配置');
           json(res, 200, { ok: true, providerId: id, mailbox: await resolveMailAdapter(definition).identity() });
         }
         catch (error) { json(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) }); }
@@ -926,20 +889,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         return;
       }
 
-      if (method === 'POST' && pathname === '/api/conversations') {
-        const body = await readJsonBody(req);
-        const message = String(body.message ?? '').trim();
-        if (!message || message.length > 4000) { json(res, 400, { ok: false, error: '请输入 1–4000 字符的消息' }); return; }
-        if (!(await providers.getActive())?.apiKey) { json(res, 400, { ok: false, error: '请先在设置中配置可用模型' }); return; }
-        const ledger = new Ledger(paths.dbPath);
-        try {
-          const job = ledger.createJob({ title: '工作台对话', requirements: message, seed: SETUP_CHAT_SEED });
-          ledger.setJobStatus(job.id, 'idle');
-          new ApprovalStore(ledger).setMode(job.id, parseExecutionMode(body.executionMode));
-          json(res, 201, { ok: true, jobId: job.id });
-        } finally { ledger.close(); }
-        return;
-      }
       if (method === 'POST' && pathname === '/api/run') {
         const body = await readJsonBody(req);
         const executionMode = parseExecutionMode(body.executionMode);
@@ -954,12 +903,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         const mailInput = body.mailbox === undefined ? undefined : mailboxQuerySchema.safeParse(body.mailbox);
         if (mailInput && !mailInput.success) { json(res, 400, { ok: false, error: '邮箱参数无效：请检查关键词、日期和邮件数量（1–200）' }); return; }
         const mailbox = mailInput?.data;
-        if (mailbox) {
-          const ledger = new Ledger(paths.dbPath);
-          try { requireMailConnection(ledger, mailbox.providerId); }
-          catch (error) { json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }); return; }
-          finally { ledger.close(); }
-        }
         if (uploadIds.length === 0 && !mailbox) {
           json(res, 400, { ok: false, error: '请先上传至少一份简历（PDF/DOCX/图片/文本）' });
           return;
@@ -1335,31 +1278,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
             ledger,
             jobId,
           });
-          if (job.seed === SETUP_CHAT_SEED) {
-            if (attachments.length) throw new Error('接入对话暂不处理附件，请直接粘贴安装文档地址或安装命令');
-            if (setupChats.has(jobId)) { json(res, 409, { ok: false, error: '伯乐正在处理上一条接入请求，请稍候' }); return; }
-            setupChats.add(jobId);
-            try {
-              const result = await chatWithMailSetup({ jobId, message, ledger, llm, runtime: mailSetup,
-                timeZone: typeof body.timeZone === 'string' ? body.timeZone : 'Asia/Shanghai',
-                preferredMailProviderId: typeof body.preferredMailProviderId === 'string' ? body.preferredMailProviderId : undefined,
-                installPlugin: (command) => installFromCommand(command, { dataDir: paths.dataDir, store: new SkillStore(ledger), mcp: mcpPlugins, llm }),
-                startScreening: async (request) => {
-                  if (runs.has(jobId) || new WorkflowStore(ledger).root(jobId)) throw new Error('当前会话已启动筛选，不能重复收取；请先查看执行进度');
-                  const prepared = await prepareMailScreening(ledger, jobId, request);
-                  const listeners = new Set<(chunk: StreamToken) => void>();
-                  const boot = await bootstrap({ jobId, requirements: request.requirements, seed: 'live', stream: makeStreamSink(listeners) });
-                  try {
-                    ledger.db.prepare("UPDATE jobs SET requirements=?,seed='live',title='待画像岗位',status='profiling' WHERE id=?").run(request.requirements, jobId);
-                    boot.job.requirements = request.requirements; boot.job.seed = 'live';
-                    const run = launch({ boot, requirements: request.requirements, hitl: new WebHitlResponder(), listeners, mailbox: prepared.mailbox, resumeOnly: false });
-                    return { jobId: run.jobId, runId: run.runId, status: run.status };
-                  } catch (error) { boot.close(); throw error; }
-                } });
-              json(res, 200, { ok: true, ...result, messages: publicChatMessages(result.messages) });
-            } finally { setupChats.delete(jobId); }
-            return;
-          }
           const result = await chatWithJob({
             job,
             report: readReport(jobId) as Parameters<typeof chatWithJob>[0]['report'],
@@ -1582,7 +1500,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
     server.listen(port, host, () => resolve());
   });
   server.on('close', () => {
-    mailSetup.close();
     knowledge.close();
     void mcpPlugins.close();
   });
