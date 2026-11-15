@@ -26,5 +26,16 @@ coverage/
 backups/
 data/home/
 data/mail-auth/
+data/mail/
+data/mail-cache/
+tools/
 data/npm-cache/
 data/skill-packages/
+.agently/
+# 本地运行产物/凭据与测试证据，避免误提交
+/providers.json
+/.claude/
+/.workbuddy/
+/test-evidence/
+/PR_DESCRIPTION.md
+/scripts/mail-mcp-smoke.ts

@@ -889,3 +889,8 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .mailbox-adapter-editor summary { cursor:pointer; }
 .mailbox-adapter-editor label { display:grid; gap:6px; margin:12px 0; }
 #mail-adapter-config { width:100%; box-sizing:border-box; font-family:ui-monospace,monospace; }
+/* 运行状态条：暂停/失败等需要用户判断的状态用文字表达，不只靠按钮图标 */
+.run-status { margin:0 0 10px; padding:8px 12px; border-radius:8px; font-size:13px; line-height:1.5; background:var(--surface-2); }
+.run-status.pending { border-left:3px solid #d99a2b; }
+.run-status.paused { border-left:3px solid #4b8bd6; }
+.run-status.failed { border-left:3px solid #d64b4b; }

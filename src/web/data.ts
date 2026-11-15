@@ -190,13 +190,37 @@ function removeJobRunDirs(jobId: string): void {
   if (reportDir) rmSync(reportDir, { recursive: true, force: true });
 }
 
+/** 删除会话时一并清理该会话上传的附件目录（data/uploads/up_xxx），避免目录无限膨胀。 */
+function removeJobUploadDirs(uploadsDir: string, sourcePaths: string[]): void {
+  const dirs = new Set<string>();
+  for (const sourcePath of sourcePaths) {
+    // source_path 实际存的是裸 ID（up_xxx），不是完整路径；直接拼 uploadsDir 才能命中
+    if (/^up_[a-z0-9]+$/.test(sourcePath)) { dirs.add(path.join(uploadsDir, sourcePath)); continue; }
+    const relative = path.relative(uploadsDir, sourcePath);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) continue;
+    const uploadId = relative.split(path.sep)[0];
+    if (/^up_[a-z0-9]+$/.test(uploadId)) dirs.add(path.join(uploadsDir, uploadId));
+  }
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+}
+
 export function deleteJob(jobId: string): boolean {
+  const paths = resolvePaths();
   let removed = false;
+  let sourcePaths: string[] = [];
   withLedger((ledger) => {
+    if (!ledger.getJob(jobId)) return;
+    // 台账删除后简历行就没了，源文件路径必须在删除前先取出来
+    sourcePaths = ledger
+      .listResumes(jobId)
+      .map((row) => row.source_path)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
     removed = ledger.deleteJob(jobId);
   });
-  if (removed) removeJobRunDirs(jobId);
-  return removed;
+  if (!removed) return false;
+  removeJobRunDirs(jobId);
+  removeJobUploadDirs(paths.uploadsDir, sourcePaths);
+  return true;
 }
 
 export function getSnapshot(jobId: string): JobSnapshot {

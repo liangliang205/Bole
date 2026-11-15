@@ -15,6 +15,9 @@ export function memoryRoute(ledger: Ledger, method: string, pathname: string, bo
     return { view: memory.getJobView(id, 'coordinator'), profile: binding ? JSON.parse(binding.snapshot_json) : job.jd_json && job.scorecard_json ? { jd: JSON.parse(job.jd_json), scorecard: JSON.parse(job.scorecard_json) } : null };
   }
   if (pathname === '/api/memory/proposals' && method === 'POST') {
+    if (!body.profile || typeof body.profile !== 'object') {
+      throw new Error('评分卡内容为空：请先从来源会话或版本载入标准，再提交提案');
+    }
     return { proposal: memory.proposePolicy({ familyId: String(body.familyId ?? ''),
       sourceJobId: typeof body.sourceJobId === 'string' && body.sourceJobId ? body.sourceJobId : undefined,
       baseVersionId: typeof body.baseVersionId === 'string' ? body.baseVersionId : undefined,

@@ -26,11 +26,25 @@ export const mailCommand: MailCommand = (args, cwd) => {
   return pending;
 };
 
+/** 下载大附件不能沿用 90s 通用时限：27MB 简历按常见上行速率要两分钟以上。 */
+const COMMAND_TIMEOUT_MS = 90_000;
+/**
+ * 附件下载单独放宽到 600s：QQ IMAP 实测约 55KB/s，27MB 附件需要约 500s。
+ * 300s 只够约 16MB，仍会把 25MB 上限内的正常附件判超时。
+ * 注意：超长连接仍可能被服务端重置（实测 ECONNRESET），彻底解决需要流式/断点续传。
+ */
+const DOWNLOAD_TIMEOUT_MS = 600_000;
+
+function commandTimeout(args: string[]): number {
+  const isDownload = args.includes('attachment') && args.includes('+download');
+  return isDownload ? DOWNLOAD_TIMEOUT_MS : COMMAND_TIMEOUT_MS;
+}
+
 function runCommand(args: string[], cwd?: string): Promise<unknown> {
   const require = createRequire(import.meta.url);
   const launcher = require('@tencent-qqmail/agently-cli/scripts/run.js') as { getBinaryPath(): string };
   return new Promise((resolve, reject) => {
-    execFile(launcher.getBinaryPath(), args, { cwd, env: mailEnvironment(), windowsHide: true, timeout: 90_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+    execFile(launcher.getBinaryPath(), args, { cwd, env: mailEnvironment(), windowsHide: true, timeout: commandTimeout(args), maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
       try {
         const result = envelope.parse(JSON.parse(stdout));
         if (error || !result.ok) {

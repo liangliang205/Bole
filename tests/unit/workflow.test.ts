@@ -6,7 +6,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { Ledger } from '../../src/core/ledger.ts';
 import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore } from '../../src/core/approvals.ts';
-import { defineWorkflow, task, sequence, parallel, branches, condition, loop, subworkflow, approval, WorkflowEngine, WorkflowRegistry, WorkflowStore, WorkflowPausedError, WorkflowUncertainError, WorkflowBusyError, WorkflowCancelledError } from '../../src/workflow/index.ts';
+import { defineWorkflow, task, sequence, parallel, branches, condition, loop, subworkflow, approval, WorkflowEngine, WorkflowRegistry, WorkflowStore, WorkflowPausedError, WorkflowUncertainError, WorkflowBusyError, WorkflowCancelledError, WorkflowDefinitionError } from '../../src/workflow/index.ts';
 import type { Node, Outcome } from '../../src/workflow/index.ts';
 import { workflowRoute } from '../../src/workflow/http.ts';
 import { json } from '../../src/workflow/store.ts';
@@ -53,6 +53,29 @@ test('并行限制容量并保持输出顺序；collect 保留独立分支成功
     assert.deepEqual(result.map((r) => r.key), ['key-1', 'key-2', 'key-3']);
     assert.deepEqual(result.map((r) => r.ok), [true, false, true]);
     assert.equal(engine.store.root(job.id)?.status, 'succeeded');
+  } finally { ledger.close(); }
+});
+
+test('collect 模式下定义类错误立即失败，不被当作单个分支失败吞掉', async () => {
+  const { ledger, job } = setup();
+  try {
+    const work = numeric('work', (v) => { if (v === 2) throw new WorkflowDefinitionError('工作流实现发生变化，请保留旧实现并发布新版本：test@1.0.0'); return v; });
+    const body = parallel('fanout', { items: (_v: number) => [1, 2, 3], key: String, concurrency: 2, failure: 'collect', body: work });
+    const engine = new WorkflowEngine(ledger, new WorkflowRegistry().register(def(body, number, z.array(outcomeNumber))));
+    await assert.rejects(engine.start(job.id, 'test@1.0.0', 0), /发布新版本/);
+    assert.equal(engine.store.root(job.id)?.status, 'failed');
+  } finally { ledger.close(); }
+});
+
+test('工作流定义 hash 冲突抛出 WorkflowDefinitionError', () => {
+  const { ledger } = setup();
+  try {
+    const store = new WorkflowStore(ledger);
+    store.define('test@1.0.0', { implementation: 'v1' });
+    assert.throws(
+      () => store.define('test@1.0.0', { implementation: 'v2' }),
+      (error: unknown) => error instanceof WorkflowDefinitionError && /发布新版本/.test(error.message),
+    );
   } finally { ledger.close(); }
 });
 

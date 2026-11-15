@@ -51,6 +51,7 @@ export async function callAgentJson<T>(
         sharedPrefix: opts.sharedPrefix,
         temperature: 0,
         maxTokens,
+        ...(deps.signal ? { signal: deps.signal } : {}),
         onToken: stream
           ? (delta: string) =>
               stream({
@@ -68,6 +69,8 @@ export async function callAgentJson<T>(
       });
     } catch (error) {
       if (error instanceof AgentBlockedError || isSuspension(error)) throw error;
+      // 暂停/取消导致的 abort 不能当成「输出不合规」重试，否则用户点了暂停还在反复调模型
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'PipelinePausedError' || /abort|中止|心跳/i.test(error.message))) throw error;
       errors = [error instanceof Error ? error.message : String(error)];
       continue;
     }

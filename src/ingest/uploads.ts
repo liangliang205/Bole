@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { ensureDir, readJsonSafe } from '../util/fsx.ts';
 import { newId } from '../util/ids.ts';
+import { detectFileKind, kindMatchesExtension } from '../mail/file-kind.ts';
 import type { UploadedFile } from '../types.ts';
 
 const ALLOWED_EXT = new Set([
@@ -61,6 +62,28 @@ export function isSupportedUpload(filename: string): boolean {
   return ALLOWED_EXT.has(ext);
 }
 
+const TEXT_EXT = new Set(['txt', 'md', 'markdown', 'html', 'htm']);
+
+/**
+ * 上传即校验文件头：伪造扩展名、损坏文件当场拒绝，
+ * 不要等到发送后由正文解析抛出「Invalid PDF structure」。
+ */
+function assertContentMatches(filename: string, buffer: Buffer): void {
+  const ext = path.extname(filename).toLowerCase().replace('.', '');
+  const kind = detectFileKind(buffer, filename);
+  if (kind) {
+    if (!kindMatchesExtension(kind, filename)) {
+      throw new UploadError(`文件内容与扩展名不符：${filename} 实际是 ${kind} 格式，请改成正确的扩展名后再上传`);
+    }
+    return;
+  }
+  if (!TEXT_EXT.has(ext)) {
+    throw new UploadError(`文件内容不是有效的 ${ext.toUpperCase()}（可能已损坏或伪造），请重新导出后再上传`);
+  }
+  // 纯文本没有魔数：含 NUL 基本可判定为二进制文件改名，交给正文解析只会更晚报错
+  if (buffer.includes(0)) throw new UploadError(`文件内容与扩展名 .${ext} 不符（含二进制数据），请检查文件`);
+}
+
 export async function saveUpload(
   input: { filename: string; contentBase64: string },
   uploadsDir: string,
@@ -74,6 +97,7 @@ export async function saveUpload(
   const buffer = Buffer.from(encoded, 'base64');
   if (buffer.length === 0) throw new UploadError('文件内容为空或 base64 解码失败');
   if (buffer.length > 25 * 1024 * 1024) throw new UploadError('单个文件不能超过 25MB');
+  assertContentMatches(filename, buffer);
 
   const uploadId = newId('up');
   const dir = path.join(uploadsDir, uploadId);

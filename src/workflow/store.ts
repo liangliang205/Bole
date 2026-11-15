@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Ledger } from '../core/ledger.ts';
-import type { NodeRow, RunRow, RunStatus } from './types.ts';
+import { WorkflowDefinitionError, type NodeRow, type RunRow, type RunStatus } from './types.ts';
 
 /** Reject values that cannot survive a checkpoint round trip. */
 export function json(value: unknown): string {
@@ -23,7 +23,7 @@ export class WorkflowStore {
   define(key: string, snapshot: unknown): string {
     const contentHash = hash(snapshot);
     const old = this.ledger.db.prepare('SELECT content_hash FROM workflow_definitions WHERE workflow_key=?').get(key);
-    if (old && old.content_hash !== contentHash) throw new Error(`工作流实现发生变化，请保留旧实现并发布新版本：${key}`);
+    if (old && old.content_hash !== contentHash) throw new WorkflowDefinitionError(`工作流实现发生变化，请保留旧实现并发布新版本：${key}`);
     this.ledger.db.prepare('INSERT OR IGNORE INTO workflow_definitions VALUES (?,?,?,?)').run(key, contentHash, json(snapshot), new Date().toISOString());
     return contentHash;
   }

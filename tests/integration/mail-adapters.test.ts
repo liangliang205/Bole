@@ -11,6 +11,7 @@ import { WorkflowStore } from '../../src/workflow/store.ts';
 import { FakeProvider } from '../fixtures/fake-provider.ts';
 import { AutoHitlResponder } from '../../src/agents/hitl.ts';
 import { setupTempEnv } from '../helpers/env.ts';
+import { makeDocx } from '../fixtures/documents.ts';
 
 test('其他邮箱 CLI 全链路：字段映射、非 QQ ID、配置冻结与 HR 审批后发信', async () => {
   const env = await setupTempEnv();
@@ -18,13 +19,15 @@ test('其他邮箱 CLI 全链路：字段映射、非 QQ ID、配置冻结与 HR
   try {
     const script = path.join(env.dir, 'different-mail.mjs');
     const log = path.join(env.dir, 'mail-calls.jsonl');
+    const docxPath = path.join(env.dir, 'resume.docx');
+    await writeFile(docxPath, makeDocx('姓名：张伟\n工作年限：5年\n技能：Java、Spring Boot、MySQL\n项目：负责支付系统，优化接口性能。'));
     await writeFile(script, `import fs from 'node:fs';import path from 'node:path';
 const [log,op,raw]=process.argv.slice(2);const v=JSON.parse(raw);fs.appendFileSync(log,JSON.stringify({op,...v})+'\\n');
 let payload;
 if(op==='identity')payload={address:'hr@example.org'};
 if(op==='search')payload={letters:[{uid:'mail/2026#one'}],next:null};
-if(op==='read')payload={sender:{address:'candidate@example.org'},files:[{key:'file/one',title:'resume.txt'}]};
-if(op==='download'){const p=path.join(v.outputDir,'resume.txt');fs.writeFileSync(p,'姓名：张伟\\n工作年限：5年\\n技能：Java、Spring Boot、MySQL\\n项目：负责支付系统，优化接口性能。');payload={file:p};}
+if(op==='read')payload={sender:{address:'candidate@example.org'},files:[{key:'file/one',title:'resume.docx'}]};
+if(op==='download'){const p=path.join(v.outputDir,'resume.docx');fs.copyFileSync(${JSON.stringify(docxPath)},p);payload={file:p};}
 if(op==='send')payload={receipt:'sent-1'};
 console.log(JSON.stringify({payload}));`);
     const definition = mailAdapterSchema.parse({ id: 'other-mail', name: '另一种邮箱', command: process.execPath, baseArgs: [script, log],

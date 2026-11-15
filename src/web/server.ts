@@ -78,6 +78,20 @@ interface ActiveRun {
   boot: Bootstrapped;
   hitl: WebHitlResponder;
   listeners: Set<(chunk: StreamToken) => void>;
+  /** 中断当前 LLM 调用用（暂停、强制删除、心跳超时）。 */
+  controller: AbortController;
+  /** 流水线真正结束的 Promise；强制删除时等它收尾再删台账。 */
+  done?: Promise<void>;
+  /** 心跳超时/强制删除后已由外部定性，后台任务结束时不得覆盖状态。 */
+  abandoned?: boolean;
+  /** 心跳检测：最近一次事件序号与时间。 */
+  lastEventSeq?: number;
+  lastEventAt?: number;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'AbortError' || /aborted|abort/i.test(error.message) || /heartbeat|心跳/i.test(error.message);
 }
 
 interface HitlPending {
@@ -210,6 +224,70 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
   // 外接 MCP：以插件形式管理（安装/启停/编辑），后台启动，不阻塞控制台打开。
   const mcpPlugins = await McpPluginService.create({ dataDir: paths.dataDir, root: paths.root });
   void mcpPlugins.start();
+
+  /**
+   * 重启校正：进程内 runs 是空的，但台账里可能还留着上次进程被杀时没落终态的 job。
+   * 不校正的话界面会永远显示「运行中」，用户既等不到结果也删不掉。
+   */
+  const reconcileStaleJobs = (): void => {
+    const ledger = new Ledger(paths.dbPath);
+    try {
+      for (const job of ledger.listJobs()) {
+        if (job.status !== 'pipeline' || runs.has(job.id)) continue;
+        ledger.setJobStatus(job.id, 'failed');
+        ledger.appendEvent(job.id, 'coordinator', 'run.interrupted', {
+          reason: '服务重启，上次运行未正常结束，已标记为中断；可从检查点续跑',
+        });
+      }
+    } catch {
+      // 校正失败不能阻塞 Web 启动
+    } finally {
+      ledger.close();
+    }
+  };
+  reconcileStaleJobs();
+
+  /**
+   * 心跳看门狗：长时间没有新事件且仍在 running，说明模型调用/子步骤悬挂。
+   * 不处理的话任务会永久假死（本次测试曾悬挂 30 分钟以上），用户也无法暂停/删除。
+   */
+  const STALL_MS = Number(process.env.BOLE_RUN_STALL_MS ?? 10 * 60_000);
+  const stallTimer = setInterval(() => {
+    const now = Date.now();
+    for (const run of runs.values()) {
+      if (run.status !== 'running' || run.abandoned) continue;
+      let seq = run.lastEventSeq ?? 0;
+      try {
+        const ledger = new Ledger(paths.dbPath);
+        try { seq = ledger.countEvents(run.jobId); } finally { ledger.close(); }
+      } catch {
+        continue;
+      }
+      if (seq !== (run.lastEventSeq ?? 0)) {
+        run.lastEventSeq = seq;
+        run.lastEventAt = now;
+        continue;
+      }
+      const idleMs = now - (run.lastEventAt ?? now);
+      if (idleMs < STALL_MS) continue;
+      const minutes = Math.round(idleMs / 60_000);
+      run.abandoned = true;
+      run.status = 'failed';
+      run.error = `任务 ${minutes} 分钟没有任何进展，已判定为悬挂并中止；请检查模型网关后从检查点续跑`;
+      run.completedAt = new Date().toISOString();
+      try {
+        const ledger = new Ledger(paths.dbPath);
+        try {
+          ledger.setJobStatus(run.jobId, 'failed');
+          ledger.appendEvent(run.jobId, 'coordinator', 'run.stalled', { idleMs, reason: run.error });
+        } finally { ledger.close(); }
+      } catch {
+        // 事件写入失败不影响内存态
+      }
+      run.controller.abort(new Error('任务心跳超时，已自动中止'));
+    }
+  }, 30_000);
+  stallTimer.unref?.();
 
   const toProviderInput = (body: Record<string, unknown>, existing?: ProviderPublic): ProviderInput => {
     const requested = body.api ?? existing?.api;
@@ -356,6 +434,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
     mailbox?: MailboxQuery;
     resumeOnly: boolean;
   }): ActiveRun => {
+    const controller = new AbortController();
+    // 让 Agent 的模型调用能感知暂停/强制删除/心跳超时
+    opts.boot.deps.signal = controller.signal;
     const run: ActiveRun = {
       jobId: opts.boot.job.id,
       runId: opts.boot.deps.runId,
@@ -365,9 +446,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
       boot: opts.boot,
       hitl: opts.hitl,
       listeners: opts.listeners,
+      controller,
+      lastEventAt: Date.now(),
     };
     runs.set(run.jobId, run);
-    void (async () => {
+    run.done = (async () => {
       try {
         const summary = await runPipeline(opts.boot.deps, {
           requirements: opts.requirements,
@@ -377,18 +460,22 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           resumeOnly: opts.resumeOnly,
           shouldPause: () => run.pauseRequested === true,
         });
+        if (run.abandoned) return;
         run.status = 'completed';
         run.summary = summary;
         run.completedAt = new Date().toISOString();
       } catch (error) {
-        if (error instanceof PipelinePausedError || error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError || error instanceof AgentBlockedError || error instanceof WorkflowUncertainError) {
+        if (run.abandoned) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        const pausedByUser = run.pauseRequested === true && isAbortError(error);
+        if (error instanceof PipelinePausedError || pausedByUser || error instanceof ApprovalPendingError || error instanceof ApprovalRejectedError || error instanceof AgentBlockedError || error instanceof WorkflowUncertainError) {
           run.status = 'paused';
           run.pausedAt = new Date().toISOString();
           run.completedAt = run.pausedAt;
           try {
             opts.boot.deps.ledger.setJobStatus(run.jobId, 'paused');
             opts.boot.deps.events.emit(run.jobId, 'coordinator', 'run.paused', {
-              reason: error.message,
+              reason,
               at: run.pausedAt,
             });
           } catch {
@@ -589,7 +676,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         try {
           if (input.apiKey) {
             const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl, input.api, input.id === 'deepseek');
-            warning = verification.warning;
+            warning = verification.warning ? `提供商已保存，但${verification.warning}` : undefined;
           }
           await resolveProviderModels(input, undefined, input.apiKey);
           const saved = await providers.save(input);
@@ -662,7 +749,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         try {
           if (input.apiKey) {
             const verification = await verifyDeepSeekKey(input.apiKey, input.baseUrl, input.api, Boolean(existing.builtin));
-            warning = verification.warning;
+            warning = verification.warning ? `提供商已保存，但${verification.warning}` : undefined;
           }
           const existingKey = input.apiKey || (await providers.getKey(existing.id));
           await resolveProviderModels(input, existing, existingKey ?? undefined);
@@ -836,9 +923,22 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         const runtime = runs.get(jobId);
         const active = runtime?.status === 'running' || runtime?.status === 'pausing';
         if (method === 'DELETE') {
-          if (active) {
-            json(res, 409, { ok: false, error: '会话正在运行，请先暂停或等待结束再删除' });
-            return;
+          if (active && runtime) {
+            const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true';
+            if (!force) {
+              json(res, 409, { ok: false, canForce: true, error: '会话正在运行。可先暂停；也可以强制删除——会立即中止任务并删除记录。' });
+              return;
+            }
+            // 强制删除：先定性为已放弃，再打断模型调用，等收尾后删台账
+            runtime.abandoned = true;
+            runtime.status = 'failed';
+            runtime.error = '用户强制删除会话，任务已中止';
+            runtime.completedAt = new Date().toISOString();
+            runtime.controller.abort(new Error('用户强制删除会话'));
+            await Promise.race([
+              runtime.done ?? Promise.resolve(),
+              new Promise((resolve) => setTimeout(resolve, 5_000)),
+            ]);
           }
           const removed = deleteJob(jobId);
           runs.delete(jobId);
@@ -1324,6 +1424,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
           } catch {
             // 事件失败不影响暂停请求
           }
+          // 直接打断进行中的模型调用：否则一个长请求会让暂停拖到 100 秒以上
+          runtime.controller.abort(new PipelinePausedError('用户请求暂停，已中断当前模型调用'));
         }
         json(res, 200, { ok: true, status: runtime.status, message: '将在当前批次/阶段结束后暂停' });
         return;
@@ -1500,6 +1602,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
     server.listen(port, host, () => resolve());
   });
   server.on('close', () => {
+    clearInterval(stallTimer);
     knowledge.close();
     void mcpPlugins.close();
   });

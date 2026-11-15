@@ -107,8 +107,19 @@
     catch { status('完整岗位内容格式错误，请先修正'); }
   });
   $('#memory-submit').addEventListener('click', () => action(async () => {
+    if (!familyId()) throw new Error('请先创建或选择岗位族');
+    const raw = $('#memory-profile').value.trim();
+    if (!raw) throw new Error('评分卡内容为空：请先「载入参考」从会话或版本取标准，或粘贴完整的岗位与评分卡 JSON');
+    let profile;
+    try { profile = JSON.parse(raw); } catch { throw new Error('评分卡内容不是合法 JSON，请检查后再提交'); }
+    if (!profile || typeof profile !== 'object' || !profile.jd || typeof profile.jd !== 'object') {
+      throw new Error('缺少岗位描述（jd），无法提交提案');
+    }
+    if (!Array.isArray(profile.scorecard?.dimensions) || profile.scorecard.dimensions.length === 0) {
+      throw new Error('评分卡维度为空：至少需要一个评分维度才能提交提案');
+    }
     await api('/api/memory/proposals', { familyId: familyId(), sourceJobId, baseVersionId: baseline,
-      profile: JSON.parse($('#memory-profile').value), rule: $('#memory-rule').value, why: $('#memory-why').value,
+      profile, rule: $('#memory-rule').value, why: $('#memory-why').value,
       howToApply: $('#memory-how').value,
       validFrom: $('#memory-valid-from').value ? new Date($('#memory-valid-from').value).toISOString() : undefined,
       validTo: $('#memory-valid-to').value ? new Date($('#memory-valid-to').value).toISOString() : undefined });

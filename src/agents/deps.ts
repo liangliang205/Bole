@@ -23,6 +23,8 @@ export interface AgentDeps {
   knowledge: KnowledgeService;
   /** SSE token 流；CLI 场景为空。 */
   stream?: StreamSink;
+  /** 运行级中断信号：暂停/强制删除/心跳超时时中止进行中的模型调用。 */
+  signal?: AbortSignal;
 }
 
 export function newWorkerId(agent: string, index: number): string {

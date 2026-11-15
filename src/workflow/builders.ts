@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ApprovalPendingError, ApprovalRejectedError, ApprovalStore } from '../core/approvals.ts';
 import type { ApprovalKind } from '../core/approvals.ts';
-import { WorkflowCancelledError, WorkflowPausedError, WorkflowUncertainError } from './types.ts';
+import { WorkflowCancelledError, WorkflowDefinitionError, WorkflowPausedError, WorkflowUncertainError } from './types.ts';
 import type { LoopResult, Node, NodeContext, Outcome, Workflow } from './types.ts';
 
 export function task<I, O>(options: { id: string; input: z.ZodType<I>; output: z.ZodType<O>; recovery: 'retry' | 'confirm'; handler: (input: I, ctx: NodeContext) => Promise<O> | O }): Node<I, O> {
@@ -57,6 +57,13 @@ export function parallel<I, T, O>(id: string, options: {
         try { ctx.checkpoint(); results[index] = { key: entry.key, ok: true, value: await ctx.run(options.body, entry.value, entry.key) }; }
         catch (error) {
           results[index] = { key: entry.key, ok: false, error: error instanceof Error ? error.message : String(error) };
+          if (error instanceof WorkflowDefinitionError) {
+            // 定义/版本冲突是部署级故障，不能被 failure:'collect' 当成单个分支失败吞掉。
+            // 立即停止派发并把整个节点置为失败，让上层在批次内就看到明确原因。
+            if (!hasFatal || !isSuspension(fatal)) { fatal = error; hasFatal = true; }
+            stop = true;
+            continue;
+          }
           // Approval waits do not stop independent branches. Pausing/fail-fast does stop dispatch.
           if (isSuspension(error) || options.failure === 'fail-fast') {
             if (!hasFatal || isSuspension(error) && !isSuspension(fatal)) { fatal = error; hasFatal = true; }

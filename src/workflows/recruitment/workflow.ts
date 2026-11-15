@@ -28,7 +28,7 @@ import { defineWorkflow, task, sequence, retain, parallel, condition, loop, subw
 import type { Node, Outcome, NodeContext } from '../../workflow/index.ts';
 import { publicationSchema, summarySchema, prepareReport, publishReport } from './report.ts';
 
-export const RECRUITMENT_VERSION = '1.5.0';
+export const RECRUITMENT_VERSION = '1.5.1';
 export const RECRUITMENT_KEY = `recruitment@${RECRUITMENT_VERSION}`;
 export const VERIFICATION_KEY = `candidate-verification@${RECRUITMENT_VERSION}`;
 export const PUBLICATION_KEY = `report-publication@${RECRUITMENT_VERSION}`;
@@ -196,8 +196,20 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
   const review = task({ id: 'review', input: evalSchema, output: evalSchema, recovery: 'retry', handler: async (item, ctx) => {
     let prior = loadLatestReview(deps.ledger, item.resumeId);
     if (!prior || prior.task.eval_task_id !== item.evalTaskId) {
-      const evaluation = loadLatestEval(deps.ledger, item.resumeId);
-      if (!evaluation || evaluation.task.id !== item.evalTaskId) throw new Error('待核查评估版本不一致');
+      let evaluation = loadLatestEval(deps.ledger, item.resumeId);
+      if (!evaluation || evaluation.task.id !== item.evalTaskId) {
+        // 断点恢复（resume）时，评估阶段失败的候选人没有与检查点一致的评估产物。
+        // 这里重走一次评估，而不是以「版本不一致」直接放弃该候选人。
+        restoreStage(item.resumeId, item.evalPhase === 'screen' ? 'parsed' : 'evaluated');
+        const worker = assessor(item.prepared);
+        emit('review.recover_eval', { resumeId: item.resumeId, label: resume(item.resumeId).label, batchId: item.batchId, phase: item.evalPhase });
+        const phase = item.evalPhase === 'screen' ? 'screen' : 'deep';
+        const result = await slot(ctx, item.prepared, 'assess', `recover:${item.resumeId}`, () => worker.evaluate({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), batchId: item.batchId, loopIndex: item.loopIndex, tier: item.evalTier, phase }));
+        if (!result.ok) throw new Error(`核查前重评失败：${result.errors.join('；')}`);
+        evaluation = loadLatestEval(deps.ledger, item.resumeId);
+        if (!evaluation) throw new Error('重评未提交');
+        item = { ...item, evalTaskId: evaluation.task.id };
+      }
       restoreStage(item.resumeId, 'evaluated');
       const worker = new AuditorWorker(deps, capacity(item.prepared).review.stats().acquired + 1);
       const result = await slot(ctx, item.prepared, 'review', `review:${item.resumeId}`, () => worker.review({ resume: resume(item.resumeId), parsed: parsed(item.resumeId), evaluation: evaluation.evaluation, evalTaskId: item.evalTaskId, batchId: item.batchId, loopCount: item.loopIndex, maxLoops: deps.config.selfLoop.maxLoops }));
@@ -245,6 +257,7 @@ export function recruitmentRegistry(deps: AgentDeps, opts: PipelineRunOptions): 
   const verifyParallel = parallel('evaluate-and-verify', { items: (b: Batch) => b.screened.map((candidate) => ({ candidate, deep: b.shortlist.includes(candidate.resumeId) })), key: (v) => v.candidate.resumeId, concurrency: (b) => Math.max(1, b.prepared.plan.pools.review + b.prepared.plan.pools.assess), failure: 'collect', body: candidateBody });
   const finishBatch = task({ id: 'finish-batch', input: z.object({ input: batchSchema, result: z.array(outcomeSchema(resultSchema)) }), output: batchResultSchema, recovery: 'retry', handler: ({ input, result }) => {
     const evaluated = result.filter((r) => r.ok).length;
+    for (const failed of result.filter((r) => !r.ok)) emit('batch.verify_failure', { batchId: input.batchId, resumeId: failed.key, error: failed.error });
     const value = { batchId: input.batchId, parsed: input.parsed.length, evaluated };
     emit('batch.completed', { ...value, failed: result.length - evaluated, deep: input.shortlist.length }); return value;
   } });

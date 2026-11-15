@@ -8,6 +8,8 @@ export interface DeepSeekOptions {
   apiKey?: string;
   baseUrl?: string;
   timeoutMs?: number;
+  /** 无任何输出（含心跳）的最长等待；超过即判定悬挂并中止。默认 120s。 */
+  idleTimeoutMs?: number;
   maxRetries?: number;
   /** 请求协议；默认 OpenAI Chat Completions。 */
   protocol?: ProviderProtocol;
@@ -103,7 +105,7 @@ function usageOf(protocol: ProviderProtocol, raw: RawUsage | undefined, req: Cha
 }
 
 /** 解析 SSE：同时保留 event 名称与 data；兼容 CRLF 与无 event 的 data 帧。 */
-async function readSse(response: Response, handler: (event: string, data: string) => void): Promise<void> {
+async function readSse(response: Response, handler: (event: string, data: string) => void, onActivity?: () => void): Promise<void> {
   if (!response.body) throw new Error('流式响应为空');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -115,11 +117,13 @@ async function readSse(response: Response, handler: (event: string, data: string
       if (line.startsWith('event:')) event = line.slice(6).trim();
       else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
     }
+    onActivity?.();
     if (dataLines.length > 0) handler(event, dataLines.join('\n'));
   };
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
+    onActivity?.();
     buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
     let boundary = buffer.indexOf('\n\n');
     while (boundary >= 0) {
@@ -131,6 +135,13 @@ async function readSse(response: Response, handler: (event: string, data: string
   if (buffer.trim()) consume(buffer);
 }
 
+/** 用户暂停、上游 signal、请求超时、心跳超时都属于「重试也没用」的中止。 */
+function abortLike(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'AbortError' || error.name === 'TimeoutError' || error.name === 'PipelinePausedError'
+    || /aborted|abort|timed? ?out|心跳超时|暂停/i.test(error.message);
+}
+
 /** DeepSeek/OpenAI/Anthropic 兼容 HTTP 提供方，支持三种协议与 token 级 SSE。 */
 export class DeepSeekProvider implements LlmProvider {
   readonly name: string;
@@ -138,6 +149,7 @@ export class DeepSeekProvider implements LlmProvider {
   private apiKey: string;
   private baseUrl: string;
   private timeoutMs: number;
+  private idleTimeoutMs: number;
   private maxRetries: number;
   private protocol: ProviderProtocol;
   private deepseekStyle: boolean;
@@ -147,6 +159,7 @@ export class DeepSeekProvider implements LlmProvider {
     this.apiKey = opts.apiKey ?? '';
     this.baseUrl = (opts.baseUrl ?? process.env.BOLE_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
     this.timeoutMs = opts.timeoutMs ?? 300_000;
+    this.idleTimeoutMs = opts.idleTimeoutMs ?? 120_000;
     this.maxRetries = opts.maxRetries ?? 3;
     this.protocol = opts.protocol && PROTOCOLS.includes(opts.protocol) ? opts.protocol : 'openai-chat';
     this.deepseekStyle = opts.deepseekStyle ?? true;
@@ -305,7 +318,7 @@ export class DeepSeekProvider implements LlmProvider {
     };
   }
 
-  private async consumeStream(req: ChatRequest, model: string, response: Response, started: number): Promise<ProviderResult> {
+  private async consumeStream(req: ChatRequest, model: string, response: Response, started: number, onActivity?: () => void): Promise<ProviderResult> {
     let text = '';
     let usageRaw: RawUsage | undefined;
     let finish: string | undefined;
@@ -362,7 +375,7 @@ export class DeepSeekProvider implements LlmProvider {
       if (delta) emit(delta);
       if (choice?.finish_reason) finish = choice.finish_reason;
       if (data.usage) usageRaw = data.usage as RawUsage;
-    });
+    }, onActivity);
 
     if (failure) throw new Error(failure);
     if (!emitted && fullText) text = fullText;
@@ -385,14 +398,24 @@ export class DeepSeekProvider implements LlmProvider {
     let streaming = false;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      // 每次尝试独立的心跳看门狗：只要一段时间没有任何字节/事件，立刻中止，避免整条流水线假死
+      const idle = new AbortController();
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+      const touch = (): void => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => idle.abort(new Error(`模型心跳超时：${Math.round(this.idleTimeoutMs / 1000)} 秒无任何输出`)), this.idleTimeoutMs);
+        idleTimer.unref?.();
+      };
       try {
         streaming = typeof req.onToken === 'function';
         const spec = this.buildRequest(req, model, streaming);
+        touch();
+        const signals = [AbortSignal.timeout(this.timeoutMs), idle.signal, ...(req.signal ? [req.signal] : [])];
         const response = await fetch(spec.url, {
           method: 'POST',
           headers: spec.headers,
           body: JSON.stringify(spec.body),
-          signal: req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs),
+          signal: AbortSignal.any(signals),
         });
         if (!response.ok) {
           const body = await response.text();
@@ -403,18 +426,33 @@ export class DeepSeekProvider implements LlmProvider {
           }
           throw lastError;
         }
+        touch();
         const result = streaming
-          ? await this.consumeStream(req, model, response, started)
+          ? await this.consumeStream(req, model, response, started, touch)
           : await this.consumeJson(req, model, response, started);
         return result;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        // 流式已经可能推送部分内容，重试会重复；交给上层标记失败。
-        if (streaming) break;
+        // 流式已经可能推送部分内容，重试会重复；中止/超时重试也不会变好，直接交给上层
+        if (streaming || abortLike(lastError)) break;
         if (attempt >= this.maxRetries) break;
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+      } finally {
+        if (idleTimer) clearTimeout(idleTimer);
       }
     }
-    throw lastError ?? new Error('模型调用失败');
+    throw this.explainFailure(lastError ?? new Error('模型调用失败'));
+  }
+
+  /** 把超时/心跳类技术错误翻译成可操作的提示；其它错误原样返回。 */
+  private explainFailure(error: Error): Error {
+    if (/心跳超时/.test(error.message)) {
+      const seconds = Math.max(1, Math.round(this.idleTimeoutMs / 1000));
+      return new Error(`模型 ${seconds} 秒没有任何输出，已中止本次调用（多为网关拥堵或网络中断），请稍后重试`);
+    }
+    if (error.name === 'TimeoutError' || /timed out|timeout/i.test(error.message)) {
+      return new Error(`模型调用超过 ${Math.round(this.timeoutMs / 1000)} 秒仍未完成，已中止；请稍后重试或换用更快的模型`);
+    }
+    return error;
   }
 }

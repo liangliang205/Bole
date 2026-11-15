@@ -350,14 +350,37 @@
     });
   }
 
+  /** 把内部技术报错翻译成用户能看懂、能行动的话；未知错误原样返回。 */
+  function humanizeError(message) {
+    const text = String(message || '').trim();
+    if (!text) return '请求失败，请稍后重试';
+    if (/fetch failed|Failed to fetch|NetworkError|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|UND_ERR|other side closed/i.test(text)) {
+      return '模型服务或后端连不上，请检查网络、代理或网关地址后重试';
+    }
+    if (/Invalid PDF structure/i.test(text)) {
+      return '文件不是有效的 PDF（可能已损坏或伪造），请重新导出后再上传';
+    }
+    return text;
+  }
+
   async function api(path, options = {}) {
-    const response = await fetch(path, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-      ...options,
-    });
+    let response;
+    try {
+      response = await fetch(path, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options,
+      });
+    } catch (error) {
+      throw new Error(humanizeError(error?.message));
+    }
     let data;
     try { data = await response.json(); } catch { data = { ok: false, error: `HTTP ${response.status}` }; }
-    if (!response.ok || data.ok === false) throw new Error(data.error || `请求失败（${response.status}）`);
+    if (!response.ok || data.ok === false) {
+      const error = new Error(humanizeError(data.error || `请求失败（${response.status}）`));
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
     return data;
   }
 
@@ -463,7 +486,17 @@
       }
       if (action === 'delete') {
         if (!window.confirm(`确定删除会话「${jobTitle(job)}」？该操作不可恢复。`)) return;
-        await api(`/api/jobs/${encodeURIComponent(job.id)}`, { method: 'DELETE' });
+        try {
+          await api(`/api/jobs/${encodeURIComponent(job.id)}`, { method: 'DELETE' });
+        } catch (error) {
+          // 运行中的会话：明确告知后果后允许强制删除，避免用户只能干等
+          if (error.status === 409 && error.data?.canForce) {
+            if (!window.confirm('会话正在运行。强制删除会立即中止任务并删除台账与产物，确定继续？')) return;
+            await api(`/api/jobs/${encodeURIComponent(job.id)}?force=1`, { method: 'DELETE' });
+          } else {
+            throw error;
+          }
+        }
         if (state.jobId === job.id) showNewView();
         await loadJobs();
         toast('会话已删除', 'ok');
@@ -553,11 +586,39 @@
     }
   }
 
+  /**
+   * 运行状态条：暂停/失败这类需要用户判断的状态必须有文字提示，
+   * 不能只靠发送按钮图标变化（图标变化用户看不出来「停没停」）。
+   */
+  function renderRunStatusBar() {
+    const bar = $('#run-status');
+    if (!bar) return;
+    const run = state.run;
+    let text = '';
+    let tone = '';
+    if (run?.pendingHitl) {
+      text = '等待你的回答：回答后筛选会继续';
+      tone = 'pending';
+    } else if (run?.status === 'pausing') {
+      text = '正在暂停：将在当前批次结束后自动停下，无需保持页面打开';
+      tone = 'pending';
+    } else if (run?.status === 'paused') {
+      text = '已暂停：点击「从检查点续跑」继续';
+      tone = 'paused';
+    } else if (run?.status === 'failed') {
+      text = run.error ? `任务失败：${humanizeError(run.error)}` : '任务失败：可查看失败明细，或处理后从检查点续跑';
+      tone = 'failed';
+    }
+    bar.textContent = text;
+    bar.className = `run-status ${tone}${text ? '' : ' hidden'}`;
+  }
+
   function renderAll() {
     if (!state.run || !state.snapshot) return;
     const job = state.snapshot.job || {};
     const run = state.run;
     document.title = `${jobTitle(job)} · 伯乐 BoLe`;
+    renderRunStatusBar();
     const canChat = ['completed', 'paused', 'failed', 'idle'].includes(run.status);
     const replyHint = run.pendingHitl ? '请回答上方 HITL 问题（可直接输入自定义回答）' : '';
     $('#reply-hint').textContent = replyHint;
@@ -1276,7 +1337,15 @@
   }
 
   async function sendChat() {
-    if (!state.jobId || !['completed', 'paused', 'failed', 'idle'].includes(state.run?.status)) return;
+    if (!state.jobId) { toast('请先打开一个会话', 'warn'); return; }
+    if (!state.run) { toast('会话状态还在加载，请稍后再发送', 'warn'); return; }
+    if (!['completed', 'paused', 'failed', 'idle'].includes(state.run.status)) {
+      // 不能静默 return：用户会说「点了没反应」
+      toast(state.run.status === 'pausing'
+        ? '任务正在暂停中，等状态变成「已暂停」后再发送'
+        : '筛选任务正在运行，结束或暂停后再发送消息', 'warn');
+      return;
+    }
     const value = replyValue();
     const ready = state.chatAttachments.filter((item) => item.status === 'ready' && item.uploadId);
     if (state.chatAttachments.some((item) => item.status === 'uploading')) { toast('附件还在上传，请稍候', 'error'); return; }
@@ -1424,7 +1493,14 @@
       const data = await api(`/api/run/${encodeURIComponent(state.jobId)}/pause`, { method: 'POST' });
       if (state.run) state.run.status = data.status;
       renderAll();
-      toast('已请求暂停，将在当前批次结束后生效', 'ok');
+      toast('已请求暂停：将在当前批次结束后生效，页面顶部会显示状态', 'ok');
+      // 超过 30 秒还没停，说明当前批次仍在校验/调用模型，必须再给一次中间态提示
+      const pausedJobId = state.jobId;
+      setTimeout(() => {
+        if (state.jobId === pausedJobId && state.run?.status === 'pausing') {
+          toast('仍在暂停：当前批次尚未结束，后台会继续收尾，可安全离开页面', 'warn');
+        }
+      }, 30_000);
     } catch (error) {
       toast(`暂停失败：${error.message}`, 'error');
     }
@@ -1903,12 +1979,17 @@
 
   async function togglePlugin(id, enabled) {
     if (state.pluginBusy) return;
+    const plugin = (state.plugins || []).find((item) => item.id === id);
+    const previous = plugin?.enabled;
+    // 先本地回显：重建连接可能要几秒，若等响应再刷新，开关会先弹回旧状态，用户会以为没点上
+    if (plugin) plugin.enabled = enabled;
     state.pluginBusy = true;
     renderPlugins();
     try {
       applyPlugins(await api(`/api/mcp/plugins/${encodeURIComponent(id)}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }));
       toast(enabled ? '插件已启用' : '插件已停用', 'ok');
     } catch (error) {
+      if (plugin && previous !== undefined) plugin.enabled = previous;
       toast(`切换失败：${error.message}`, 'error');
       await loadPlugins();
     } finally {
@@ -2162,7 +2243,8 @@
 
   async function fetchAvailableModels() {
     const baseUrl = $('#provider-base').value.trim();
-    const api = $('#provider-api').value;
+    // 注意：不能叫 api，会遮蔽上面的全局请求函数 api()
+    const apiStyle = $('#provider-api').value;
     const apiKey = $('#provider-key').value.trim();
     if (!baseUrl) { setProviderStatus('请先填写 API 地址', 'error'); return; }
     if (!apiKey && !state.editingProvider) { setProviderStatus('获取模型需要先填写 API 密钥', 'error'); return; }
@@ -2174,7 +2256,7 @@
         method: 'POST',
         body: JSON.stringify({
           baseUrl,
-          api,
+          api: apiStyle,
           apiKey: apiKey || undefined,
           providerId: state.editingProvider?.id,
         }),
@@ -2218,7 +2300,8 @@
     if (action === 'test') {
       try {
         const data = await api(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' });
-        toast(data.warning ?? `${provider.name} 连接正常`, data.warning ? 'error' : 'ok');
+        // 「测试连接」只验证连通性，不代表配置已保存，文案必须说清楚
+        toast(data.warning ? `连接未确认：${data.warning}` : `${provider.name} 连接正常（仅测试，未修改配置）`, data.warning ? 'error' : 'ok');
       } catch (error) { toast(`连接失败：${error.message}`, 'error'); }
       return;
     }
@@ -2284,7 +2367,9 @@
     setProviderStatus('正在测试连接…');
     try {
       const data = await api(`/api/providers/${encodeURIComponent(state.editingProvider.id)}/test`, { method: 'POST' });
-      setProviderStatus(data.warning ?? '连接正常', data.warning ? 'warn' : 'ok');
+      // 连接测试不写配置，提示里必须明确「未保存」，避免用户误以为已经存好
+      if (data.warning) setProviderStatus(`连接未确认：${data.warning}（本次仅测试，未保存任何配置）`, 'warn');
+      else setProviderStatus('连接正常（本次仅测试，未保存任何配置；需要保留请点保存）', 'ok');
     } catch (error) {
       setProviderStatus(`连接失败：${error.message}`, 'error');
     }

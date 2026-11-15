@@ -61,3 +61,10 @@ export class WorkflowPausedError extends Error { constructor(reason = '工作流
 export class WorkflowUncertainError extends Error { constructor(path: string) { super(`节点结果待人工确认：${path}；请确认外部操作结果后恢复`); } }
 export class WorkflowCancelledError extends Error { constructor() { super('工作流已取消'); } }
 export class WorkflowBusyError extends Error { constructor() { super('工作流已有执行者，请稍后再试'); } }
+/**
+ * 工作流定义/注册错误：版本冲突、定义未注册等部署问题。
+ * 它不是某个候选人的业务失败，parallel 的 failure:'collect' 不能把它收成 Outcome 后继续跑。
+ */
+export class WorkflowDefinitionError extends Error {
+  constructor(message: string) { super(message); this.name = 'WorkflowDefinitionError'; }
+}

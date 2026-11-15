@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Workflow } from './types.ts';
+import { WorkflowDefinitionError, type Workflow } from './types.ts';
 import { hash } from './store.ts';
 
 export class WorkflowRegistry {
@@ -8,10 +8,10 @@ export class WorkflowRegistry {
     const key = `${definition.id}@${definition.version}`;
     const old = this.definitions.get(key);
     const erased = definition as unknown as Workflow<unknown, unknown>;
-    if (old && hash(this.snapshot(old)) !== hash(this.snapshot(erased))) throw new Error(`不能覆盖工作流版本：${key}`);
+    if (old && hash(this.snapshot(old)) !== hash(this.snapshot(erased))) throw new WorkflowDefinitionError(`不能覆盖工作流版本：${key}`);
     this.definitions.set(key, erased); return this;
   }
-  get(key: string): Workflow<unknown, unknown> { const def = this.definitions.get(key); if (!def) throw new Error(`工作流版本未注册：${key}`); return def; }
+  get(key: string): Workflow<unknown, unknown> { const def = this.definitions.get(key); if (!def) throw new WorkflowDefinitionError(`工作流版本未注册：${key}`); return def; }
   snapshot(def: Workflow<unknown, unknown>): unknown {
     return { id: def.id, version: def.version, implementation: def.implementation, input: z.toJSONSchema(def.input), output: z.toJSONSchema(def.output), body: def.body.spec };
   }

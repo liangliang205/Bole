@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { KeyStore } from '../../src/settings/key-store.ts';
+import { KeyStore, fetchModelList } from '../../src/settings/key-store.ts';
 
 const KEY = 'sk-test-1234567890abcdef';
 
@@ -40,6 +41,25 @@ test('KeyStore：密文文件损坏时不泄露也不误报已绑定', async () 
     assert.equal((await store.status()).bound, false);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('KeyStore：401 与 403 的报错文案必须区分', async () => {
+  const server = http.createServer((req, res) => {
+    const status = (req.url ?? '').includes('403') ? 403 : 401;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { type: 'permission_error', message: 'Request not allowed' } }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const unauthorized = await fetchModelList('sk-x', `http://127.0.0.1:${port}/401`, 'anthropic-messages');
+    const forbidden = await fetchModelList('sk-x', `http://127.0.0.1:${port}/403`, 'anthropic-messages');
+    assert.match(unauthorized.error ?? '', /401.*无效|无效.*401/);
+    assert.match(forbidden.error ?? '', /403/);
+    assert.doesNotMatch(forbidden.error ?? '', /无效或已过期/, '403 是权限/地区限制，不能说成 Key 无效');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
 

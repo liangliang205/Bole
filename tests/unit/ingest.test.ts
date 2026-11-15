@@ -52,6 +52,21 @@ test('上传：拒绝不支持的扩展名', async () => {
   }
 });
 
+test('上传：伪造扩展名的文件在保存阶段就被拒绝', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bole-upload-'));
+  try {
+    // 扩展名是 .pdf，内容却不是 PDF：必须在 /api/uploads 阶段失败，而不是等到发送后报 Invalid PDF structure
+    await assert.rejects(
+      () => saveUpload({ filename: 'fake.pdf', contentBase64: Buffer.from('this is not a pdf').toString('base64') }, dir),
+      /文件内容/,
+    );
+    const real = await saveUpload({ filename: 'real.pdf', contentBase64: makePdf('Java Spring Boot').toString('base64') }, dir);
+    assert.equal(real.filename, 'real.pdf');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('归一化：txt 保持原文与字段', async () => {
   const normalized = await normalizeDocument(Buffer.from(RESUME, 'utf8'), 'r.txt', 'text/plain');
   assert.equal(normalized.format, 'txt');

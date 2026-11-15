@@ -20,6 +20,9 @@ import { ProviderStore } from '../settings/provider-store.ts';
 import { KnowledgeService } from '../knowledge/service.ts';
 import { McpPluginService } from '../mcp/plugin-service.ts';
 import { McpPluginStore } from '../mcp/plugins.ts';
+import { listAccounts, removeAccount, saveAccount } from '../mail/accounts.ts';
+import { resolveMailAdapter } from '../mail/adapters.ts';
+import { resolveVendor } from '../mail-mcp/vendors.ts';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string, text: string): string => (useColor ? `\u001b[${code}m${text}\u001b[0m` : text);
@@ -91,6 +94,7 @@ function printHelp(): void {
   cost                查看 token 成本与缓存命中
   agents              查看 Agent preset 注册表
   mcp                 查看/测试外接 MCP 服务（list 或 call <server:tool>）
+  mail-account        管理邮箱账号（add / list / remove / test；凭据仅加密保存在本机）
   doctor              环境自检（含 OCR 语言数据）
   reset               清空台账、运行产物与上传缓存
 
@@ -626,6 +630,88 @@ async function cmdReset(args: Args): Promise<void> {
   process.stdout.write(green('已清空台账、运行产出与上传缓存。\n'));
 }
 
+/** 交互式读取授权码：不回显、不进参数列表、不留在 shell history。 */
+async function promptSecret(label: string): Promise<string> {
+  if (!process.stdin.isTTY) throw new Error('邮箱授权码需要在交互式终端输入；非 TTY 环境请在 Web 控制台配置');
+  process.stdout.write(label);
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+  let value = '';
+  try {
+    for await (const chunk of process.stdin) {
+      for (const char of String(chunk)) {
+        if (char === '\r' || char === '\n') { process.stdout.write('\n'); return value; }
+        if (char === '\u0003') { process.stdout.write('\n'); throw new Error('已取消输入'); }
+        if (char === '\u007f' || char === '\b') {
+          if (value) { value = value.slice(0, -1); process.stdout.write('\b \b'); }
+          continue;
+        }
+        if (char >= ' ') { value += char; process.stdout.write('*'); }
+      }
+    }
+    return value;
+  } finally {
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+  }
+}
+
+function assertAccountId(id: string | undefined): string {
+  if (!id) throw new Error('请提供邮箱账号 id，例如：bole mail-account add qq-hr --vendor qq --user hr@qq.com');
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) throw new Error('账号 id 只能包含小写字母、数字、下划线和连字符，且不超过 64 个字符');
+  return id;
+}
+
+async function cmdMailAccount(args: Args): Promise<void> {
+  const [action, rawId] = args.positionals;
+  if (!action || action === 'list') {
+    const accounts = await listAccounts();
+    if (!accounts.length) {
+      process.stdout.write('尚未配置邮箱账号。运行 bole mail-account add <id> --vendor qq --user you@qq.com 添加。\n');
+      return;
+    }
+    for (const account of accounts) {
+      process.stdout.write(`${bold(account.id)}  ${account.vendor}  ${account.user}${account.host ? `  ${account.host}:${account.port ?? 993}` : ''}\n`);
+    }
+    return;
+  }
+  if (action === 'add') {
+    const id = assertAccountId(rawId);
+    const vendor = str(args, 'vendor') ?? 'qq';
+    const user = str(args, 'user');
+    if (!user) throw new Error('请用 --user 指定邮箱地址');
+    if (!/^[^\s@]+@[^\s@]+$/.test(user)) throw new Error(`邮箱地址不合法：${user}`);
+    const host = str(args, 'host');
+    const portText = str(args, 'port');
+    const port = portText === undefined ? undefined : Number(portText);
+    if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) throw new Error(`非法端口：${portText}`);
+    resolveVendor(vendor, host, port);
+    const password = await promptSecret(`请输入 ${user} 的 IMAP 授权码（输入不回显）：`);
+    if (!password) throw new Error('授权码不能为空');
+    await saveAccount({ id, vendor, user, password, ...(host ? { host } : {}), ...(port === undefined ? {} : { port }) });
+    process.stdout.write(green(`已保存邮箱账号 ${id}（${user}）。凭据已加密保存在本机，不会上传到云端。\n`));
+    return;
+  }
+  if (action === 'remove') {
+    const id = assertAccountId(rawId);
+    await removeAccount(id);
+    process.stdout.write(green(`已删除邮箱账号 ${id}。\n`));
+    return;
+  }
+  if (action === 'test') {
+    const id = assertAccountId(rawId);
+    const adapter = resolveMailAdapter({ kind: 'mcp', id: `mail-${id}`, name: id, accountRef: id });
+    try {
+      process.stdout.write(green(`连接成功：${await adapter.identity()}\n`));
+    } finally {
+      await adapter.close?.();
+    }
+    return;
+  }
+  throw new Error('用法：bole mail-account <add|list|remove|test> ...');
+}
+
 async function cmdWeb(args: Args): Promise<void> {
   const host = str(args, 'host') ?? '127.0.0.1';
   const port = Number(str(args, 'port') ?? '8787');
@@ -664,6 +750,9 @@ async function main(): Promise<void> {
       break;
     case 'mcp':
       await cmdMcp(args);
+      break;
+    case 'mail-account':
+      await cmdMailAccount(args);
       break;
     case 'doctor':
       await cmdDoctor();

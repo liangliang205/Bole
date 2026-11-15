@@ -48,6 +48,26 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
   }
 }
 
+/**
+ * MCP SDK 的 getDefaultEnvironment() 是 POSIX 白名单，缺 ComSpec 等 Windows 变量。
+ * 于是 npx/npm 这类命令内部 spawn cmd 时直接 ENOENT，插件安装成功却永远连不上。
+ * 这里补回 Windows 启动子进程必需的变量；非 Windows 平台不介入。
+ */
+function windowsSpawnEnv(): Record<string, string> {
+  if (process.platform !== 'win32') return {};
+  const keys = [
+    'ComSpec', 'SystemRoot', 'windir', 'PATHEXT', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH',
+    'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)',
+    'TEMP', 'TMP', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
+  ];
+  const out: Record<string, string> = {};
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
 export class McpConnection {
   readonly config: McpServerConfig;
   private readonly options: ConnectionOptions;
@@ -104,7 +124,7 @@ export class McpConnection {
         },
       });
     }
-    const env = { ...getDefaultEnvironment(), ...this.config.env };
+    const env = { ...getDefaultEnvironment(), ...windowsSpawnEnv(), ...this.config.env };
     return new StdioClientTransport({
       command: this.config.command as string,
       args: this.config.args,

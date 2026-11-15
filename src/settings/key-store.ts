@@ -167,8 +167,25 @@ function modelEndpoints(
 }
 
 /**
- * 用 /models 做一次轻量校验。只把 401/403 判为 Key 无效；
- * 网络/网关不支持时仍允许绑定，但返回 warning，避免离线时无法保存。
+ * 把鉴权类 HTTP 状态翻译成可操作的中文说明。
+ * 401 才是「Key 不对」；403 多半是权限/地区限制（例如 Anthropic 对部分地区直接 403），
+ * 不能混成一句「Key 无效」，否则用户会白折腾换 Key。
+ */
+function authErrorMessage(status: number, body: string, protocol: string): string {
+  const detail = body.trim().replace(/\s+/g, ' ').slice(0, 200);
+  if (status === 401) {
+    return `API Key 无效或已过期（401）${detail ? `：${detail}` : '，请检查密钥后重试。'}`;
+  }
+  const regionHint = protocol === 'anthropic-messages'
+    ? '当前网络所在地区被 Anthropic 限制访问'
+    : '该 Key 没有访问该接口的权限';
+  return `网关拒绝访问（403）：可能是${regionHint}${detail ? `（${detail}）` : ''}，Key 本身未必有误。`;
+}
+
+/**
+ * 用 /models 做一次轻量校验。
+ * 401/403 会给明确原因；网络/网关不支持时仍允许绑定，但返回 warning，避免离线时无法保存。
+ * 这里只描述「连接是否被确认」，不说「已保存」——保存与否由调用方决定。
  */
 export async function verifyDeepSeekKey(
   apiKey: string,
@@ -183,18 +200,19 @@ export async function verifyDeepSeekKey(
       : { Authorization: `Bearer ${apiKey}` };
     const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(10_000) });
     if (response.status === 401 || response.status === 403) {
-      throw new Error('网关拒绝了该 API Key（401/403），请检查后重试');
+      const body = await response.text().catch(() => '');
+      throw new Error(authErrorMessage(response.status, body, protocol));
     }
     if (response.status === 404 || response.status === 405) {
-      return { verified: false, warning: '网关不支持 /models 校验，已保存 Key；如调用失败请检查网关配置。' };
+      return { verified: false, warning: '网关不支持 /models 校验，无法确认连接状态。' };
     }
     if (!response.ok) {
-      return { verified: false, warning: `Key 校验返回 HTTP ${response.status}，已保存；如调用失败请检查网关。` };
+      return { verified: false, warning: `Key 校验返回 HTTP ${response.status}，无法确认连接状态。` };
     }
     return { verified: true };
   } catch (error) {
     if (error instanceof Error && /401|403|拒绝/.test(error.message)) throw error;
-    return { verified: false, warning: '无法连接网关校验 Key，已保存；请确认网络/网关后使用。' };
+    return { verified: false, warning: '无法连接网关校验 Key，请确认网络或网关设置。' };
   }
 }
 
@@ -222,7 +240,7 @@ export async function fetchModelList(
       const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(20_000) });
       if (response.status === 401 || response.status === 403) {
         const body = (await response.text()).slice(0, 240);
-        return { ids: [], endpoint, status: response.status, error: `HTTP ${response.status}：${body || '密钥被拒绝'}` };
+        return { ids: [], endpoint, status: response.status, error: authErrorMessage(response.status, body, protocol) };
       }
       if (!response.ok) {
         const body = (await response.text()).slice(0, 240);
