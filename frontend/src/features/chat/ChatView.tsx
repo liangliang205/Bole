@@ -1,7 +1,11 @@
-import { useMemo } from 'react';
+﻿import { useMemo, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useChatMessages, useRun, useRunEvents, formatClock, type ChatMessage, type RunEvent } from '../../api/run.ts';
+import { api } from '../../api/client.ts';
 import { Markdown } from '../../components/Markdown.tsx';
+import { useRunStream } from '../../hooks/useRunStream.ts';
+import { useStreamingText } from '../../store/stream.ts';
 
 const MILESTONES = new Set([
   'jd.analyzed', 'fetch.completed', 'hitl.question', 'hitl.answered', 'escalate.human',
@@ -112,6 +116,32 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   const snapshot = runData?.snapshot ?? {};
   const run = runData?.run ?? {};
   const job = snapshot.job ?? {};
+  const queryClient = useQueryClient();
+  useRunStream(jobId, queryClient);
+  const streamingText = useStreamingText();
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const inputRef = useRef<HTMLDivElement>(null);
+
+  const send = async (): Promise<void> => {
+    const content = (inputRef.current?.innerText ?? '').replace(/\u00a0/g, ' ').trim();
+    if (!content || sending) return;
+    setSending(true);
+    try {
+      await api(`/api/run/${encodeURIComponent(jobId)}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      });
+      setDraft('');
+      if (inputRef.current) inputRef.current.innerText = '';
+      await queryClient.invalidateQueries({ queryKey: ['chat', jobId] });
+      await queryClient.invalidateQueries({ queryKey: ['run', jobId] });
+    } catch (error) {
+      setDraft(`发送失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const body = useMemo(() => {
     const parts: ReactElement[] = [];
@@ -228,7 +258,17 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   return (
     <section id="chat-view" className={`chat-view${hidden ? ' hidden' : ''}`}>
       <div id="chat-scroll" className="chat-scroll">{body}</div>
-      <div id="stream-host" className="stream-host" />
+      <div id="stream-host" className="stream-host">
+        {streamingText ? (
+          <div className="stream-card">
+            <div className="stream-head">
+              <span className="stream-agent">伯乐</span>
+              <span className="stream-phase">生成中</span>
+            </div>
+            <div className="stream-preview">{streamingText}</div>
+          </div>
+        ) : null}
+      </div>
       <div id="hitl-host" className="hitl-host" />
       <div id="approval-host" className="hitl-host" />
       <div className="composer-wrap dsh-composer">
@@ -239,6 +279,8 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
             <div className="dsh-composer-grow">
               <div
                 id="reply-input"
+                ref={inputRef}
+                onInput={(event) => setDraft(event.currentTarget.innerText)}
                 className="dsh-composer-input"
                 contentEditable
                 role="textbox"
@@ -258,7 +300,7 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
             </div>
             <div className="dsh-composer-trailing">
               <span className="dsh-composer-model" id="reply-model" />
-              <button className="dsh-composer-primary" id="reply-send" aria-label="发送" disabled>
+              <button className="dsh-composer-primary" id="reply-send" aria-label="发送" disabled={sending || draft.trim().length === 0} onClick={() => { void send(); }}>
                 <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
                   <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
                 </svg>
