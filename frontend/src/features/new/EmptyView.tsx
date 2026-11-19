@@ -115,7 +115,7 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
         });
         await api(`/api/run/${encodeURIComponent(data.jobId)}/chat`, {
           method: 'POST',
-          body: JSON.stringify({ content: text }),
+          body: JSON.stringify({ message: text }),
         });
         setRequirements('');
         showHint('');
@@ -246,7 +246,18 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
                     <button type="button" role="menuitemradio" className="hidden" aria-checked data-mail-source="upload">
                       <span>仅使用上传简历</span>
                     </button>
-                    <button type="button" role="menuitem" id="mail-source-settings">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      id="mail-source-settings"
+                      onClick={() => {
+                        setMailOpen(false);
+                        setRequirements((text) => (text.trim()
+                          ? text
+                          : '请帮我接入招聘邮箱：说明需要准备什么、授权步骤，以及如何按岗位收取简历。'));
+                        document.getElementById('new-requirements')?.focus();
+                      }}
+                    >
                       <span>让伯乐处理招聘邮箱<small>直接说明接入方式、时间范围和人才要求</small></span>
                       <span aria-hidden="true">›</span>
                     </button>

@@ -1,4 +1,4 @@
-﻿import { chromium } from 'playwright';
+import { chromium } from 'playwright';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:8787';
 const results = [];
@@ -26,9 +26,9 @@ process.stdout.write(`初始：#app=${before.className} | main=${before.mainClas
 check('有空会话时 main 带 chat-active', before.mainClass.includes('chat-active'), before.mainClass);
 check('chat 视图下分栏把手可见', before.resizerDisplay !== 'none', before.resizerDisplay);
 
-// 打开任务面板
-await page.click('#panel-btn');
-await page.waitForTimeout(600);
+// 确保任务面板是打开状态（打开时按钮是"收起"，先判断再点）
+const alreadyOpen = await page.evaluate(() => !document.getElementById('drawer')?.classList.contains('hidden'));
+if (!alreadyOpen) { await page.click('#panel-btn'); await page.waitForTimeout(600); }
 const withDrawer = await page.evaluate(() => {
   const app = document.getElementById('app');
   const drawer = document.getElementById('drawer');

@@ -44,6 +44,7 @@ function JobRow({ job, active, onSelect, onMenu }: { job: JobSummary; active: bo
 export function Sidebar(): ReactElement {
   const { data: jobs, isLoading } = useJobs();
   const activeJobId = useUiStore((state) => state.activeJobId);
+  const startNewSession = useUiStore((state) => state.startNewSession);
   const showArchived = useUiStore((state) => state.showArchived);
   const search = useUiStore((state) => state.search);
   const setSearch = useUiStore((state) => state.setSearch);
@@ -86,11 +87,15 @@ export function Sidebar(): ReactElement {
     : source;
   const count = visible.length;
 
-  // 与旧实现一致：进页面自动选中第一个（未归档）会话
+  // 与旧实现一致：进页面自动选中第一个（未归档）会话。
+  // 只在首次加载时选一次——否则用户点「新建筛选会话」清空后会被立刻选回去。
+  const autoSelected = useRef(Boolean(activeJobId));
   useEffect(() => {
-    if (activeJobId || !jobs || jobs.length === 0) return;
+    if (autoSelected.current || activeJobId || !jobs || jobs.length === 0) return;
     const first = jobs.find((job) => !job.archived);
-    if (first) setActiveJob(first.id);
+    if (!first) return;
+    autoSelected.current = true;
+    setActiveJob(first.id);
   }, [activeJobId, jobs, setActiveJob]);
 
   const emptyNote = showArchived
@@ -104,7 +109,7 @@ export function Sidebar(): ReactElement {
           <div className="brand-mark">伯乐<span>BoLe</span></div>
           <div className="brand-sub">可验证的多 Agent 招聘筛选</div>
         </div>
-        <button className="btn primary block" id="new-run-btn">＋ 新建筛选会话</button>
+        <button className="btn primary block" id="new-run-btn" type="button" onClick={startNewSession}>＋ 新建筛选会话</button>
         <div className="search">
           <span className="search-icon">⌕</span>
           <input

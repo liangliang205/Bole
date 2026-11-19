@@ -24,6 +24,8 @@ export function App(): ReactElement {
   const setTheme = useUiStore((state) => state.setTheme);
   const activeJobId = useUiStore((state) => state.activeJobId);
   const drawerOpen = useUiStore((state) => state.drawerOpen);
+  const openDrawer = useUiStore((state) => state.openDrawer);
+  const closeDrawer = useUiStore((state) => state.closeDrawer);
   const previewName = useUiStore((state) => state.previewName);
   const closePreview = useUiStore((state) => state.closePreview);
   const openHelp = useUiStore((state) => state.openHelp);
@@ -58,7 +60,20 @@ export function App(): ReactElement {
       <main className={`main${activeJobId ? ' chat-active' : ''}`}>
         <header className="topbar">
           <div className="topbar-actions">
-            <button className="btn ghost" id="panel-btn" title="任务面板">▤ 任务面板</button>
+            <button
+              className="btn ghost"
+              id="panel-btn"
+              type="button"
+              title={drawerOpen && activeJobId ? '收起任务面板' : '打开任务面板'}
+              aria-controls="drawer"
+              aria-expanded={Boolean(drawerOpen && activeJobId)}
+              onClick={() => {
+                if (drawerOpen && activeJobId) closeDrawer();
+                else openDrawer();
+              }}
+            >
+              ▤ 任务面板
+            </button>
             <button
               className="btn ghost"
               id="theme-toggle"
@@ -107,7 +122,7 @@ export function App(): ReactElement {
         <aside id="drawer" className="drawer hidden">
           <div className="drawer-head">
             <div className="drawer-tabs" id="drawer-tabs" />
-            <button className="btn ghost" id="drawer-close">✕</button>
+            <button className="btn ghost" id="drawer-close" type="button" onClick={closeDrawer}>✕</button>
           </div>
           <div id="drawer-body" className="drawer-body" />
         </aside>

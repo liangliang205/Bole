@@ -16,6 +16,8 @@ interface UiState {
   settingsOpen: boolean;
   settingsTab: string;
   setActiveJob: (jobId: string) => void;
+  /** 回到新建会话页：清空当前会话并收起任务面板。 */
+  startNewSession: () => void;
   toggleArchived: () => void;
   setSearch: (value: string) => void;
   setTheme: (theme: Theme) => void;
@@ -72,6 +74,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   setActiveJob: (jobId) => {
     writeHashJob(jobId);
     set({ activeJobId: jobId, drawerOpen: true, drawerTab: 'candidates' });
+  },
+  startNewSession: () => {
+    writeHashJob('');
+    set({ activeJobId: '', drawerOpen: false, previewName: '', drawerTab: 'candidates' });
   },
   toggleArchived: () => set({ showArchived: !get().showArchived }),
   setSearch: (value) => set({ search: value }),
