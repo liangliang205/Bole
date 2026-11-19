@@ -29,9 +29,8 @@ export function resolveServerLayout(isPackaged: boolean, bundleDir: string): { s
   const serverDir = isPackaged
     ? path.join(bundleDir, '..', '..', 'server')
     : path.resolve(bundleDir, '..', '..');
-  const entry = isPackaged
-    ? path.join(serverDir, 'main.cjs')
-    : path.join(serverDir, 'src', 'cli', 'index.ts');
+  // 打包态同样直接跑 TS：Electron 的 Node 支持原生类型擦除，staging 里没有 main.cjs。
+  const entry = path.join(serverDir, 'src', 'cli', 'index.ts');
   return { serverDir, entry };
 }
 
@@ -51,6 +50,9 @@ export async function startServer(input: StartInput): Promise<RunningServer> {
   };
   const ocrDir = path.join(input.serverDir, 'ocr');
   if (existsSync(ocrDir)) env.BOLE_OCR_DIR = ocrDir;
+  // 打包后前端产物在 <serverDir>/web（staging 时从 frontend/dist 拷入）
+  const webDir = path.join(input.serverDir, 'web');
+  if (existsSync(webDir)) env.BOLE_WEB_DIR = webDir;
 
   const child: ChildProcess = spawn(process.execPath, [input.entry, 'web', '--port', String(input.port), '--host', '127.0.0.1'], {
     cwd: input.serverDir,
