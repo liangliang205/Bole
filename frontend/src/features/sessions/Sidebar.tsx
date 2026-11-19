@@ -1,8 +1,10 @@
-﻿import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { useJobs, jobTitle, formatJobTime, type JobSummary } from '../../api/jobs.ts';
 import { useUiStore } from '../../store/ui.ts';
 import { useWidthResizer } from '../../hooks/useWidthResizer.ts';
+import { JobMenu, applyJobAction, type JobAction } from './JobMenu.tsx';
+import { useQueryClient } from '@tanstack/react-query';
 
 const SIDEBAR_WIDTH_KEY = 'bole.sidebarWidth';
 const SIDEBAR_DEFAULT = 286;
@@ -11,7 +13,7 @@ function sidebarBounds(): { min: number; max: number } {
   return { min: 220, max: Math.max(260, Math.min(480, window.innerWidth - 560)) };
 }
 
-function JobRow({ job, active, onSelect }: { job: JobSummary; active: boolean; onSelect: (id: string) => void }): ReactElement {
+function JobRow({ job, active, onSelect, onMenu }: { job: JobSummary; active: boolean; onSelect: (id: string) => void; onMenu: (job: JobSummary, x: number, y: number) => void }): ReactElement {
   const status = job.activeStatus || 'idle';
   return (
     <div
@@ -20,12 +22,13 @@ function JobRow({ job, active, onSelect }: { job: JobSummary; active: boolean; o
       role="button"
       tabIndex={0}
       onClick={() => onSelect(job.id)}
+      onContextMenu={(event) => { event.preventDefault(); onMenu(job, event.clientX, event.clientY); }}
     >
       <div className="job-line">
         <span className={`dot ${status}`} />
         <span className="job-name">{jobTitle(job)}</span>
         <span className="job-time">{formatJobTime(job.createdTs)}</span>
-        <button className="job-more" type="button" data-job-menu={job.id} title="会话操作">⋯</button>
+        <button className="job-more" type="button" data-job-menu={job.id} title="会话操作" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onMenu(job, rect.right - 8, rect.bottom + 6); }}>⋯</button>
       </div>
       <div className="job-meta">
         <span>{job.verified ?? 0} 通过</span>
@@ -49,6 +52,22 @@ export function Sidebar(): ReactElement {
   const openSettings = useUiStore((state) => state.openSettings);
   const openMailbox = useUiStore((state) => state.openMailbox);
   const openKnowledge = useUiStore((state) => state.openKnowledge);
+  const queryClient = useQueryClient();
+  const [menu, setMenu] = useState<{ job: JobSummary; x: number; y: number } | null>(null);
+  const [toast, setToast] = useState<{ text: string; tone: string } | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+
+  const showToast = (text: string, tone = ''): void => {
+    setToast({ text, tone });
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
+  };
+
+  const handleAction = async (action: JobAction, job: JobSummary): Promise<void> => {
+    const result = await applyJobAction(action, job, showToast);
+    await queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    if (result.cleared && job.id === activeJobId) setActiveJob('');
+  };
 
   const resizer = useWidthResizer({
     storageKey: SIDEBAR_WIDTH_KEY,
@@ -111,7 +130,7 @@ export function Sidebar(): ReactElement {
         <div id="job-list" className="job-list">
           {isLoading ? null : visible.length > 0
             ? visible.map((job) => (
-              <JobRow key={job.id} job={job} active={job.id === activeJobId} onSelect={setActiveJob} />
+              <JobRow key={job.id} job={job} active={job.id === activeJobId} onSelect={setActiveJob} onMenu={(target, x, y) => setMenu({ job: target, x, y })} />
             ))
             : <div className="empty-note">{emptyNote}</div>}
         </div>
@@ -121,6 +140,16 @@ export function Sidebar(): ReactElement {
           <button className="btn ghost block" id="open-settings" onClick={() => openSettings()}>⚙ 设置</button>
         </div>
       </aside>
+      {menu ? (
+        <JobMenu
+          job={menu.job}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onChanged={handleAction}
+        />
+      ) : null}
+      <div id="toast" className={`toast${toast ? '' : ' hidden'} ${toast?.tone ?? ''}`}>{toast?.text ?? ''}</div>
       <div
         className="sidebar-resizer"
         id="sidebar-resizer"
