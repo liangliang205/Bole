@@ -70,10 +70,7 @@ body.is-resizing-drawer, body.is-resizing-drawer * { cursor: col-resize !importa
 .info-card ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
 .stat-line { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 6px; font-size: 12px; }
 .stat-line:nth-child(odd) { background: var(--surface-2); }
-.stat-line b { color: var(--text); }
-.bar { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-top: 6px; }
-.bar > i { display: block; height: 100%; background: var(--bar); }
-.table-wrap { border: 0; border-radius: 10px; overflow: auto; background: var(--card); }
+.stat-line b { color: var(--text); }.table-wrap { border: 0; border-radius: 10px; overflow: auto; background: var(--card); }
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
 th, td { text-align: left; padding: 8px 9px; vertical-align: top; }
 th { color: var(--dim); font-weight: 600; font-size: 11px; background: var(--surface-2); position: sticky; top: 0; }
