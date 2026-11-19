@@ -139,11 +139,81 @@ function PluginsSection({ open }: { open: boolean }): ReactElement {
   );
 }
 
-function PlaceholderSection({ id, title, closeId, hint }: { id: string; title: string; closeId: string; hint: string }): ReactElement {
+/** Agent 团队：结构与 index.html 的 #agent-dialog 一致；角色/团队数据绑定尚未接。 */
+function AgentsSection({ open }: { open: boolean }): ReactElement {
   return (
-    <section className="settings-content hidden" id={id}>
-      <div className="modal-head"><h2>{title}</h2><button className="btn ghost" id={closeId}>✕</button></div>
-      <p className="muted settings-sub">{hint}</p>
+    <section className={`settings-content settings-embedded${open ? '' : ' hidden'}`} id="agent-dialog" aria-labelledby="agent-title">
+      <div className="modal-head">
+        <h2 id="agent-title">Agent 团队</h2>
+        <button className="btn ghost" id="agent-close" type="button" aria-label="关闭 Agent 团队">✕</button>
+      </div>
+      <div className="screening-default-setting">
+        <label htmlFor="new-agent-team">新筛选默认团队</label>
+        <select id="new-agent-team" className="input"><option value="builtin@1.0.0">内置团队</option></select>
+        <p className="muted">选择后自动保存，用于之后新建的筛选；已有任务保持原团队。</p>
+      </div>
+      <div className="agent-onboarding">
+        <b>自定义 Agent：三步完成</b>
+        <p>① 创建角色，写清职责　② 发布并启用　③ 配置到团队，在新会话中使用</p>
+        <button id="agent-open-guide" className="btn ghost" type="button">查看操作指南</button>
+      </div>
+      <nav className="help-nav" aria-label="Agent 管理分类">
+        <button className="active" data-agent-tab="roles" type="button">我的角色</button>
+        <button data-agent-tab="editor" type="button">创建与编辑</button>
+        <button data-agent-tab="teams" type="button">团队配置</button>
+        <button data-agent-tab="runs" type="button">任务绑定</button>
+      </nav>
+      <section data-agent-section="roles">
+        <details>
+          <summary>按能力发现与配置导入（高级）</summary>
+          <div className="memory-family-row">
+            <input id="agent-capability-filter" className="input" placeholder="能力，如 resume.assess@1" aria-label="按能力发现" />
+            <button id="agent-search" className="btn" type="button">发现</button>
+            <button id="agent-import-preview" className="btn ghost" type="button">配置导入预览</button>
+          </div>
+          <div id="agent-discovery" />
+        </details>
+        <div id="agent-version-list" />
+        <div id="agent-imports" />
+      </section>
+      <section data-agent-section="editor" className="hidden" />
+      <section data-agent-section="teams" className="hidden" />
+      <section data-agent-section="runs" className="hidden"><pre id="agent-manifest" className="approval-preview" /></section>
+      <p id="agent-status" className="settings-status" role="status" />
+    </section>
+  );
+}
+
+/** 岗位与评分标准：结构与 #memory-dialog 一致；版本/提案数据绑定尚未接。 */
+function MemorySection({ open }: { open: boolean }): ReactElement {
+  return (
+    <section className={`settings-content settings-embedded${open ? '' : ' hidden'}`} id="memory-dialog" aria-labelledby="memory-title">
+      <div className="modal-head">
+        <h2 id="memory-title">岗位与评分标准</h2>
+        <button className="btn ghost" id="memory-close" type="button" aria-label="关闭岗位与评分标准">✕</button>
+      </div>
+      <div className="screening-default-setting">
+        <label htmlFor="new-policy-version">新筛选默认评分标准</label>
+        <select id="new-policy-version" className="input"><option value="">按本次需求生成</option></select>
+        <p className="muted">选择后自动保存，用于之后新建的筛选；仅可选择已批准且有效的标准，已有任务保持原评分卡。</p>
+      </div>
+      <p className="muted">跨任务复用经过人工批准的评价标准。新版本只供新任务选择，已有任务保持原快照。</p>
+      <div className="memory-family-row">
+        <select id="memory-family" className="input" aria-label="岗位族" />
+        <input id="memory-family-name" className="input" placeholder="新岗位族名称" maxLength={100} />
+        <button className="btn" id="memory-family-create" type="button">创建岗位族</button>
+      </div>
+      <nav className="help-nav" aria-label="记忆管理分类">
+        <button type="button" data-memory-tab="versions" className="active">版本历史</button>
+        <button type="button" data-memory-tab="proposals">提案与审批</button>
+        <button type="button" data-memory-tab="create">创建修订提案</button>
+        <button type="button" data-memory-tab="job">当前任务记忆</button>
+      </nav>
+      <section data-memory-section="versions"><div id="memory-versions" /></section>
+      <section data-memory-section="proposals" className="hidden"><div id="memory-proposals" /></section>
+      <section data-memory-section="create" className="hidden" />
+      <section data-memory-section="job" className="hidden"><pre id="memory-job-view" className="approval-preview" /></section>
+      <p id="memory-status" className="settings-status" role="status" />
     </section>
   );
 }
@@ -186,8 +256,8 @@ export function SettingsModal(): ReactElement {
               <div className="modal-head"><h2>插件</h2><button className="btn ghost" id="plugins-close">✕</button></div>
             </section>
           )}
-          <PlaceholderSection id="settings-agents" title="Agent 团队" closeId="agent-close" hint="Agent 团队配置。" />
-          <PlaceholderSection id="settings-memory" title="岗位与评分标准" closeId="memory-close" hint="岗位与评分标准配置。" />
+          <AgentsSection open={open && tab === 'agents'} />
+          <MemorySection open={open && tab === 'memory'} />
         </div>
       </div>
     </div>
