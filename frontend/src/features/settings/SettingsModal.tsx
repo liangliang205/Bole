@@ -40,38 +40,53 @@ interface McpPlugin {
 
 const readValue = (id: string): string => (document.getElementById(id) as HTMLInputElement | null)?.value?.trim() ?? '';
 
-/** 模型页：提供商列表 + 添加表单（含连接测试）。 */
+/** 模型页：提供商列表 + 新增/编辑/测试/删除 + 模型发现。 */
 function ModelsSection({ open }: { open: boolean }): ReactElement {
   const close = useUiStore((state) => state.closeSettings);
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
+  const [editor, setEditor] = useState<{ mode: 'create' | 'edit'; provider?: Provider } | null>(null);
+  const [discovered, setDiscovered] = useState<string[]>([]);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['providers'],
-    queryFn: async () => (await api<{ providers?: Provider[] }>('/api/providers')).providers ?? [],
+    queryFn: async () => (await api<{ providers?: Provider[]; active?: string }>('/api/providers')).providers ?? [],
     staleTime: 5_000,
   });
   const providers = data ?? [];
 
-  const testProvider = async (): Promise<void> => {
+  const refresh = async (): Promise<void> => {
+    await queryClient.invalidateQueries({ queryKey: ['providers'] });
+  };
+
+  const testConnection = async (providerId?: string): Promise<void> => {
     setBusy(true);
     try {
-      const result = await api<{ models?: { id: string }[] }>('/api/providers/discover-models', {
+      const result = await api<{ models?: { id: string }[]; endpoint?: string }>('/api/providers/discover-models', {
         method: 'POST',
         body: JSON.stringify({
           baseUrl: readValue('provider-base'),
           api: readValue('provider-api') || 'openai-chat',
           apiKey: readValue('provider-key') || undefined,
+          providerId,
         }),
       });
-      setStatus(`连接正常，发现 ${result.models?.length ?? 0} 个模型`);
+      const models = (result.models ?? []).map((item) => item.id);
+      setDiscovered(models);
+      setStatus(`连接正常，发现 ${models.length} 个模型${result.endpoint ? `（${result.endpoint}）` : ''}`);
     } catch (error) {
+      setDiscovered([]);
       setStatus(`连接失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  const pickModel = (target: 'flash' | 'pro', modelId: string): void => {
+    const input = document.getElementById(target === 'flash' ? 'provider-flash' : 'provider-pro') as HTMLInputElement | null;
+    if (input) input.value = modelId;
+    setStatus(`已把 ${modelId} 填为${target === 'flash' ? '快速' : '深入'}模型`);
   };
 
   const saveProvider = async (): Promise<void> => {
@@ -83,23 +98,43 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
     }
     setBusy(true);
     try {
-      await api('/api/providers', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: readValue('provider-id') || undefined,
-          name,
-          baseUrl,
-          api: readValue('provider-api') || 'openai-chat',
-          flashModel: readValue('provider-flash'),
-          proModel: readValue('provider-pro'),
-          apiKey: readValue('provider-key') || undefined,
-        }),
-      });
-      setStatus('提供商已保存。');
-      setEditing(false);
-      await queryClient.invalidateQueries({ queryKey: ['providers'] });
+      const payload = {
+        name,
+        baseUrl,
+        api: readValue('provider-api') || 'openai-chat',
+        flashModel: readValue('provider-flash'),
+        proModel: readValue('provider-pro'),
+        apiKey: readValue('provider-key') || undefined,
+      };
+      if (editor?.mode === 'edit' && editor.provider) {
+        await api(`/api/providers/${encodeURIComponent(editor.provider.id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+        setStatus('提供商已更新。');
+      } else {
+        await api('/api/providers', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, id: readValue('provider-id') || undefined }),
+        });
+        setStatus('提供商已创建。');
+      }
+      setEditor(null);
+      setDiscovered([]);
+      await refresh();
     } catch (error) {
       setStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeProvider = async (provider: Provider): Promise<void> => {
+    if (!window.confirm(`删除提供商「${provider.name || provider.id}」？使用它的会话将无法继续调用模型。`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/providers/${encodeURIComponent(provider.id)}`, { method: 'DELETE' });
+      setStatus(`已删除 ${provider.name || provider.id}。`);
+      await refresh();
+    } catch (error) {
+      setStatus(`删除失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setBusy(false);
     }
@@ -110,35 +145,61 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
       <div className="modal-head"><h2>模型</h2><button className="btn ghost" id="settings-close" onClick={close}>✕</button></div>
       <div className="settings-toolbar">
         <span className="muted" id="provider-count">{providers.length > 0 ? `${providers.length} 个提供商` : ''}</span>
-        <button className="btn primary" id="provider-add" onClick={() => setEditing((value) => !value)}>＋ 添加模型提供商</button>
+        <button
+          className="btn primary"
+          id="provider-add"
+          onClick={() => { setEditor({ mode: 'create' }); setDiscovered([]); setStatus(''); }}
+        >
+          ＋ 添加模型提供商
+        </button>
       </div>
-      {editing ? (
+
+      {editor ? (
         <div id="provider-editor" className="provider-editor">
-          <h3>添加模型提供商</h3>
+          <h3>{editor.mode === 'edit' ? `编辑 ${editor.provider?.name || editor.provider?.id}` : '添加模型提供商'}</h3>
           <div className="form-grid">
-            <label>Provider ID<input id="provider-id" className="input" placeholder="acme-gateway" /></label>
-            <label>显示名称<input id="provider-name" className="input" placeholder="例如 acme-gateway" /></label>
-            <label className="span-2">API 地址<input id="provider-base" className="input" placeholder="https://gateway.example/v1" /></label>
+            {editor.mode === 'create' ? (
+              <label>Provider ID<input id="provider-id" className="input" placeholder="acme-gateway" /></label>
+            ) : null}
+            <label>显示名称<input id="provider-name" className="input" placeholder="例如 acme-gateway" defaultValue={editor.provider?.name ?? ''} /></label>
+            <label className="span-2">API 地址<input id="provider-base" className="input" placeholder="https://gateway.example/v1" defaultValue={editor.provider?.baseUrl ?? ''} /></label>
             <label>API 协议
-              <select id="provider-api" className="input" defaultValue="openai-chat">
+              <select id="provider-api" className="input" defaultValue={editor.provider?.api ?? 'openai-chat'}>
                 <option value="openai-chat">OpenAI Chat Completions</option>
                 <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic-messages">Anthropic Messages</option>
               </select>
             </label>
-            <label className="span-2">API 密钥<input id="provider-key" className="input" type="password" placeholder="输入 API 密钥" /></label>
-            <label>Flash 模型<input id="provider-flash" className="input" placeholder="deepseek-v4-flash" /></label>
-            <label>Pro 模型<input id="provider-pro" className="input" placeholder="deepseek-v4-pro" /></label>
+            <label className="span-2">API 密钥<input id="provider-key" className="input" type="password" placeholder={editor.mode === 'edit' ? '留空保留已保存密钥' : '输入 API 密钥'} /></label>
+            <label>Flash 模型<input id="provider-flash" className="input" placeholder="deepseek-v4-flash" defaultValue={editor.provider?.flashModel ?? ''} /></label>
+            <label>Pro 模型<input id="provider-pro" className="input" placeholder="deepseek-v4-pro" defaultValue={editor.provider?.proModel ?? ''} /></label>
           </div>
+          {discovered.length > 0 ? (
+            <div id="model-directory" className="model-directory">
+              <p className="muted">发现 {discovered.length} 个模型，点击填入：</p>
+              <div className="model-list">
+                {discovered.map((modelId) => (
+                  <span className="model-row" key={modelId}>
+                    <code>{modelId}</code>
+                    <button className="link-btn" type="button" onClick={() => pickModel('flash', modelId)}>作快速</button>
+                    <button className="link-btn" type="button" onClick={() => pickModel('pro', modelId)}>作深入</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="settings-status" role="status">{status}</div>
           <div className="modal-actions">
-            <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testProvider(); }}>测试连接</button>
+            <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testConnection(editor.provider?.id); }}>测试连接</button>
             <span className="spacer" />
-            <button className="btn ghost" type="button" onClick={() => setEditing(false)}>取消</button>
-            <button className="btn primary" type="button" disabled={busy} onClick={() => { void saveProvider(); }}>创建提供商</button>
+            <button className="btn ghost" type="button" onClick={() => { setEditor(null); setDiscovered([]); }}>取消</button>
+            <button className="btn primary" type="button" disabled={busy} onClick={() => { void saveProvider(); }}>
+              {editor.mode === 'edit' ? '保存修改' : '创建提供商'}
+            </button>
           </div>
         </div>
       ) : null}
+
       <div id="provider-list" className="provider-list">
         {isLoading ? <div className="provider-empty">读取中…</div>
           : providers.length === 0 ? <div className="provider-empty">还没有配置模型提供商。点上方「添加模型提供商」开始。</div>
@@ -146,15 +207,25 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
               <div className={`provider-card${provider.builtin ? ' active' : ''}`} key={provider.id} data-provider={provider.id}>
                 <div className="provider-main">
                   <span className="provider-name">{provider.name || provider.id}</span>
-                  <span className="provider-meta">{provider.api || ''}{provider.builtin ? ' · 内置' : ''}{provider.baseUrl ? ` · ${provider.baseUrl}` : ''}</span>
+                  <span className="provider-meta">
+                    {provider.api || ''}{provider.builtin ? ' · 内置' : ''}{provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
+                  </span>
                 </div>
                 <div className="provider-models">
-                  <span>{provider.flashModel || '—'}</span>
-                  <span>{provider.proModel || '—'}</span>
+                  <span>快速 {provider.flashModel || '—'}</span>
+                  <span>深入 {provider.proModel || '—'}</span>
+                </div>
+                <div className="provider-actions">
+                  <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testConnection(provider.id); }}>测试</button>
+                  <button className="btn ghost" type="button" onClick={() => { setEditor({ mode: 'edit', provider }); setDiscovered([]); setStatus(''); }}>编辑</button>
+                  {provider.builtin ? null : (
+                    <button className="btn ghost danger-text" type="button" disabled={busy} onClick={() => { void removeProvider(provider); }}>删除</button>
+                  )}
                 </div>
               </div>
             ))}
       </div>
+      {editor ? null : <div className="settings-status" role="status">{status}</div>}
     </section>
   );
 }
