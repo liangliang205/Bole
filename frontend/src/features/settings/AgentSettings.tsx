@@ -75,6 +75,7 @@ export function AgentsPanel(): ReactElement {
   const queryClient = useQueryClient();
   const [draftStatus, setDraftStatus] = useState('');
   const [teamStatus, setTeamStatus] = useState('');
+  const [lastRetired, setLastRetired] = useState<{ agentId: string; version: string } | null>(null);
   const [teamBusy, setTeamBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const agents = useQuery({
@@ -157,6 +158,38 @@ export function AgentsPanel(): ReactElement {
     };
   };
 
+  /** 退役一个已发布的角色版本；团队不能引用已退役版本。 */
+  const retireVersion = async (agentId: string, version: string): Promise<void> => {
+    if (!window.confirm(`确定退役 ${agentId}@${version}？已引用该版本的团队将无法再新建会话。`)) return;
+    setDraftStatus('');
+    try {
+      await api(`/api/agents/${encodeURIComponent(agentId)}/versions/${encodeURIComponent(version)}/retire`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setLastRetired({ agentId, version });
+      setDraftStatus(`${agentId}@${version} 已退役；点「撤销退役」可立即恢复。`);
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (error) {
+      setDraftStatus(`退役失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  /** 撤销退役：把版本恢复成已发布，并把活动版本指针放回原位。 */
+  const restoreVersion = async (agentId: string, version: string): Promise<void> => {
+    try {
+      await api(`/api/agents/${encodeURIComponent(agentId)}/versions/${encodeURIComponent(version)}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setLastRetired(null);
+      setDraftStatus(`${agentId}@${version} 已恢复。`);
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (error) {
+      setDraftStatus(`恢复失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   /** 保存草稿；publish 为真时再调用 register 发布并启用。 */
   const saveAgent = async (publish: boolean): Promise<void> => {
     const name = (document.getElementById('agent-name') as HTMLInputElement | null)?.value.trim() ?? '';
@@ -231,6 +264,15 @@ export function AgentsPanel(): ReactElement {
           <button className="btn" type="button" disabled={busy} onClick={() => { void saveAgent(false); }}>保存草稿</button>
           <button className="btn primary" type="button" disabled={busy} onClick={() => { void saveAgent(true); }}>发布并启用</button>
           <span className="settings-status" role="status">{draftStatus}</span>
+          {lastRetired ? (
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => { void restoreVersion(lastRetired.agentId, lastRetired.version); }}
+            >
+              撤销退役 {lastRetired.agentId}@{lastRetired.version}
+            </button>
+          ) : null}
         </div>
         <p className="muted">契约与能力来自所选模板；发布后需在团队配置里挂到槽位，新会话才会用到。</p>
       </details>
@@ -242,7 +284,7 @@ export function AgentsPanel(): ReactElement {
               : (
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>角色</th><th>版本</th><th>状态</th><th>档位</th></tr></thead>
+                    <thead><tr><th>角色</th><th>版本</th><th>状态</th><th>档位</th><th /></tr></thead>
                     <tbody>
                       {versions.map((version) => {
                         const definition = parseDefinition(version.definition_json);
@@ -255,6 +297,13 @@ export function AgentsPanel(): ReactElement {
                             <td><span className="tag">{version.agent_id}@{version.version}</span></td>
                             <td><span className={`tag ${version.status === 'registered' ? 'ok' : version.status === 'retired' ? 'danger' : ''}`}>{STATUS_LABEL[version.status ?? ''] ?? version.status ?? ''}</span></td>
                             <td>{definition.tier ?? ''}</td>
+                            <td>
+                              {version.status === 'registered' ? (
+                                <button className="btn ghost danger-text" type="button" onClick={() => { void retireVersion(version.agent_id, version.version); }}>退役</button>
+                              ) : version.status === 'retired' ? (
+                                <button className="btn ghost" type="button" onClick={() => { void restoreVersion(version.agent_id, version.version); }}>恢复</button>
+                              ) : null}
+                            </td>
                           </tr>
                         );
                       })}

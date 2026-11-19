@@ -27,7 +27,19 @@ export async function setupTempEnv(): Promise<TempEnv> {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      await rm(dir, { recursive: true, force: true });
+      // Windows 上 SQLite 关闭后 WAL 文件仍可能被短暂占用（杀软/索引器），
+      // 直接 rm 会 EBUSY 让测试假失败。重试几次再放弃。
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          await rm(dir, { recursive: true, force: true });
+          return;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== 'EBUSY' && code !== 'EPERM') throw error;
+          if (attempt === 5) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+        }
+      }
     },
   };
 }

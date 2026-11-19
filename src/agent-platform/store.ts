@@ -85,6 +85,21 @@ export class AgentStore {
       this.ledger.appendEvent(null, 'HR', 'agent.retired', { key });
     });
   }
+
+  /**
+   * 撤销退役：把版本恢复成 registered，并把被清空的活动版本指针放回去。
+   * 只对 retired 生效；恢复不会自动改团队绑定，团队仍按原绑定解析。
+   */
+  restore(key: string): void {
+    this.transaction(() => {
+      const version = this.get(key);
+      if (version.status !== 'retired') throw new Error('只有已退役的版本可以恢复');
+      this.ledger.db.prepare("UPDATE agent_versions SET status='registered' WHERE version_key=?").run(key);
+      this.ledger.db.prepare("UPDATE agent_active_versions SET version_key=?,revision=revision+1 WHERE agent_id=? AND version_key IS NULL")
+        .run(key, version.agent_id);
+      this.ledger.appendEvent(null, 'HR', 'agent.restored', { key });
+    });
+  }
   discover(query: DiscoveryQuery = {}) {
     const active = new Set(this.active().map((r) => r.version_key));
     return this.versions().filter((v) => active.has(v.version_key)).map((v) => {

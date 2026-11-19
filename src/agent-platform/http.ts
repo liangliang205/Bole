@@ -40,6 +40,8 @@ export function agentRoute(ledger: Ledger, method: string, pathname: string, bod
   if (versions && method === 'GET') return { versions: store.versions().filter((v) => v.agent_id === decodeURIComponent(versions[1])) };
   const state = /^\/api\/agents\/([^/]+)\/versions\/([^/]+)\/retire$/.exec(pathname);
   if (state && method === 'POST') { store.retire(`${decodeURIComponent(state[1])}@${decodeURIComponent(state[2])}`); return { updated: true }; }
+  const restore = /^\/api\/agents\/([^/]+)\/versions\/([^/]+)\/restore$/.exec(pathname);
+  if (restore && method === 'POST') { store.restore(`${decodeURIComponent(restore[1])}@${decodeURIComponent(restore[2])}`); return { updated: true }; }
   if (pathname === '/api/agent-teams' && method === 'GET') return { teams: store.teams() };
   if (pathname === '/api/agent-teams' && method === 'POST') return { team: store.registerTeam(body.definition) };
   const manifest = /^\/api\/run\/([^/]+)\/agent-manifest$/.exec(pathname);
