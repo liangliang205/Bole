@@ -1,4 +1,4 @@
-# 架构
+﻿# 架构
 
 ## 1. 设计原则
 
@@ -139,5 +139,5 @@
 | MCP 插件 | `src/mcp/*` |
 | 完成后对话 / 面试 skill | `src/chat/{orchestrator,tier,context,service,interview-skill}.ts`、`src/tools/tools-call.ts` |
 | 报告 | `src/report/{builder,render}.ts` |
-| Web/SSE | `src/web/{server,data,ops}.ts`、`src/web/public/*` |
+| Web/SSE | `src/web/{server,data,ops}.ts`；前端产物在 `frontend/`（React + Vite） |
 | 测试 | `tests/unit/*`、`tests/integration/*`、`tests/fixtures/*` |
