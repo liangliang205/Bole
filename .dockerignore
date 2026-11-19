@@ -11,5 +11,14 @@
 !scripts/download-ocr.ts
 !scripts/serve.ts
 !scripts/healthcheck.mjs
+# 前端构建阶段只需要源码与构建配置；node_modules / dist 由构建期生成
+!frontend/
+!frontend/package.json
+!frontend/pnpm-lock.yaml
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/src/
+!frontend/src/**
 config/mcp.json
 config/**/.env*

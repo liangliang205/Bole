@@ -39,6 +39,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 前端产物不进 git：先构建一次，集成测试才能验证真实的服务端输出，
+      # 同时让前端编译失败在 CI 里直接暴露。
+      - name: Build frontend
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend build
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -47,3 +54,5 @@ jobs:
 
       - name: Test
         run: pnpm test:all
+
+    

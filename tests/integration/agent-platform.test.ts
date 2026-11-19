@@ -14,6 +14,7 @@ import type { LlmProvider, ProviderResult } from '../../src/llm/provider.ts';
 import { startWebServer } from '../../src/web/server.ts';
 import { Ledger } from '../../src/core/ledger.ts';
 import { chatWithJob } from '../../src/chat/service.ts';
+import { assertFrontendEntry } from '../helpers/frontend.ts';
 
 const resumeText = '姓名：张伟\n工作年限：5年\n技能：Java、Spring Boot、MySQL\n项目：负责支付系统，优化接口性能。';
 
@@ -108,14 +109,13 @@ test('HTTP 动态注册无需重启：草稿、发现、激活、退役及管理
     assert.equal((await api('/api/agents?capabilitiesAll=resume.specialist-check%401')).discovery.filter((d) => d.eligible).length, 1);
     await api('/api/agents/qualification-checker/versions/1.0.0/retire', {});
     assert.equal((await api('/api/agents?capabilitiesAll=resume.specialist-check%401')).discovery.filter((d) => d.eligible).length, 0);
-    assert.equal((await fetch(base + '/agent-ui.js')).status, 200);
+    // 旧的前端脚本已随前端迁移移除，只保留 SPA 挂载点
+    assert.equal((await fetch(base + '/agent-ui.js')).status, 404);
     const doctor = await api('/api/doctor');
     assert.match(doctor.checks.find((check) => check.name === '动态 Agent 注册表')!.detail, /7 个已注册版本/);
     const html = await (await fetch(base + '/')).text();
-    assert.doesNotMatch(html, /id="settings-tools"/);
-    assert.match(html, /id="agent-environment-check"/);
-    assert.doesNotMatch(html, /data-agent-tab="trial"|id="agent-trial-run"/);
-    assert.match(html, /data-drawer-tab="workflow"/);
+    // 前端已迁到 React 产物：首页只保留挂载点
+    assertFrontendEntry(html);
     assert.equal((await fetch(base + '/api/agent-invocations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
     const ledger = new Ledger(process.env.BOLE_DB!);
     assert.equal(new AgentStore(ledger).get('qualification-checker@1.0.0').status, 'retired');

@@ -20,6 +20,10 @@ export default tseslint.config(
       '.trash/**',
       'coverage/**',
       'pnpm-lock.yaml',
+      // 独立子包：各自有自己的 tsconfig 与工具链，根配置的 projectService 覆盖不到它们
+      'frontend/**',
+      'desktop/**',
+      '.superpowers/**',
     ],
   },
 

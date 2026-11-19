@@ -1,0 +1,48 @@
+:root,
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eeeeea;
+  --main: #f7f7f3;
+  --sidebar: #eaeae5;
+  --surface: #ffffff;
+  --surface-2: #f1f1ec;
+  --surface-3: #e4e4de;
+  --line: #e3e3dc;
+  --line-strong: #d6d6ce;
+  --line-soft: #ececE6;
+  --text: #161614;
+  --muted: #5f5f58;
+  --dim: #8b8b83;
+  --accent: #161612;
+  --accent-contrast: #ffffff;
+  --accent-hover: #000000;
+  --input: #f2f2ed;
+  --chat-user: #efefe9;
+  --card: #ffffff;
+  --drawer: #f2f2ee;
+  --modal: #fbfbf8;
+  --hero: linear-gradient(155deg, #ffffff 0%, #f4f4ee 100%);
+  --shadow: 0 24px 70px rgba(20, 20, 15, .10);
+  --shadow-soft: 0 10px 30px rgba(20, 20, 15, .06);
+  --topbar-bg: var(--main);
+  --topbar-shadow: 0 8px 18px -10px rgba(20, 20, 15, .2);
+  --glow-1: rgba(0, 0, 0, .03);
+  --glow-2: rgba(0, 0, 0, .015);
+  --ok: #146c43;
+  --ok-bg: #e9f7ef;
+  --ok-line: #b7e4c7;
+  --warn: #8a5a00;
+  --warn-bg: #fff5e0;
+  --warn-line: #efd39a;
+  --danger: #a1242b;
+  --danger-bg: #fdecee;
+  --danger-line: #f0b6bc;
+  --info: #33332f;
+  --info-bg: #f1f1ed;
+  --info-line: #deded8;
+  --tag-bg: #f1f1ed;
+  --tag-text: #55554f;
+  --tag-line: #deded8;
+  --bar: linear-gradient(90deg, #111111, #777777);
+  --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}

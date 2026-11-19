@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import { startWebServer } from '../../src/web/server.ts';
 import { setupTempEnv } from '../helpers/env.ts';
 import type { JobFamily, PolicyProposal, PolicyVersion } from '../../src/memory/types.ts';
+import { assertFrontendEntry } from '../helpers/frontend.ts';
 
 test('隔离 HTTP 服务：提案先隔离、人工发布、重复批准幂等、退役和前端入口可访问', async () => {
   const env = await setupTempEnv();
@@ -38,10 +39,9 @@ test('隔离 HTTP 服务：提案先隔离、人工发布、重复批准幂等�
     await api(`/api/memory/versions/${published.version.id}/retire`, {});
     assert.equal((await api('/api/memory')).versions[0].status, 'retired');
     const page = await fetch(base + '/');
-    assert.match(await page.text(), /data-settings-tab="memory"/);
-    const script = await fetch(base + '/memory-ui.js');
-    assert.equal(script.status, 200);
-    assert.match(await script.text(), /memory-proposals/);
+    // 前端已迁到 React 产物：首页只保留挂载点，旧脚本不再提供
+    assertFrontendEntry(await page.text());
+    assert.equal((await fetch(base + '/memory-ui.js')).status, 404);
   } finally {
     if (server) await new Promise<void>((resolve, reject) => { server!.close((error) => error ? reject(error) : resolve()); server!.closeAllConnections(); });
     if (oldMcp === undefined) delete process.env.BOLE_MCP_CONFIG; else process.env.BOLE_MCP_CONFIG = oldMcp;
