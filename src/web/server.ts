@@ -183,16 +183,42 @@ function readReport(jobId: string): Record<string, unknown> | null {
   }
 }
 
-const PUBLIC_DIR = path.join(import.meta.dirname, 'public');
-const STATIC_FILES: Record<string, { file: string; type: string }> = {
-  '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
-  '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
-  '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
-  '/memory-ui.js': { file: 'memory-ui.js', type: 'text/javascript; charset=utf-8' },
-  '/agent-ui.js': { file: 'agent-ui.js', type: 'text/javascript; charset=utf-8' },
-  '/skill-ui.js': { file: 'skill-ui.js', type: 'text/javascript; charset=utf-8' },
-  '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
+/**
+ * 前端产物目录：默认是 Vite 的 dist，可用 BOLE_WEB_DIR 覆盖。
+ * 必须是函数——测试单进程运行，模块级常量会把第一次读到的环境固化。
+ */
+function staticDir(): string {
+  const override = process.env.BOLE_WEB_DIR?.trim();
+  return override ? path.resolve(override) : path.join(import.meta.dirname, '..', '..', 'frontend', 'dist');
+}
+
+const ASSET_TYPES: Record<string, string> = {
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json; charset=utf-8',
 };
+
+/** 只允许 /assets/<文件名> 这一层，杜绝路径穿越。 */
+function resolveAsset(pathname: string): string | null {
+  const match = /^\/assets\/([A-Za-z0-9._-]+)$/.exec(pathname);
+  if (!match) return null;
+  const dir = path.join(staticDir(), 'assets');
+  const full = path.join(dir, match[1]);
+  if (!full.startsWith(dir + path.sep)) return null;
+  return existsSync(full) ? full : null;
+}
+
 const PDFJS_DIR = path.join(import.meta.dirname, '..', '..', 'node_modules', 'pdfjs-dist', 'build');
 const PDFJS_FILES: Record<string, string> = {
   '/vendor/pdfjs/pdf.min.mjs': 'pdf.min.mjs',
@@ -509,14 +535,21 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         return;
       }
 
-      const staticFile = STATIC_FILES[pathname];
-      if (method === 'GET' && staticFile) {
-        const full = path.join(PUBLIC_DIR, staticFile.file);
-        if (!existsSync(full)) {
-          text(res, 500, `缺少前端资源：${staticFile.file}`);
+      if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
+        const indexFile = path.join(staticDir(), 'index.html');
+        if (!existsSync(indexFile)) {
+          text(res, 500, `缺少前端产物：${indexFile}。请先运行 pnpm web:build（或让 BOLE_WEB_DIR 指向含有 index.html 的目录）。`);
           return;
         }
-        text(res, 200, readFileSync(full, 'utf8'), staticFile.type);
+        text(res, 200, readFileSync(indexFile, 'utf8'), 'text/html; charset=utf-8');
+        return;
+      }
+      if (method === 'GET' && pathname.startsWith('/assets/')) {
+        const assetFile = resolveAsset(pathname);
+        if (!assetFile) { text(res, 404, 'not found'); return; }
+        const type = ASSET_TYPES[path.extname(assetFile).toLowerCase()] ?? 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=31536000, immutable' });
+        res.end(readFileSync(assetFile));
         return;
       }
       if (method === 'GET' && pathname === '/favicon.ico') {

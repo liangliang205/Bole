@@ -340,3 +340,17 @@ CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：每次 push / PR
 - 外接 MCP 只在「完成后对话」生效；筛选流水线不调用外部工具，避免第三方延迟/故障进入批次关键路径。MCP 服务的权限等同当前用户，接入前需自行评估。
 - 单机单用户、loopback 默认监听；没有多租户与登录鉴权，公网部署前必须加反向代理与鉴权。各提供商 Key 由服务端加密持久化在 `data/providers.json`，请保护数据目录权限。
 - 真实模型质量取决于当前选择的提供商和模型；温度=0 仍可能有波动，尚未完成真实模型质量 A/B 评测。详见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。
+
+## 前端（React）
+
+前端在 `frontend/`，由 Vite 构建；服务端只负责在 `/` 与 `/assets/*` 下提供 `frontend/dist`。
+
+```bash
+pnpm web:build     # 构建前端产物（首次运行 pnpm web 前必须执行一次）
+pnpm web           # 起服务端；缺产物时会返回 500 并提示先构建
+pnpm --dir frontend dev   # 前端开发模式，:5173，/api 代理到 :8787
+```
+
+- 产物目录可用 `BOLE_WEB_DIR` 覆盖（Docker 镜像里构建后拷到 `/app/frontend/dist`）。
+- `src/web/public/styles.css` 仅作为样式审计的对照原件保留，不再被服务端引用。
+- 样式审计：`node frontend/scripts/audit-styles.mjs`，要求与原件 563 条规则逐条一致。

@@ -25,7 +25,8 @@
     "ocr:download": "node scripts/download-ocr.ts",
     "report:cost": "node src/cli/index.ts cost",
     "setup": "pnpm install && pnpm ocr:download",
-    "reset": "node src/cli/index.ts reset"
+    "reset": "node src/cli/index.ts reset",
+    "web:build": "pnpm --dir frontend build"
   },
   "dependencies": {
     "@deepseek-ai/dsh-tool-workspace-dependencies": "0.1.7-alpha.1",

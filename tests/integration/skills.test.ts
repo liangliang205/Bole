@@ -79,8 +79,9 @@ test('插件页 Skill HTTP 生命周期：预览、安装、编辑、启停、�
     assert.equal((await api('/api/skills/project-evidence', 'PATCH', { enabled: true, revision: 1 })).status, 400);
     assert.equal((await api('/api/skills', 'POST', { id: 'bad', name: 'bad', content: 'x', roles: [] })).status, 400);
     assert.equal((await api('/api/skills/preview', 'POST', { path: path.join(env.dir, 'missing') })).status, 400);
-    assert.match(await (await fetch(base + '/')).text(), /id="skill-add"/);
-    assert.equal((await fetch(base + '/skill-ui.js')).status, 200);
+    // 前端已迁到 React 产物：首页只保留挂载点，静态资源走 /assets/*
+    assert.match(await (await fetch(base + '/')).text(), /id="root"/);
+    assert.equal((await fetch(base + '/app.js')).status, 404);
     assert.equal((await api('/api/mcp/plugins')).status, 200);
     assert.equal((await api('/api/skills/project-evidence', 'DELETE')).skills.length, 0);
   } finally {

@@ -11,12 +11,22 @@ COPY scripts/download-ocr.ts ./scripts/download-ocr.ts
 ENV BOLE_OCR_DIR=/app/ocr
 RUN node scripts/download-ocr.ts
 
+# 前端产物：Vite 构建后由服务端在 / 与 /assets/* 下提供
+FROM ${NODE_IMAGE} AS web
+WORKDIR /app/frontend
+RUN npm install --global pnpm@10.25.0
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --store-dir /pnpm/store
+COPY frontend ./
+RUN pnpm build
+
 FROM ${NODE_IMAGE} AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git python3 fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production NO_COLOR=1 HOME=/app/data/home BOLE_DATA_DIR=/app/data BOLE_RUNS=/app/runs BOLE_OCR_DIR=/app/ocr npm_config_cache=/app/data/npm-cache AGENTLY_CLI_CONFIG_DIR=/app/data/mail-auth BOLE_MAIL_WORKSPACE=codex
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/ocr ./ocr
+COPY --from=web /app/frontend/dist ./frontend/dist
 COPY package.json ./
 COPY src ./src
 COPY config ./config
