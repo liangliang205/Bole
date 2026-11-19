@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 对照配方：12 个状态。
  *
  * 约束（来自 Global Constraints）：
@@ -22,8 +22,11 @@ export const states = [
     ],
   },
   {
+    // 只比 F2 的范围：侧栏 + 对话列。旧版选中会话会自动展开右侧抽屉，抽屉属 F3，
+    // 这里用 clip 裁掉右侧面板，避免把 F3 的未实现算成 F2 的视觉回归。
     name: '02-chat-default',
     batch: 'f2',
+    clip: { x: 0, y: 0, width: 920, height: 900 },
     steps: [{ waitFor: '#chat-view:not(.hidden)' }, { waitMs: 800 }],
   },
   {

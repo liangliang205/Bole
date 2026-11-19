@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { useJobs, jobTitle, formatJobTime, type JobSummary } from '../../api/jobs.ts';
 import { useUiStore } from '../../store/ui.ts';
@@ -62,6 +63,13 @@ export function Sidebar(): ReactElement {
     ? source.filter((job) => `${jobTitle(job)} ${job.requirements ?? ''}`.toLowerCase().includes(keyword))
     : source;
   const count = visible.length;
+
+  // 与旧实现一致：进页面自动选中第一个（未归档）会话
+  useEffect(() => {
+    if (activeJobId || !jobs || jobs.length === 0) return;
+    const first = jobs.find((job) => !job.archived);
+    if (first) setActiveJob(first.id);
+  }, [activeJobId, jobs, setActiveJob]);
 
   const emptyNote = showArchived
     ? '还没有归档会话'

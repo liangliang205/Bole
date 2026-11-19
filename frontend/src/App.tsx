@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Sidebar } from './features/sessions/Sidebar.tsx';
 import { EmptyView } from './features/new/EmptyView.tsx';
+import { ChatView } from './features/chat/ChatView.tsx';
 import { useUiStore } from './store/ui.ts';
 import { useWidthResizer } from './hooks/useWidthResizer.ts';
 
@@ -15,6 +16,7 @@ function contentBounds(): { min: number; max: number } {
 export function App(): ReactElement {
   const theme = useUiStore((state) => state.theme);
   const setTheme = useUiStore((state) => state.setTheme);
+  const activeJobId = useUiStore((state) => state.activeJobId);
   const isDark = theme === 'dark';
 
   const right = useWidthResizer({
@@ -76,8 +78,10 @@ export function App(): ReactElement {
           {...right}
         />
 
-        <EmptyView />
-        <section id="chat-view" className="chat-view hidden" />
+        <EmptyView hidden={Boolean(activeJobId)} />
+        {activeJobId
+          ? <ChatView jobId={activeJobId} hidden={false} />
+          : <section id="chat-view" className="chat-view hidden" />}
       </main>
     </div>
   );

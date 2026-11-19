@@ -7,13 +7,13 @@ const MODE_LABEL: Record<string, string> = { default: '默认模式', strict: '�
  * 新建会话页（hero + composer）。
  * 结构、id、类名与 index.html 的 #empty-view 逐字对齐；提交逻辑留给 F2。
  */
-export function EmptyView(): ReactElement {
+export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElement {
   const [modeOpen, setModeOpen] = useState(false);
   const [mode, setMode] = useState<'default' | 'strict'>('default');
   const [mailOpen, setMailOpen] = useState(false);
 
   return (
-    <section id="empty-view" className="empty-view">
+    <section id="empty-view" className={`empty-view${hidden ? ' hidden' : ''}`}>
       <div className="hero">
         <h1>今天想寻找什么样的人才？</h1>
         <p className="hero-copy">描述招聘需求，或直接告诉伯乐如何接入你的招聘邮箱。</p>

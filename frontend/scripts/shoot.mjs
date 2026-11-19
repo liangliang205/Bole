@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 截图对照工具。
  *
  *   node scripts/shoot.mjs --base http://127.0.0.1:8787 --out .shots/old
@@ -51,13 +51,25 @@ async function applySteps(page, steps) {
   }
 }
 
-async function shoot(page, base, state, file) {
-  await page.goto(base, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(400);
-  await applySteps(page, state.steps);
-  const buffer = await page.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' });
-  await writeFile(file, buffer);
-  return buffer;
+async function shoot(browser, base, state, file) {
+  // 每张图一个全新 context：localStorage / 选中会话 / 抽屉开合都不跨状态串味
+  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  try {
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(400);
+    await applySteps(page, state.steps);
+    const buffer = await page.screenshot({
+      fullPage: !state.clip,
+      clip: state.clip,
+      animations: 'disabled',
+      caret: 'hide',
+    });
+    await writeFile(file, buffer);
+    return buffer;
+  } finally {
+    await context.close();
+  }
 }
 
 async function diffPair(oldFile, newFile, diffFile) {
@@ -104,11 +116,10 @@ if (options.mode === 'baseline') {
     pairs.push({ state, baseFile, nextFile, diffFile });
   }
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   let failures = 0;
   for (const pair of pairs) {
     try {
-      await shoot(page, options.newBase, pair.state, pair.nextFile);
+      await shoot(browser, options.newBase, pair.state, pair.nextFile);
     } catch (error) {
       failures += 1;
       process.stdout.write(`FAIL ${pair.state.name}: ${String(error).split('\n')[0]}\n`);
@@ -126,7 +137,6 @@ if (options.mode === 'baseline') {
 }
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1, reducedMotion: 'reduce' });
 const shots = new Map();
 let failures = 0;
 
@@ -134,7 +144,7 @@ for (const state of runnable) {
   const suffix = options.mode === 'compare' ? '-old' : '';
   const file = path.join(options.out, `${state.name}${suffix}.png`);
   try {
-    await shoot(page, options.base, state, file);
+    await shoot(browser, options.base, state, file);
     shots.set(state.name, file);
     process.stdout.write(`SHOT ${state.name} -> ${file}\n`);
   } catch (error) {
@@ -150,7 +160,7 @@ if (options.mode === 'compare') {
     const nextFile = path.join(options.out, `${state.name}-new.png`);
     const diffFile = path.join(options.out, `${state.name}-diff.png`);
     try {
-      await shoot(page, options.newBase, state, nextFile);
+      await shoot(browser, options.newBase, state, nextFile);
     } catch (error) {
       failures += 1;
       process.stdout.write(`FAIL ${state.name} (new): ${String(error).split('\n')[0]}\n`);
