@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+﻿import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { api } from '../../api/client.ts';
@@ -51,6 +51,16 @@ interface KnowledgeStats {
   embeddedChunks?: number;
   embeddingDimensions?: number;
 }
+
+const AGENT_ROLES = [
+  { id: 'coordinator', label: '伯乐' },
+  { id: 'profiler', label: '画像师' },
+  { id: 'fetcher', label: '探马' },
+  { id: 'parser', label: '录事' },
+  { id: 'assessor', label: '相马官' },
+  { id: 'auditor', label: '监军' },
+  { id: 'advisor', label: '谋士' },
+];
 
 const DOC_STATUS_LABEL: Record<string, string> = {
   active: '已索引', parsing: '解析中', failed: '失败', pending: '待处理',
@@ -119,6 +129,10 @@ export function KnowledgeModal(): ReactElement {
   const fileInput = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const readValue = (id: string): string => (document.getElementById(id) as HTMLInputElement | null)?.value?.trim() ?? '';
+  const readChecked = (id: string): boolean => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
 
   const { data } = useQuery({
     queryKey: ['knowledge'],
@@ -180,6 +194,102 @@ export function KnowledgeModal(): ReactElement {
     }
   };
 
+  /** 收集 #kb-agent-roles 里被勾选的角色。 */
+  const selectedRoles = (): string[] => Array.from(
+    document.querySelectorAll<HTMLInputElement>('#kb-agent-roles input[type="checkbox"]:checked'),
+  ).map((input) => input.value);
+
+  const saveBase = async (): Promise<void> => {
+    if (!current) return;
+    setBusy(true);
+    try {
+      await api(`/api/knowledge/bases/${encodeURIComponent(current.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: readValue('kb-name'),
+          description: readValue('kb-description'),
+          enabled: readChecked('kb-enabled'),
+          agentRoles: selectedRoles(),
+        }),
+      });
+      setStatus('知识库已保存。');
+      await refresh();
+    } catch (error) {
+      setStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteBase = async (): Promise<void> => {
+    if (!current) return;
+    if (!window.confirm(`确定删除知识库「${current.name}」及其全部文档？该操作不可恢复。`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/knowledge/bases/${encodeURIComponent(current.id)}`, { method: 'DELETE' });
+      setSelectedId('');
+      setStatus('知识库已删除。');
+      await refresh();
+    } catch (error) {
+      setStatus(`删除失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createBase = async (): Promise<void> => {
+    const name = readValue('kb-new-name');
+    if (!name) {
+      setStatus('请先填写知识库名称。');
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await api<{ base: KnowledgeBase }>('/api/knowledge/bases', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setStatus('知识库已创建。');
+      await refresh();
+      if (created.base?.id) setSelectedId(created.base.id);
+    } catch (error) {
+      setStatus(`创建失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveSettings = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await api('/api/knowledge/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          embeddingProvider: readValue('kb-embedding-provider'),
+          embeddingModel: readValue('kb-embedding-model'),
+          embeddingBaseUrl: readValue('kb-embedding-url'),
+          rerankModel: readValue('kb-rerank-model'),
+          rerankBaseUrl: readValue('kb-rerank-url'),
+          topK: Number(readValue('kb-top-k')) || undefined,
+          chunkSize: Number(readValue('kb-chunk-size')) || undefined,
+          chunkOverlap: Number(readValue('kb-chunk-overlap')) || undefined,
+          maxContextChars: Number(readValue('kb-max-context')) || undefined,
+          autoRecall: readChecked('kb-auto-recall'),
+          smartChunk: readChecked('kb-smart-chunk'),
+          // 密钥留空表示保留已保存值，与原实现一致
+          ...(readValue('kb-embedding-key') ? { embeddingApiKey: readValue('kb-embedding-key') } : {}),
+          ...(readValue('kb-rerank-key') ? { rerankApiKey: readValue('kb-rerank-key') } : {}),
+        }),
+      });
+      setStatus('检索与嵌入设置已保存。');
+      await refresh();
+    } catch (error) {
+      setStatus(`保存设置失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div
       id="knowledge-modal"
@@ -199,12 +309,12 @@ export function KnowledgeModal(): ReactElement {
         </div>
         <div className="knowledge-layout">
           <aside className="knowledge-bases">
-            <button className="btn primary block" id="knowledge-new" type="button">＋ 新建知识库</button>
-            <div id="knowledge-create-form" className="knowledge-create hidden">
+            <button className="btn primary block" id="knowledge-new" type="button" onClick={() => setShowCreate((value) => !value)}>＋ 新建知识库</button>
+            <div id="knowledge-create-form" className={`knowledge-create${showCreate ? '' : ' hidden'}`}>
               <input id="kb-new-name" className="input" placeholder="知识库名称" maxLength={100} />
               <div className="knowledge-create-actions">
-                <button className="btn" id="kb-new-create" type="button">创建</button>
-                <button className="btn ghost" id="kb-new-cancel" type="button">取消</button>
+                <button className="btn" id="kb-new-create" type="button" disabled={busy} onClick={() => { void createBase(); }}>创建</button>
+                <button className="btn ghost" id="kb-new-cancel" type="button" onClick={() => setShowCreate(false)}>取消</button>
               </div>
             </div>
             <div id="knowledge-base-list" className="knowledge-base-list">
@@ -304,13 +414,24 @@ export function KnowledgeModal(): ReactElement {
                   <label className="span-2">描述<input id="kb-description" className="input" placeholder="这个知识库放什么内容，便于检索路由" maxLength={2000} defaultValue={current?.description ?? ''} /></label>
                   <fieldset className="span-2 kb-agent-roles">
                     <legend>适用 Agent</legend>
-                    <div id="kb-agent-roles" />
+                    <div id="kb-agent-roles">
+                      {AGENT_ROLES.map((role) => (
+                        <label key={role.id}>
+                          <input
+                            type="checkbox"
+                            value={role.id}
+                            defaultChecked={(current?.agentRoles ?? []).includes(role.id)}
+                          />
+                          {role.label}
+                        </label>
+                      ))}
+                    </div>
                     <p className="muted">可多选，仅勾选的角色会自动检索。未选角色时不参与自动检索。</p>
                   </fieldset>
                 </div>
                 <div className="knowledge-actions">
-                  <button className="btn" id="kb-save" type="button" disabled>保存知识库（待接）</button>
-                  <button className="btn ghost danger-text" id="kb-delete" type="button" disabled>删除知识库（待接）</button>
+                  <button className="btn" id="kb-save" type="button" disabled={busy} onClick={() => { void saveBase(); }}>保存知识库</button>
+                  <button className="btn ghost danger-text" id="kb-delete" type="button" disabled={busy} onClick={() => { void deleteBase(); }}>删除知识库</button>
                   <span id="kb-status" className="settings-status">{status}</span>
                 </div>
               </details>
@@ -342,10 +463,10 @@ export function KnowledgeModal(): ReactElement {
             <label className="knowledge-check"><input id="kb-smart-chunk" type="checkbox" defaultChecked={settings.smartChunk} /> 按 Markdown 标题智能分块</label>
           </div>
           <div className="knowledge-settings-actions">
-            <button className="btn" id="kb-settings-save" type="button" disabled>保存设置（待接）</button>
+            <button className="btn" id="kb-settings-save" type="button" disabled={busy} onClick={() => { void saveSettings(); }}>保存设置</button>
             <button className="btn ghost" id="kb-model-refresh" type="button" disabled>获取模型列表</button>
             <button className="btn ghost" id="kb-test-embedding" type="button" disabled>测试嵌入连接</button>
-            <span id="kb-settings-status" className="settings-status" />
+            <span id="kb-settings-status" className="settings-status">{busy ? '处理中…' : ''}</span>
           </div>
         </details>
       </div>
