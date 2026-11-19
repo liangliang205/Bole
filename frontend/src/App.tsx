@@ -1,4 +1,4 @@
-﻿import type { ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { Sidebar } from './features/sessions/Sidebar.tsx';
 import { EmptyView } from './features/new/EmptyView.tsx';
 import { ChatView } from './features/chat/ChatView.tsx';
@@ -49,10 +49,13 @@ export function App(): ReactElement {
   });
 
   return (
-    <div className="app" id="app">
+    <div
+      className={`app${drawerOpen && activeJobId ? ' drawer-open' : ''}${previewName ? ' preview-open' : ''}`}
+      id="app"
+    >
       <Sidebar />
 
-      <main className="main">
+      <main className={`main${activeJobId ? ' chat-active' : ''}`}>
         <header className="topbar">
           <div className="topbar-actions">
             <button className="btn ghost" id="panel-btn" title="任务面板">▤ 任务面板</button>

@@ -11,7 +11,10 @@
     "test": "vitest run",
     "shoot": "node scripts/shoot.mjs",
     "check:ui": "node scripts/check-ui.mjs",
-    "check:settings": "node scripts/check-settings.mjs"
+    "check:settings": "node scripts/check-settings.mjs",
+    "audit:styles": "node scripts/audit-styles.mjs",
+    "audit:css": "node scripts/audit-css.mjs",
+    "check:layout": "node scripts/check-layout.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

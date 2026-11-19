@@ -352,3 +352,5 @@ pnpm --dir frontend dev   # 前端开发模式，:5173，/api 代理到 :8787
 ```
 
 - 产物目录可用 `BOLE_WEB_DIR` 覆盖（Docker 镜像里构建后拷到 `/app/frontend/dist`）。
+- `src/web/public/styles.css` 仅作为样式审计的对照原件保留，不再被服务端引用。
+- 样式审计：`node frontend/scripts/audit-styles.mjs`，要求与原件 563 条规则逐条一致。
