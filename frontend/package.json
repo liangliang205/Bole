@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "shoot": "node scripts/shoot.mjs",
-    "audit:styles": "node scripts/audit-styles.mjs"
+    "audit:styles": "node scripts/audit-styles.mjs",
+    "check:ui": "node scripts/check-ui.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
