@@ -157,6 +157,22 @@ export function AgentsPanel(): ReactElement {
     };
   };
 
+  /** 退役一个已发布的角色版本；团队不能引用已退役版本。 */
+  const retireVersion = async (agentId: string, version: string): Promise<void> => {
+    if (!window.confirm(`确定退役 ${agentId}@${version}？已引用该版本的团队将无法再新建会话。`)) return;
+    setDraftStatus('');
+    try {
+      await api(`/api/agents/${encodeURIComponent(agentId)}/versions/${encodeURIComponent(version)}/retire`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setDraftStatus(`${agentId}@${version} 已退役。`);
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (error) {
+      setDraftStatus(`退役失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   /** 保存草稿；publish 为真时再调用 register 发布并启用。 */
   const saveAgent = async (publish: boolean): Promise<void> => {
     const name = (document.getElementById('agent-name') as HTMLInputElement | null)?.value.trim() ?? '';
@@ -242,7 +258,7 @@ export function AgentsPanel(): ReactElement {
               : (
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>角色</th><th>版本</th><th>状态</th><th>档位</th></tr></thead>
+                    <thead><tr><th>角色</th><th>版本</th><th>状态</th><th>档位</th><th /></tr></thead>
                     <tbody>
                       {versions.map((version) => {
                         const definition = parseDefinition(version.definition_json);
@@ -255,6 +271,11 @@ export function AgentsPanel(): ReactElement {
                             <td><span className="tag">{version.agent_id}@{version.version}</span></td>
                             <td><span className={`tag ${version.status === 'registered' ? 'ok' : version.status === 'retired' ? 'danger' : ''}`}>{STATUS_LABEL[version.status ?? ''] ?? version.status ?? ''}</span></td>
                             <td>{definition.tier ?? ''}</td>
+                            <td>
+                              {version.status === 'registered' ? (
+                                <button className="btn ghost danger-text" type="button" onClick={() => { void retireVersion(version.agent_id, version.version); }}>退役</button>
+                              ) : null}
+                            </td>
                           </tr>
                         );
                       })}
