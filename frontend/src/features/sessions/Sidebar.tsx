@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { useJobs, jobTitle, formatJobTime, type JobSummary } from '../../api/jobs.ts';
 import { useUiStore } from '../../store/ui.ts';
@@ -46,6 +46,7 @@ export function Sidebar(): ReactElement {
   const setSearch = useUiStore((state) => state.setSearch);
   const setActiveJob = useUiStore((state) => state.setActiveJob);
   const toggleArchived = useUiStore((state) => state.toggleArchived);
+  const openSettings = useUiStore((state) => state.openSettings);
 
   const resizer = useWidthResizer({
     storageKey: SIDEBAR_WIDTH_KEY,
@@ -115,7 +116,7 @@ export function Sidebar(): ReactElement {
         <div className="side-footer">
           <button className="btn ghost block" id="open-mailbox">✉ 招聘邮箱</button>
           <button className="btn ghost block" id="open-knowledge">▤ 知识库</button>
-          <button className="btn ghost block" id="open-settings">⚙ 设置</button>
+          <button className="btn ghost block" id="open-settings" onClick={() => openSettings()}>⚙ 设置</button>
         </div>
       </aside>
       <div

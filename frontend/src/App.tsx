@@ -3,6 +3,7 @@ import { Sidebar } from './features/sessions/Sidebar.tsx';
 import { EmptyView } from './features/new/EmptyView.tsx';
 import { ChatView } from './features/chat/ChatView.tsx';
 import { Drawer } from './features/drawer/Drawer.tsx';
+import { SettingsModal } from './features/settings/SettingsModal.tsx';
 import { useUiStore } from './store/ui.ts';
 import { useWidthResizer } from './hooks/useWidthResizer.ts';
 
@@ -85,6 +86,8 @@ export function App(): ReactElement {
           ? <ChatView jobId={activeJobId} hidden={false} />
           : <section id="chat-view" className="chat-view hidden" />}
       </main>
+
+      <SettingsModal />
 
       {drawerOpen && activeJobId ? <Drawer jobId={activeJobId} /> : (
         <aside id="drawer" className="drawer hidden">

@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { applyTheme, currentTheme, type Theme } from '../theme.ts';
 
 interface UiState {
@@ -8,11 +8,16 @@ interface UiState {
   theme: Theme;
   drawerOpen: boolean;
   drawerTab: string;
+  settingsOpen: boolean;
+  settingsTab: string;
   setActiveJob: (jobId: string) => void;
   toggleArchived: () => void;
   setSearch: (value: string) => void;
   setTheme: (theme: Theme) => void;
   openDrawer: (tab?: string) => void;
+  openSettings: (tab?: string) => void;
+  closeSettings: () => void;
+  setSettingsTab: (tab: string) => void;
   closeDrawer: () => void;
   setDrawerTab: (tab: string) => void;
 }
@@ -41,6 +46,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   search: '',
   theme: currentTheme(),
   drawerOpen: false,
+  settingsOpen: false,
+  settingsTab: 'models',
   drawerTab: 'candidates',
   setActiveJob: (jobId) => {
     writeHashJob(jobId);
@@ -55,4 +62,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   openDrawer: (tab) => set({ drawerOpen: true, drawerTab: tab ?? get().drawerTab }),
   closeDrawer: () => set({ drawerOpen: false }),
   setDrawerTab: (tab) => set({ drawerTab: tab, drawerOpen: true }),
+  openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? get().settingsTab }),
+  closeSettings: () => set({ settingsOpen: false }),
+  setSettingsTab: (tab) => set({ settingsTab: tab }),
 }));
