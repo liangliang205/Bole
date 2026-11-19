@@ -15,7 +15,10 @@
 ## Global Constraints
 
 - **视觉目标是"看不出变化"，但手段已放宽**：`styles.css` 以复制品 `frontend/src/styles/bole.css` 为主体，**允许等价性修正**（抵消结构变化所必需的补丁），**禁止风格调整**（间距/字号/颜色/圆角/阴影一律不动）。凡改样式，必须单独一次提交并在信息里写明"为抵消什么结构变化"。
-- **可以引 UI 组件库，但只许引无样式原语**：本计划用 **Radix**（`@radix-ui/react-dialog` / `-dropdown-menu` / `-tabs` / `-tooltip` / `-popover`）。它不带任何视觉，省掉手写焦点陷阱/Esc/aria/portal 的坑；shadcn/MUI/AntD/Tailwind 这一类自带审美的库**不在本期**（自会造成视觉漂移，留到 F7）。
+- **零第三方组件库**（对齐 DSH 的做法）。DSH 的 `packages/client/AGENTS.md` 里是明文规则：*"with no literal colors, component library, or Tailwind"*——它的 59 个 client 包里唯一的外部依赖是 `zod`，UI 全部由 `ui-primitives` 手写（`Modal.tsx` 91 行、`Menu.tsx` 等），样式是 CSS Modules + `--dsw-*` design tokens。
+  - **沿用现有全局 `styles.css`，不转 CSS Modules**（这一条有意不跟随 DSH）：DSH 是 214 个 `.module.css` 组件级样式，迁移时转过去必然重排层叠与优先级，正好撞在"看不出变化"的验收标准上。bole 只有一个壳，不需要 design system。
+  - 自建的原语**不改变 DOM 结构**，只接管行为（Esc/外点关闭/焦点/aria），这样旧 CSS 一字不改也完全生效。
+- **浮层定位暂不引 `@floating-ui`**：旧 UI 的菜单都是 `.mode-picker` 内的 `position:absolute`，没有视口翻转需求。真要了就再引，YAGNI。
 - **已有 `id` 与关键 `class` 必须保留**：可以新增 wrapper、可以换容器，但旧 id 不能消失——这是同一套 Playwright 配方能驱动新旧两版的前提。
 - **旧 UI 全程保留**，直到 F6 才删；F6 之前 `pnpm web` 必须始终可用。
 - 所有校验必须通过：`pnpm check`（根，后端不变）、`cd frontend; pnpm typecheck; pnpm test`。
@@ -67,12 +70,7 @@
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
     "@tanstack/react-query": "^5.62.0",
-    "zustand": "^5.0.2",
-    "@radix-ui/react-dialog": "^1.1.4",
-    "@radix-ui/react-dropdown-menu": "^2.1.4",
-    "@radix-ui/react-tabs": "^1.1.2",
-    "@radix-ui/react-tooltip": "^1.1.6",
-    "@radix-ui/react-popover": "^1.1.4"
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
@@ -210,15 +208,19 @@ git commit -m "feat(frontend): scaffold react app and screenshot comparison harn
 
 复刻 `app.js` 的 `applyTheme`：`document.documentElement.dataset.theme = 'dark' | 'light'`，键名 `bole.theme`。首帧前在 `main.tsx` 顶部同步执行一次（对应旧 `index.html` 里的内联脚本）。
 
-- [ ] **Step 4: 写通用件：`Resizer` + 无样式交互原语**
+- [ ] **Step 4: 写通用件：`Resizer` + 三个自建原语**
+
+**手写，不引库**（对齐 DSH 的 `ui-primitives`）。照 DSH 的 `Modal.tsx`（91 行）的结构来写，但**容器 class 用 bole 自己的**，保证旧 CSS 生效：
 
 `components/Resizer.tsx`：四条拖拽分栏共用。`props: { storageKey: string; defaultWidth: number; min: number; max: number; side: 'left'|'right'; onWidth(width: number): void }`。指针按下 → `setPointerCapture` → `pointermove` 计算宽度 → `pointerup` 落 `localStorage`；`dblclick` 恢复默认；键盘左右键 ±16px（原实现支持，见 `app.js` 的 `keydown` 分支）。
 
-`components/Modal.tsx`：基于 `@radix-ui/react-dialog`，`props: { open, onOpenChange, className, labelledBy?, children }`，**内容容器直接渲染 `className` 指定的旧 class**（如 `modal-card settings-card`），Radix 只负责 portal / 焦点陷阱 / Esc / aria。**不要**用 Radix 的默认样式或 `Dialog.Overlay` 的默认 class；遮罩用旧页面的 `.modal.hidden` 语义等价实现（`open` 时挂到 body，关闭时卸载）。
+`components/Modal.tsx`：`props: { open, onClose, className, labelledBy?, children }`。渲染结构**必须**是旧页面的形状——`createPortal(<div className="modal">…<div className={className} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1}>{children}</div></div>, document.body)`，其中 `className` 由调用方给（如 `modal-card settings-card`）。不要新增 wrapper、不要给 `.modal` 加额外的遮罩层，否则 `styles.css` 的 `.modal{display:flex;position:fixed;…}` 语义会被破坏。
 
-`components/Menu.tsx`：基于 `@radix-ui/react-dropdown-menu`，用于模式选择器、邮箱来源选择器、会话右键菜单——三者原本都是手写的 `.mode-menu`/`.hidden` 开合，换成 Radix 后键盘导航与 `aria-expanded` 免费拿到。
+`components/useModalLayer.ts`（约 40 行）：`useModalLayer(ref, open, onClose)` — Esc 关闭、打开时把焦点移进 `[data-autofocus]` 或首个可聚焦元素、关闭时焦点还给触发元素、`document.body.style.overflow = 'hidden'` 并在关闭/卸载时还原。
 
-`components/Tooltip.tsx`：基于 `@radix-ui/react-tooltip`，包住 `title` 已在用的按钮（`#attach-btn`、`#new-start` 等），**视觉仍由旧样式或原生 `title` 承担**，先只接行为。
+`components/Menu.tsx`（约 60 行）：`useAnchoredMenu` 管 `.mode-menu` 的开合——外点关闭、Esc 关闭、上下键移动、`aria-haspopup="menu"` / `aria-expanded` 同步、`role="menuitemradio"` 的 `aria-checked`。**DOM 结构保持原样**（trigger 与 `.mode-menu` 仍是同一个 `.mode-picker` 的子节点），只把 `app.js` 里手写的 `hidden` class 切换与 `document.addEventListener('click', …)` 换成 React 状态。
+
+`components/Tooltip.tsx`：**本期不写**。旧页面用的是原生 `title` 属性，保留即可（不引入浮层定位，见 Global Constraints）。
 
 - [ ] **Step 5: 写 `App.tsx` 的骨架**
 
@@ -426,7 +428,7 @@ git commit -m "feat(frontend): drawer pages, final report and file preview"
 ```powershell
 cd frontend; node scripts/shoot.mjs --compare --out .shots/f4 --batch f4
 ```
-Expected: `10-settings-models`、`10-settings-plugins` 两态打印 `DIFF` 并给出三图。**注意**：设置弹窗改用 Radix Dialog 后会 portal 到 `body`，层叠上下文变了，若出现阴影/遮罩差异，优先在样式里做等价性修正（例如补 `.modal` 的 `position`），而不是调整设计。
+Expected: `10-settings-models`、`10-settings-plugins` 两态打印 `DIFF` 并给出三图。**注意**：自建 `Modal` 走 `createPortal` 挂到 `body`，设置弹窗从 `.app` 的子树里移出去了，层叠上下文与 `position:fixed` 的包含块都会变；若出现阴影/遮罩/宽度差异，优先在样式里做等价性修正（例如给 `.modal` 补必要的定位），而不是调整设计。
 
 - [ ] **Step 6: 手动验收（Review Focus 5）**
 

@@ -251,8 +251,9 @@ Electron main
 | 服务端状态 | TanStack Query | 页面里 90% 是 `/api/*` 的取数、缓存、失效 |
 | 跨屏 UI 状态 | zustand | 当前 job、抽屉开合、设置 tab 这类全局 UI 状态 |
 | 样式 | 复用 `styles.css` 为主体；**允许等价性修正，禁止风格调整** | 897 行、class 驱动；改样式只能为了抵消结构变化，不能顺手改设计 |
-| 交互组件 | **Radix 无样式原语**（dialog / dropdown-menu / tabs / tooltip / popover） | 要的是焦点陷阱、Esc、aria、portal 这些手写容易错的行为，它不带任何视觉 |
-| 组件库（视觉） | 本期不引入（shadcn/MUI/AntD/Tailwind） | 它们自带一套审美，与"最终效果跟原来差距不大"直接冲突；想换视觉放阶段 B |
+| 交互组件 | **零第三方组件库**，自建无样式原语（Modal / Menu / Resizer / 焦点层） | 对齐 DSH：`packages/client/AGENTS.md` 明文规定 *"no literal colors, component library, or Tailwind"*，其 59 个 client 包唯一外部依赖是 `zod`，UI 全在自建 `ui-primitives` 里 |
+| 组件库（视觉） | 不引入（shadcn/MUI/AntD/Tailwind） | 同上；想换视觉体系放阶段 B |
+| 样式组织 | **沿用现有全局 `styles.css`，不转 CSS Modules** | 有意不跟随 DSH（它是 214 个 `.module.css`）：转过去必然重排层叠与优先级，撞在零漂移的验收标准上；bole 只有一个壳，不需要 design system |
 | Markdown | `react-markdown` | 替掉 `app.js` 里手写的 `renderChatMarkdown` |
 | 组件库 | 不引入 | 现有样式已经覆盖，引入即重写 |
 | 测试 | Vitest + jsdom（hooks/工具）+ Playwright 冒烟 3 条（可选） | 现有 `node --test` 不覆盖前端 |
