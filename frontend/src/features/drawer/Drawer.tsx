@@ -4,7 +4,7 @@ import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
 import { ComplianceTab, CostTab, JsonTab } from './DrawerTabs.tsx';
 import { CandidateDetail, type CandidateDetailData } from './CandidateDetail.tsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export type DrawerTab = 'candidates' | 'compliance' | 'cost' | 'memory' | 'agents' | 'workflow';
 
@@ -48,6 +48,8 @@ function score(value: number | undefined): string {
 function CandidatesTab({ jobId }: { jobId: string }): ReactElement {
   const [detail, setDetail] = useState<CandidateDetailData | null>(null);
   const [requirements, setRequirements] = useState('');
+  const candidateFocus = useUiStore((state) => state.candidateFocus);
+  const clearCandidateFocus = useUiStore((state) => state.clearCandidateFocus);
   const openCandidate = async (resumeId: string): Promise<void> => {
     try {
       const data = await api<{ candidate: CandidateDetailData; job?: { requirements?: string } }>(
@@ -59,6 +61,14 @@ function CandidatesTab({ jobId }: { jobId: string }): ReactElement {
       // 读取失败时保持列表，不打断操作
     }
   };
+
+  // 从报告卡片点进来时直接打开对应候选人，打开后清空焦点避免重复触发
+  useEffect(() => {
+    if (!candidateFocus) return;
+    void openCandidate(candidateFocus).finally(clearCandidateFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateFocus]);
+
   const { data, isLoading } = useQuery({
     queryKey: ['candidates', jobId],
     queryFn: async () => (await api<{ candidates?: Candidate[] }>(`/api/run/${encodeURIComponent(jobId)}/candidates`)).candidates ?? [],
