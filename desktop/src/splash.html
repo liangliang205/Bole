@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>伯乐</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0f1115; color: #e6e8ee;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  .wrap { height: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .name { font-size: 15px; letter-spacing: .08em; }
+  .dots { display: flex; gap: 5px; }
+  .dots i { width: 5px; height: 5px; border-radius: 50%; background: #6b7280; animation: pulse 1.1s infinite ease-in-out; }
+  .dots i:nth-child(2) { animation-delay: .18s; }
+  .dots i:nth-child(3) { animation-delay: .36s; }
+  @keyframes pulse { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="name">伯乐正在启动</span>
+    <span class="dots"><i></i><i></i><i></i></span>
+  </div>
+</body>
+</html>

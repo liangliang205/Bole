@@ -55,6 +55,8 @@ type RunStatus = 'running' | 'pausing' | 'paused' | 'completed' | 'failed' | 'id
 interface WebServerOptions {
   host?: string;
   port?: number;
+  /** drain 完成之后调用；桌面壳用它触发应用退出。 */
+  onShutdown?: () => void | Promise<void>;
 }
 
 const drainHandlers = new WeakMap<Server, (timeoutMs: number) => Promise<void>>();
@@ -1481,6 +1483,24 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
       }
       if (method === 'GET' && pathname === '/api/doctor') {
         json(res, 200, { ok: true, ...(await getDoctor()) });
+        return;
+      }
+      if (method === 'POST' && pathname === '/api/shutdown') {
+        const token = process.env.BOLE_SHUTDOWN_TOKEN?.trim();
+        if (!token) { json(res, 404, { ok: false, error: 'not found' }); return; }
+        if (req.headers['x-bole-token'] !== token) { json(res, 403, { ok: false, error: 'forbidden' }); return; }
+        if (draining) { json(res, 202, { ok: true }); return; }
+        draining = true;
+        json(res, 202, { ok: true });
+        setTimeout(() => {
+          void (async () => {
+            try {
+              await drainWebServer(server, 15_000);
+            } finally {
+              await options.onShutdown?.();
+            }
+          })();
+        }, 0);
         return;
       }
       if (method === 'POST' && pathname === '/api/reset') {
