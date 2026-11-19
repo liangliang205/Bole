@@ -1,4 +1,4 @@
-﻿import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
@@ -17,6 +17,7 @@ interface AgentVersion {
 
 interface AgentDefinition {
   name?: string;
+  prompt?: string;
   templateId?: string;
   tier?: string;
   description?: string;
@@ -29,6 +30,12 @@ interface AgentTemplate {
   output?: string;
   capability?: string;
   schema?: string;
+}
+
+interface AgentDraft {
+  id: string;
+  revision: number;
+  definition_json: string;
 }
 
 interface AgentTeam {
@@ -93,13 +100,14 @@ const STATUS_LABEL: Record<string, string> = {
 export function AgentsPanel(): ReactElement {
   const queryClient = useQueryClient();
   const [draftStatus, setDraftStatus] = useState('');
+  const [editingDraft, setEditingDraft] = useState<{ id: string; revision: number } | null>(null);
   const [teamStatus, setTeamStatus] = useState('');
   const [lastRetired, setLastRetired] = useState<{ agentId: string; version: string } | null>(null);
   const [teamBusy, setTeamBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const agents = useQuery({
     queryKey: ['agents'],
-    queryFn: async () => api<{ versions?: AgentVersion[] }>('/api/agents'),
+    queryFn: async () => api<{ versions?: AgentVersion[]; drafts?: AgentDraft[] }>('/api/agents'),
     staleTime: 10_000,
   });
   const teams = useQuery({
@@ -114,7 +122,49 @@ export function AgentsPanel(): ReactElement {
   });
 
   const versions = agents.data?.versions ?? [];
+  const drafts = agents.data?.drafts ?? [];
   const teamList = teams.data?.teams ?? [];
+
+  /** 打开草稿：把定义填进创建表单，保存时用 PATCH 带 revision。 */
+  const editDraft = (draft: AgentDraft): void => {
+    const definition = parseDefinition(draft.definition_json);
+    setEditingDraft({ id: draft.id, revision: draft.revision });
+    setDraftStatus(`正在编辑草稿「${definition.name ?? draft.id}」，保存会覆盖该草稿。`);
+    window.setTimeout(() => {
+      const fill = (id: string, value: string): void => {
+        const input = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+        if (input) input.value = value;
+      };
+      fill('agent-name', definition.name ?? '');
+      fill('agent-prompt', definition.prompt ?? '');
+      fill('agent-tier', definition.tier ?? 'flash');
+      fill('agent-template', definition.templateId ?? 'structured-llm.v1');
+    }, 0);
+  };
+
+  const removeDraft = async (draft: AgentDraft): Promise<void> => {
+    if (!window.confirm('删除这份草稿？')) return;
+    try {
+      await api(`/api/agent-drafts/${encodeURIComponent(draft.id)}`, { method: 'DELETE' });
+      setDraftStatus('草稿已删除。');
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (error) {
+      setDraftStatus(`删除失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const publishDraft = async (draft: AgentDraft): Promise<void> => {
+    try {
+      await api(`/api/agent-drafts/${encodeURIComponent(draft.id)}/register`, {
+        method: 'POST',
+        body: JSON.stringify({ revision: draft.revision }),
+      });
+      setDraftStatus('草稿已发布并启用。');
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (error) {
+      setDraftStatus(`发布失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const templates = catalog.data?.templates ?? {};
 
   // 槽位 → 可绑定角色：模板的 slot 必须与团队槽位一致（服务端同样校验）
@@ -219,10 +269,17 @@ export function AgentsPanel(): ReactElement {
     if (prompt.length < 10) { setDraftStatus('工作指令至少写 10 个字。'); return; }
     setBusy(true);
     try {
-      const created = await api<{ draft: { id: string; revision: number } }>('/api/agent-drafts', {
-        method: 'POST',
-        body: JSON.stringify({ definition: buildDefinition(templateId, name, prompt, tier) }),
-      });
+      const definition = buildDefinition(templateId, name, prompt, tier);
+      const created = editingDraft
+        ? await api<{ draft: { id: string; revision: number } }>(`/api/agent-drafts/${encodeURIComponent(editingDraft.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ definition, revision: editingDraft.revision }),
+        })
+        : await api<{ draft: { id: string; revision: number } }>('/api/agent-drafts', {
+          method: 'POST',
+          body: JSON.stringify({ definition }),
+        });
+      setEditingDraft({ id: created.draft.id, revision: created.draft.revision });
       if (publish) {
         await api(`/api/agent-drafts/${encodeURIComponent(created.draft.id)}/register`, {
           method: 'POST',
@@ -263,7 +320,28 @@ export function AgentsPanel(): ReactElement {
       </nav>
 
       <details className="agent-team-editor">
-        <summary>创建角色（草稿或直接发布）</summary>
+        <summary>{editingDraft ? '编辑草稿（保存会覆盖）' : '创建角色（草稿或直接发布）'}</summary>
+        {editingDraft ? (
+          <p className="muted">
+            正在编辑草稿 {editingDraft.id}（rev {editingDraft.revision}）。
+            <button
+              className="link-btn"
+              type="button"
+              onClick={() => {
+                setEditingDraft(null);
+                setDraftStatus('');
+                const clear = (id: string): void => {
+                  const input = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+                  if (input) input.value = '';
+                };
+                clear('agent-name');
+                clear('agent-prompt');
+              }}
+            >
+              退出草稿编辑
+            </button>
+          </p>
+        ) : null}
         <div className="form-grid">
           <label>职责模板
             <select id="agent-template" className="input" defaultValue="structured-llm.v1">
@@ -355,6 +433,32 @@ export function AgentsPanel(): ReactElement {
           <span className="settings-status" role="status">{teamStatus}</span>
         </div>
       </details>
+
+      <section className="agent-drafts">
+        <h3>草稿 <span className="muted">{drafts.length > 0 ? `${drafts.length} 份` : ''}</span></h3>
+        <div id="agent-draft-list">
+          {drafts.length === 0
+            ? <div className="empty-note">没有草稿。上方「保存草稿」会留在这里，可继续编辑或发布。</div>
+            : drafts.map((draft) => {
+              const definition = parseDefinition(draft.definition_json);
+              return (
+                <div className="eval-card" key={draft.id}>
+                  <div className="eval-head">
+                    <b>{definition.name ?? draft.id}</b>
+                    <span className="tag">rev {draft.revision}</span>
+                  </div>
+                  <p className="muted">{definition.description ?? definition.templateId ?? ''}</p>
+                  <div className="modal-actions">
+                    <button className="btn ghost" type="button" onClick={() => editDraft(draft)}>继续编辑</button>
+                    <button className="btn primary" type="button" onClick={() => { void publishDraft(draft); }}>发布</button>
+                    <span className="spacer" />
+                    <button className="btn ghost danger-text" type="button" onClick={() => { void removeDraft(draft); }}>删除</button>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      </section>
 
       <section className="agent-saved-teams">
         <h3>已保存的团队</h3>
