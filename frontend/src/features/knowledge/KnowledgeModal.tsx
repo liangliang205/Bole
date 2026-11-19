@@ -12,41 +12,6 @@ interface KnowledgeBase {
   documents?: number;
   chars?: number;
   updatedAt?: number;
-  stats?: {
-    sources?: number;
-    parsedDocuments?: number;
-    chunks?: number;
-    tokens?: number;
-    chars?: number;
-    embeddedChunks?: number;
-    embeddingDimensions?: number;
-  };
-}
-
-function formatSize(chars: number): string {
-  if (!chars) return '0';
-  if (chars >= 1000) return `${(chars / 1000).toFixed(1)}K`;
-  return String(chars);
-}
-
-function StatsCards({ stats }: { stats: KnowledgeBase['stats'] }): ReactElement {
-  const value = stats ?? {};
-  const cards: [string | number, string][] = [
-    [value.sources ?? 0, '来源项'],
-    [value.parsedDocuments ?? 0, '已解析文档'],
-    [value.chunks ?? 0, '分块'],
-    [Number(value.tokens ?? 0).toLocaleString(), '≈ Token'],
-    [formatSize(value.chars ?? 0), '字符'],
-    [value.embeddedChunks ? '✓' : '0', '已向量化'],
-    [value.embeddingDimensions ? `${value.embeddingDimensions}d` : '—', '向量维度'],
-  ];
-  return (
-    <>
-      {cards.map(([number, label]) => (
-        <div className="knowledge-stat" key={label}><b>{number}</b><span>{label}</span></div>
-      ))}
-    </>
-  );
 }
 
 /**
@@ -120,7 +85,7 @@ export function KnowledgeModal(): ReactElement {
                 </div>
                 <button className="btn primary" id="kb-upload" type="button">＋ 添加数据源</button>
               </div>
-              <div id="kb-stats" className="knowledge-stats"><StatsCards stats={current?.stats} /></div>
+              <div id="kb-stats" className="knowledge-stats" />
               <div className="knowledge-panel">
                 <div className="knowledge-panel-head">
                   <div>
