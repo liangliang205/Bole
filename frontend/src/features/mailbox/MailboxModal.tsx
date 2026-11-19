@@ -30,6 +30,61 @@ export function MailboxModal(): ReactElement {
   const [providerId, setProviderId] = useState('agently-mail');
   const [statusText, setStatusText] = useState('尚未检查连接');
   const [statusTone, setStatusTone] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const adapterTemplate = (): string => JSON.stringify({
+    id: 'my-mail',
+    name: '我的邮箱',
+    command: 'node',
+    baseArgs: ['mail-cli.js'],
+    operations: {
+      identity: { args: ['identity'], resultPath: 'data' },
+      search: { args: ['search'], resultPath: 'data' },
+      read: { args: ['read'], resultPath: 'data' },
+      download: { args: ['download'], resultPath: 'data' },
+      send: { args: ['send'], resultPath: 'data' },
+    },
+    fields: {
+      email: 'email', items: 'items', messageId: 'message_id', sender: 'from.email',
+      attachments: 'attachments', attachmentId: 'attachment_id', filename: 'filename', savedPath: 'saved_to',
+    },
+  }, null, 2);
+
+  const fillTemplate = (): void => {
+    const textarea = document.getElementById('mail-adapter-config') as HTMLTextAreaElement | null;
+    if (textarea) textarea.value = adapterTemplate();
+    setStatusText('已填入通用示例，按实际 CLI 修改后保存。');
+    setStatusTone('');
+  };
+
+  const saveAdapter = async (): Promise<void> => {
+    const raw = (document.getElementById('mail-adapter-config') as HTMLTextAreaElement | null)?.value ?? '';
+    if (!raw.trim()) {
+      setStatusText('请先填写适配器 JSON 配置。');
+      setStatusTone('');
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      setStatusText(`JSON 解析失败：${error instanceof Error ? error.message : String(error)}`);
+      setStatusTone('');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api('/api/mail/adapters', { method: 'POST', body: JSON.stringify(parsed) });
+      setStatusText('适配器已保存。');
+      setStatusTone('mailbox-connected');
+      await adapters.refetch();
+    } catch (error) {
+      setStatusText(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+      setStatusTone('');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const adapters = useQuery({
     queryKey: ['mail-adapters'],
@@ -137,13 +192,13 @@ export function MailboxModal(): ReactElement {
         </label>
         <p className="muted" id="mail-selection-note" role="status">选择后自动保存。接入邮箱和收取简历，请直接在主页与伯乐对话。</p>
         <button id="mail-plugin-add" type="button" className="btn ghost hidden">添加邮箱插件</button>
-        <details className="mailbox-adapter-editor hidden">
+        <details className="mailbox-adapter-editor">
           <summary>高级连接配置</summary>
           <p className="muted">由伯乐根据已安装插件的接口说明维护。</p>
           <label>关联 Skill<select id="mail-adapter-skill" className="input"><option value="">独立 CLI（不关联 Skill）</option></select></label>
           <label>适配器配置<textarea id="mail-adapter-config" className="input" rows={12} spellCheck={false} aria-label="邮箱适配器 JSON 配置" defaultValue={(adapters.data?.[0] as unknown as Record<string, unknown> | undefined) ? JSON.stringify(adapters.data?.[0] ?? {}, null, 2) : ''} /></label>
-          <button id="mail-adapter-template" type="button" className="btn ghost">填入通用示例</button>
-          <button id="mail-adapter-save" type="button" className="btn">保存适配器</button>
+          <button id="mail-adapter-template" type="button" className="btn ghost" onClick={fillTemplate}>填入通用示例</button>
+          <button id="mail-adapter-save" type="button" className="btn" disabled={busy} onClick={() => { void saveAdapter(); }}>保存适配器</button>
           <p id="mail-adapter-status" className="settings-status" role="status" />
         </details>
         <div className="mailbox-preferences hidden">
