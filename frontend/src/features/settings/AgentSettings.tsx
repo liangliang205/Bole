@@ -146,6 +146,9 @@ export function AgentsPanel(): ReactElement {
  * 创建岗位族、提交提案、审批仍待接。
  */
 export function MemoryPanel(): ReactElement {
+  const queryClient = useQueryClient();
+  const [familyStatus, setFamilyStatus] = useState('');
+  const [busy, setBusy] = useState(false);
   const memory = useQuery({
     queryKey: ['memory'],
     queryFn: async () => api<{ families?: { id: string; name?: string }[]; versions?: MemoryVersion[]; proposals?: MemoryProposal[] }>('/api/memory'),
