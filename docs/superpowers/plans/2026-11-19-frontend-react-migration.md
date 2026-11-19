@@ -14,14 +14,14 @@
 
 ## Global Constraints
 
-- **`frontend/src/styles/bole.css` 是 `src/web/public/styles.css` 的逐字节副本，迁移期间禁止修改**。视觉漂移只能来自 DOM 结构，不能来自样式。
-- **沿用原 `id` 与 `class`**：`index.html` 里的 281 个 id 在 React 里保持同名的 `id` 属性，容器层级与类名保持一致，否则样式表与对照脚本都会失效。
+- **视觉目标是"看不出变化"，但手段已放宽**：`styles.css` 以复制品 `frontend/src/styles/bole.css` 为主体，**允许等价性修正**（抵消结构变化所必需的补丁），**禁止风格调整**（间距/字号/颜色/圆角/阴影一律不动）。凡改样式，必须单独一次提交并在信息里写明"为抵消什么结构变化"。
+- **可以引 UI 组件库，但只许引无样式原语**：本计划用 **Radix**（`@radix-ui/react-dialog` / `-dropdown-menu` / `-tabs` / `-tooltip` / `-popover`）。它不带任何视觉，省掉手写焦点陷阱/Esc/aria/portal 的坑；shadcn/MUI/AntD/Tailwind 这一类自带审美的库**不在本期**（自会造成视觉漂移，留到 F7）。
+- **已有 `id` 与关键 `class` 必须保留**：可以新增 wrapper、可以换容器，但旧 id 不能消失——这是同一套 Playwright 配方能驱动新旧两版的前提。
 - **旧 UI 全程保留**，直到 F6 才删；F6 之前 `pnpm web` 必须始终可用。
-- **不引入 UI 组件库**（不用 shadcn/Radix/MUI），不重写样式，不改后端接口语义。
 - 所有校验必须通过：`pnpm check`（根，后端不变）、`cd frontend; pnpm typecheck; pnpm test`。
 - 源码只含可擦除 TS 语法（禁 `enum`/`namespace`/参数属性）；纯类型导入写 `type`。
 - 面向用户文案用中文，与现有文案逐字一致（文案变化会在截图里被放大）。
-- 每个任务结束时必须跑 `node scripts/shoot.mjs` 并记录本批状态的差异比例；**> 2% 不算完成**。
+- 每个任务结束时必须跑 `node scripts/shoot.mjs --compare`，把三图落盘并记录差异比例；**> 2% 必须给出解释**（回归就修，预期变化就写明原因），解释不通不算完成。
 
 ## Review Focus
 
@@ -65,14 +65,22 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0",
     "@tanstack/react-query": "^5.62.0",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.2",
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@radix-ui/react-dropdown-menu": "^2.1.4",
+    "@radix-ui/react-tabs": "^1.1.2",
+    "@radix-ui/react-tooltip": "^1.1.6",
+    "@radix-ui/react-popover": "^1.1.4"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",
     "playwright": "^1.49.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0",
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
     "vitest": "^4.0.0",
@@ -143,10 +151,11 @@ export const states = [
 - [ ] **Step 9: 写 `scripts/shoot.mjs`**
 
 要求：
-- `--base <url> --out <dir>`：逐个状态执行 → 截图 `page.screenshot({ fullPage: true })` → 文件名 `<name>.png`
-- `--compare`：额外把旧图与新图读成 `pngjs`/`sharp` 之外的**纯 Node** 方式比较（用 `playwright` 自带的 `page.screenshot` 得到 Buffer 后，可用 `sharp`；若无 `sharp`，退化为比较文件大小与逐字节相等，并至少输出两图供人看）
-- 打印 `PASS <name> diff=<pct>%` 或 `FAIL <name> diff=<pct>%`
-- 差异 > 2% 时以 1 退出（覆盖 Review Focus 1 的量化标准）
+- `--base <url> --out <dir>`：逐个状态执行 → `page.screenshot({ fullPage: true })` → `<name>.png`
+- `--compare --out <dir> [--baseline <dir>]`：对每个状态同时跑旧（默认 `http://127.0.0.1:8787`）与新（默认 `http://127.0.0.1:5173`），落盘 `<name>-old.png` / `-new.png` / `-diff.png`；`--baseline` 存在时改为「基线图 vs 新图」（F7 用这个模式）
+- 差异用 `pngjs` 解码 + `pixelmatch` 计算（阈值 `threshold: 0.1`、`includeAA: false`），百分比 = 差异像素数 / 总像素数
+- 输出 `DIFF <name> <pct>%`；**不因为差异大小而改变退出码**（差异判定交给人），只在截图失败或页面报错时以 1 退出
+- `--manual`：不截旧图，只起两版并打印 12 条 URL 清单（Playwright 装不上时的退路）
 
 - [ ] **Step 10: 生成旧版基线**
 
@@ -201,9 +210,15 @@ git commit -m "feat(frontend): scaffold react app and screenshot comparison harn
 
 复刻 `app.js` 的 `applyTheme`：`document.documentElement.dataset.theme = 'dark' | 'light'`，键名 `bole.theme`。首帧前在 `main.tsx` 顶部同步执行一次（对应旧 `index.html` 里的内联脚本）。
 
-- [ ] **Step 4: 写 `components/Resizer.tsx`**
+- [ ] **Step 4: 写通用件：`Resizer` + 无样式交互原语**
 
-四条拖拽分栏共用：`props: { storageKey: string; defaultWidth: number; min: number; max: number; side: 'left'|'right'; onWidth(width: number): void }`。指针按下 → `setPointerCapture` → `pointermove` 计算宽度 → `pointerup` 落 `localStorage`；`dblclick` 恢复默认；键盘左右键 ±16px（原实现支持，见 `app.js` 的 `keydown` 分支）。
+`components/Resizer.tsx`：四条拖拽分栏共用。`props: { storageKey: string; defaultWidth: number; min: number; max: number; side: 'left'|'right'; onWidth(width: number): void }`。指针按下 → `setPointerCapture` → `pointermove` 计算宽度 → `pointerup` 落 `localStorage`；`dblclick` 恢复默认；键盘左右键 ±16px（原实现支持，见 `app.js` 的 `keydown` 分支）。
+
+`components/Modal.tsx`：基于 `@radix-ui/react-dialog`，`props: { open, onOpenChange, className, labelledBy?, children }`，**内容容器直接渲染 `className` 指定的旧 class**（如 `modal-card settings-card`），Radix 只负责 portal / 焦点陷阱 / Esc / aria。**不要**用 Radix 的默认样式或 `Dialog.Overlay` 的默认 class；遮罩用旧页面的 `.modal.hidden` 语义等价实现（`open` 时挂到 body，关闭时卸载）。
+
+`components/Menu.tsx`：基于 `@radix-ui/react-dropdown-menu`，用于模式选择器、邮箱来源选择器、会话右键菜单——三者原本都是手写的 `.mode-menu`/`.hidden` 开合，换成 Radix 后键盘导航与 `aria-expanded` 免费拿到。
+
+`components/Tooltip.tsx`：基于 `@radix-ui/react-tooltip`，包住 `title` 已在用的按钮（`#attach-btn`、`#new-start` 等），**视觉仍由旧样式或原生 `title` 承担**，先只接行为。
 
 - [ ] **Step 5: 写 `App.tsx` 的骨架**
 
@@ -236,9 +251,9 @@ git commit -m "feat(frontend): scaffold react app and screenshot comparison harn
 - [ ] **Step 8: 双开对照本批状态**
 
 ```powershell
-cd frontend; node scripts/shoot.mjs --compare
+cd frontend; node scripts/shoot.mjs --compare --out .shots/f1
 ```
-Expected: `01-empty`、`02-session-list`、`03-archive`（若有）三态 `diff < 0.5%`；其余状态此时会 FAIL（未实现），这是预期的——本批只对 F1 范围内的状态负责。
+Expected: `01-empty`、`02-session-list`、`03-archive`（若有）三态打印 `DIFF` 百分比；其余状态此时会因选择器超时报错，这是预期的——本批只对 F1 范围内的状态负责（把未实现的状态在 `states.mjs` 里用 `batch: 'f1'` 分组，脚本按 `--batch` 过滤）。三张差异图打开看过，> 2% 的要有解释。
 
 - [ ] **Step 9: 手动验收（Review Focus 4）**
 
@@ -309,10 +324,9 @@ git commit -m "feat(frontend): react shell, sidebar, job list, new-session view"
 - [ ] **Step 7: 接 SSE 并对照**
 
 ```powershell
-# 旧端口起服务并在旧 UI 里跑一个会话，让它有历史
-cd frontend; node scripts/shoot.mjs --compare
+cd frontend; node scripts/shoot.mjs --compare --out .shots/f2 --batch f2
 ```
-Expected: `04-streaming`、`05-hitl`、`06-approval` 三态 `diff < 0.5%`。
+Expected: `04-streaming`、`05-hitl`、`06-approval` 三态打印 `DIFF`；三张 diff 图打开确认——流式输出的行高/等宽字体最容易在这里露出破绽。
 
 - [ ] **Step 8: 手动验收（Review Focus 2、3）**
 
@@ -364,9 +378,9 @@ tab 顺序与文案必须与 `index.html` 一致：候选人 / 合规 / 成本 /
 - [ ] **Step 5: 对照**
 
 ```powershell
-cd frontend; node scripts/shoot.mjs --compare
+cd frontend; node scripts/shoot.mjs --compare --out .shots/f3 --batch f3
 ```
-Expected: `07-drawer-candidates`、`08-candidate-detail`、`09-drawer-cost-compliance`、`12-preview` 四态 `diff < 0.5%`。
+Expected: `07-drawer-candidates`、`08-candidate-detail`、`09-drawer-cost-compliance`、`12-preview` 四态打印 `DIFF` 并给出三图。
 
 - [ ] **Step 6: 手动验收**
 
@@ -410,9 +424,9 @@ git commit -m "feat(frontend): drawer pages, final report and file preview"
 - [ ] **Step 5: 对照**
 
 ```powershell
-cd frontend; node scripts/shoot.mjs --compare
+cd frontend; node scripts/shoot.mjs --compare --out .shots/f4 --batch f4
 ```
-Expected: `10-settings-models`、`10-settings-plugins` 两态 `diff < 0.5%`。
+Expected: `10-settings-models`、`10-settings-plugins` 两态打印 `DIFF` 并给出三图。**注意**：设置弹窗改用 Radix Dialog 后会 portal 到 `body`，层叠上下文变了，若出现阴影/遮罩差异，优先在样式里做等价性修正（例如补 `.modal` 的 `position`），而不是调整设计。
 
 - [ ] **Step 6: 手动验收（Review Focus 5）**
 
@@ -448,9 +462,9 @@ git commit -m "feat(frontend): settings modal with models, plugins, agents, memo
 - [ ] **Step 3: 对照**
 
 ```powershell
-cd frontend; node scripts/shoot.mjs --compare
+cd frontend; node scripts/shoot.mjs --compare --out .shots/f5 --batch f5
 ```
-Expected: `11-mailbox`、`11-knowledge`、`11-help` 三态 `diff < 0.5%`。
+Expected: `11-mailbox`、`11-knowledge`、`11-help` 三态打印 `DIFF` 并给出三图。
 
 - [ ] **Step 4: 提交**
 
@@ -523,6 +537,41 @@ git commit -m "refactor(web): serve react bundle and remove legacy vanilla front
 ## 完成标准
 
 - `frontend/dist` 是唯一的前端产物；`src/web/public/*.js` 归零
-- `node scripts/shoot.mjs --compare` 的 12 个状态全部 `diff < 0.5%`，并把结果贴给业务方确认
+- `node scripts/shoot.mjs --compare` 的 12 个状态全部跑通并产出三图；每一处 > 2% 的差异都有书面解释（回归已修 / 结构变化已抵消 / 预期的可接受差异）
+- 业务方看过 12 组对照图并明确说"可以"
 - `pnpm check` 与前端 `typecheck`/`test` 全绿
-- 旧版页面可随时通过 `git stash`/上一个 tag 复现，用于事后比对
+- 旧版页面可用上一个 tag 复现，用于事后比对
+
+---
+
+### Task F7: 阶段 B —— 视觉优化（迁移收口之后再动，范围另定）
+
+> 本任务不写死具体改什么：这是设计与审美的活，先拿 F0–F6 的验收图集当基线，一屏一屏改。
+
+**Files:**
+- Modify: `frontend/src/styles/bole.css` 与相关组件
+- Create: `frontend/.shots/baseline-a/`（把 F6 验收通过的 12 张新图存成阶段 A 基线）
+
+**Interfaces:**
+- Consumes: `shoot.mjs` 的 `--baseline` 模式
+- Produces: 新的图集 `frontend/.shots/<轮次>/`，每轮一张 before/after 对照
+
+- [ ] **Step 1: 固化阶段 A 基线**
+
+```powershell
+cd frontend
+node scripts/shoot.mjs --base http://127.0.0.1:5173 --out .shots/baseline-a
+```
+Expected: 12 张图，作为后续所有视觉改动的对照基准。**这一套图要提交进 git**（约 2–3 MB），因为它是对"迁移完成时长什么样"的权威记录。
+
+- [ ] **Step 2: 按屏分批改，每批一次提交 + 一组对照**
+
+```powershell
+cd frontend
+node scripts/shoot.mjs --compare --baseline .shots/baseline-a --out .shots/visual-1 --batch <范围>
+```
+Expected: 每张 `<name>-diff.png` 里的差异**全部是有意的**；提交信息里写清"这一轮改了什么、为什么"。
+
+- [ ] **Step 3: 想换视觉体系时**（Tailwind / shadcn / 新配色）
+
+先只挑**一个**屏做试点，产出 before/after 两图给业务方确认；确认后再推广到其余屏。不要一次性全站换皮——那会让对照失效，等于又回到"看不出哪里变了"的状态。
