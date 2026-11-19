@@ -16,8 +16,10 @@
 
 - **视觉目标是"看不出变化"，但手段已放宽**：`styles.css` 以复制品 `frontend/src/styles/bole.css` 为主体，**允许等价性修正**（抵消结构变化所必需的补丁），**禁止风格调整**（间距/字号/颜色/圆角/阴影一律不动）。凡改样式，必须单独一次提交并在信息里写明"为抵消什么结构变化"。
 - **零第三方组件库**（对齐 DSH 的做法）。DSH 的 `packages/client/AGENTS.md` 里是明文规则：*"with no literal colors, component library, or Tailwind"*——它的 59 个 client 包里唯一的外部依赖是 `zod`，UI 全部由 `ui-primitives` 手写（`Modal.tsx` 91 行、`Menu.tsx` 等），样式是 CSS Modules + `--dsw-*` design tokens。
-  - **沿用现有全局 `styles.css`，不转 CSS Modules**（这一条有意不跟随 DSH）：DSH 是 214 个 `.module.css` 组件级样式，迁移时转过去必然重排层叠与优先级，正好撞在"看不出变化"的验收标准上。bole 只有一个壳，不需要 design system。
-  - 自建的原语**不改变 DOM 结构**，只接管行为（Esc/外点关闭/焦点/aria），这样旧 CSS 一字不改也完全生效。
+  - **样式组织改为 CSS Modules**（对齐 DSH 的 `*.module.css` 方案；897 行 / 553 条规则，现有 section 注释已天然切成 12 块，成本可控）。但**规则内容不许变**：拆模块是一次纯组织重构，颜色/间距/字号/层叠语义必须逐条等价——覆盖审计脚本 + 像素对照共同作为这项重构的验收证据。
+  - 全局保留三块：`styles/tokens.css`（`:root` 变量）、`styles/base.css`（reset、`html/body`、滚动条、`.hidden` 工具类）、`styles/global.css`（17 条 `#id` 规则 + 跨组件变体）。
+  - `.hidden` 必须保持**全局类**：对照配方用的是 `#empty-view:not(.hidden)` 这类选择器，局部化会让配方失效。
+- **自建的原语不改变 DOM 结构**，只接管行为（Esc/外点关闭/焦点/aria）。
 - **浮层定位暂不引 `@floating-ui`**：旧 UI 的菜单都是 `.mode-picker` 内的 `position:absolute`，没有视口翻转需求。真要了就再引，YAGNI。
 - **已有 `id` 与关键 `class` 必须保留**：可以新增 wrapper、可以换容器，但旧 id 不能消失——这是同一套 Playwright 配方能驱动新旧两版的前提。
 - **旧 UI 全程保留**，直到 F6 才删；F6 之前 `pnpm web` 必须始终可用。
@@ -144,7 +146,7 @@ export const states = [
 ];
 ```
 
-选择器只能用两版都存在的 id/class；`waitFor` 用 `page.waitForSelector`，`waitMs` 兜底等动画结束。涉及弹窗的状态用 `click: '#open-settings'` 这类现成按钮进入。
+选择器**只能用 `#id`、属性与结构伪类**（如 `#job-list .job-row`、`#empty-view:not(.hidden)`），**不要用 class 选择器**——迁移后 class 会被 CSS Modules 哈希成随机名，写死 class 的配方在旧版能用、新版必然失效。`waitFor` 用 `page.waitForSelector`（`state: 'visible'`），`waitMs` 兜底等动画结束。涉及弹窗的状态用 `click: '#open-settings'` 这类现成按钮进入。
 
 - [ ] **Step 9: 写 `scripts/shoot.mjs`**
 
@@ -176,10 +178,10 @@ git commit -m "feat(frontend): scaffold react app and screenshot comparison harn
 
 ---
 
-### Task F1: B0 —— 布局壳、会话列表、新建会话页
+### Task F1: B0 —— 样式模块化、布局壳、会话列表、新建会话页
 
 **Files:**
-- Create: `frontend/src/api/client.ts`, `frontend/src/api/jobs.ts`, `frontend/src/store/ui.ts`, `frontend/src/components/{Resizer,Modal,Toast,Button}.tsx`, `frontend/src/features/sessions/{Sidebar,JobList,JobRow}.tsx`, `frontend/src/features/new/{EmptyView,Composer}.tsx`, `frontend/src/App.tsx`, `frontend/src/theme.ts`
+- Create: `frontend/src/styles/{tokens.css,base.css,global.css,README.md}`, `frontend/src/**/*.module.css`（按组件）, `frontend/scripts/audit-styles.mjs`, `frontend/src/api/client.ts`, `frontend/src/api/jobs.ts`, `frontend/src/store/ui.ts`, `frontend/src/components/{Resizer,Modal,Menu}.tsx`, `frontend/src/components/useModalLayer.ts`, `frontend/src/features/sessions/{Sidebar,JobList,JobRow}.tsx`, `frontend/src/features/new/{EmptyView,Composer}.tsx`, `frontend/src/App.tsx`, `frontend/src/theme.ts`
 - Modify: `frontend/src/main.tsx`
 
 **Interfaces:**
@@ -194,7 +196,44 @@ git commit -m "feat(frontend): scaffold react app and screenshot comparison harn
   export function useJobs(): { jobs: JobSummary[]; isLoading: boolean; error: Error | null }
   // store/ui.ts
   export const useUiStore: import('zustand').UseBoundStore<...>  // { activeJobId, showArchived, theme, drawerTab, setTheme, toggleArchived, setActiveJob }
+  // components/Modal.tsx
+  export function Modal(props: { open: boolean; onClose: () => void; className: string; labelledBy?: string; children: ReactNode }): JSX.Element | null
+  // components/useModalLayer.ts
+  export function useModalLayer(ref: RefObject<HTMLElement | null>, open: boolean, onClose: () => void): void
   ```
+
+- [ ] **Step 0: 把全局样式拆成 CSS Modules（独立一次提交，先做）**
+
+这是纯组织重构，**不改任何一条规则的取值**。按 `styles.css` 现有 section 注释切：
+
+| 源区段（行号） | 目标 |
+|---|---|
+| `:root` 变量 | `styles/tokens.css`（全局，不模块化） |
+| 文件头 reset、`html/body`、滚动条、`.hidden` | `styles/base.css`（全局） |
+| 17 条 `#id` 规则 + 34 处跨组件变体 | `styles/global.css`（全局） |
+| `/* sidebar */`(120) | `features/sessions/Sidebar.module.css` |
+| `/* main */`(199)、`/* empty view */`(230) | `features/new/EmptyView.module.css` + `App.module.css` |
+| `/* chat */`(244)、`/* streaming */`(349)、`/* HITL */`(363) | `features/chat/Chat.module.css` 等 |
+| `/* composer */`(372) | `features/chat/Composer.module.css` |
+| `/* 导出文件卡片 */`(291) | `components/FileCard.module.css` |
+| `/* 文件预览 */`(306) | `features/preview/Preview.module.css` |
+| `/* drawer */`(465) | `features/drawer/Drawer.module.css` |
+| `/* modal / tools */`(539) | `components/Modal.module.css` + 各弹窗模块 |
+| `/* 插件 */`(739)、`/* approvals */`(763) | `features/settings/Plugins.module.css`、`features/chat/Approvals.module.css` |
+| `/* buttons */`(182) | `components/Button.module.css`（`.btn` 全族） |
+
+要求：
+- `frontend/src/styles/README.md` 记录完整映射表，并逐条说明那 17 条 id 规则与 34 处跨组件选择器为什么留在全局。
+- 禁止无理由 `:global`；每处 `:global` 必须在 README 里登记。
+- 写 `scripts/audit-styles.mjs`：解析 `src/web/public/styles.css` 与所有 `*.module.css`，按"选择器 + 声明块归一化"做集合比对，打印未归属的源规则（应为空）与孤立的目标规则（应为空）。
+
+Run: `cd frontend; node scripts/audit-styles.mjs`
+Expected: `audit: 553 source rules, 553 mapped, 0 missing, 0 orphan`，退出码 0。
+
+```powershell
+git add frontend/src/styles frontend/scripts/audit-styles.mjs
+git commit -m "refactor(frontend): split global stylesheet into css modules (no rule changes)"
+```
 
 - [ ] **Step 1: 写 `api/client.ts`**
 

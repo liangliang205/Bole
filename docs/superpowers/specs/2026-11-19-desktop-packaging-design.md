@@ -253,7 +253,7 @@ Electron main
 | 样式 | 复用 `styles.css` 为主体；**允许等价性修正，禁止风格调整** | 897 行、class 驱动；改样式只能为了抵消结构变化，不能顺手改设计 |
 | 交互组件 | **零第三方组件库**，自建无样式原语（Modal / Menu / Resizer / 焦点层） | 对齐 DSH：`packages/client/AGENTS.md` 明文规定 *"no literal colors, component library, or Tailwind"*，其 59 个 client 包唯一外部依赖是 `zod`，UI 全在自建 `ui-primitives` 里 |
 | 组件库（视觉） | 不引入（shadcn/MUI/AntD/Tailwind） | 同上；想换视觉体系放阶段 B |
-| 样式组织 | **沿用现有全局 `styles.css`，不转 CSS Modules** | 有意不跟随 DSH（它是 214 个 `.module.css`）：转过去必然重排层叠与优先级，撞在零漂移的验收标准上；bole 只有一个壳，不需要 design system |
+| 样式组织 | **改成 CSS Modules**（对齐 DSH），全局只留 tokens / base / 少量跨组件规则 | 897 行、553 条规则，现有 section 注释已天然切成 12 块；这次是纯组织重构，**规则取值一条不改**，因此像素对照仍是有效验收 |
 | Markdown | `react-markdown` | 替掉 `app.js` 里手写的 `renderChatMarkdown` |
 | 组件库 | 不引入 | 现有样式已经覆盖，引入即重写 |
 | 测试 | Vitest + jsdom（hooks/工具）+ Playwright 冒烟 3 条（可选） | 现有 `node --test` 不覆盖前端 |
@@ -309,7 +309,7 @@ frontend/
 
 #### 阶段 A：迁移（F0–F6）——目标"功能对等 + 视觉尽量不动"
 
-- 样式以 `styles.css` 为主体原样复制；**只允许等价性修正**（抵消结构变化的必要补丁，例如 Radix portal 导致的层叠上下文修正），**不允许风格调整**（间距、字号、颜色、圆角一律不动）。
+- 样式以 `styles.css` 为主体；**允许两类改动**：①「组织重构」——拆成 CSS Modules、调整文件归属，但每条规则的取值与层叠语义必须等价（用覆盖审计脚本 + 像素对照双重验证）；②「等价性修正」——抵消 DOM 结构变化所必需的补丁。**不允许"风格调整"**（间距、字号、颜色、圆角一律不动），那属于阶段 B。
 - **已有 `id` 与关键 `class` 必须保留**（可以新增 wrapper、可以换容器，但旧的 id 不能消失）——这不是审美要求，是对照脚本能用同一套配方驱动两版的前提。
 - 判据不是"像素必须 0 差异"，而是**"每一处非零差异都能被解释"**：结构变化（多了一层 wrappers、portal 挂到 body）导致的形状位移是预期的；颜色/字号/间距变化不是预期的。
 - 每个批次产出一组 `<状态>-old.png / -new.png / -diff.png` 三图，**diff 比例只作为线索，不是闸门**；> 2% 必须给出解释，解释不通就是回归。
