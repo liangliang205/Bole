@@ -18,6 +18,14 @@ interface AgentDefinition {
   roleTags?: string[];
 }
 
+interface AgentTemplate {
+  slot?: string;
+  input?: string;
+  output?: string;
+  capability?: string;
+  schema?: string;
+}
+
 interface AgentTeam {
   team_key: string;
   definition_json?: string;
@@ -56,6 +64,9 @@ const STATUS_LABEL: Record<string, string> = {
  * 创建/编辑/发布、团队编辑器、任务绑定仍待接。
  */
 export function AgentsPanel(): ReactElement {
+  const queryClient = useQueryClient();
+  const [draftStatus, setDraftStatus] = useState('');
+  const [busy, setBusy] = useState(false);
   const agents = useQuery({
     queryKey: ['agents'],
     queryFn: async () => api<{ versions?: AgentVersion[] }>('/api/agents'),
@@ -66,9 +77,67 @@ export function AgentsPanel(): ReactElement {
     queryFn: async () => api<{ teams?: AgentTeam[] }>('/api/agent-teams'),
     staleTime: 10_000,
   });
+  const catalog = useQuery({
+    queryKey: ['agent-catalog'],
+    queryFn: async () => api<{ templates?: Record<string, AgentTemplate> }>('/api/agent-catalog'),
+    staleTime: 60_000,
+  });
 
   const versions = agents.data?.versions ?? [];
   const teamList = teams.data?.teams ?? [];
+  const templates = catalog.data?.templates ?? {};
+
+  /**
+   * 组装一个可注册的角色定义：字段集与服务端 /api/agent-catalog 的 example 一致，
+   * 契约与能力来自所选模板（slot/input/output/capability/schema）。
+   */
+  const buildDefinition = (templateId: string, name: string, prompt: string, tier: string): Record<string, unknown> => {
+    const template = templates[templateId] ?? {};
+    const id = `custom-${Date.now().toString(36)}`;
+    return {
+      id,
+      version: '1.0.0',
+      name,
+      templateId,
+      inputContract: template.input ?? 'recruitment.specialist-input@1',
+      outputContract: template.output ?? 'recruitment.findings@1',
+      capabilities: template.capability ? [template.capability] : ['resume.specialist-check@1'],
+      prompt,
+      roleTags: [id],
+      tier,
+    };
+  };
+
+  /** 保存草稿；publish 为真时再调用 register 发布并启用。 */
+  const saveAgent = async (publish: boolean): Promise<void> => {
+    const name = (document.getElementById('agent-name') as HTMLInputElement | null)?.value.trim() ?? '';
+    const prompt = (document.getElementById('agent-prompt') as HTMLTextAreaElement | null)?.value.trim() ?? '';
+    const templateId = (document.getElementById('agent-template') as HTMLSelectElement | null)?.value ?? 'structured-llm.v1';
+    const tier = (document.getElementById('agent-tier') as HTMLSelectElement | null)?.value ?? 'flash';
+    if (!name) { setDraftStatus('请先填写角色名称。'); return; }
+    if (prompt.length < 10) { setDraftStatus('工作指令至少写 10 个字。'); return; }
+    setBusy(true);
+    try {
+      const created = await api<{ draft: { id: string; revision: number } }>('/api/agent-drafts', {
+        method: 'POST',
+        body: JSON.stringify({ definition: buildDefinition(templateId, name, prompt, tier) }),
+      });
+      if (publish) {
+        await api(`/api/agent-drafts/${encodeURIComponent(created.draft.id)}/register`, {
+          method: 'POST',
+          body: JSON.stringify({ revision: created.draft.revision }),
+        });
+        setDraftStatus('角色已发布并启用。');
+      } else {
+        setDraftStatus('草稿已保存，可继续编辑后再发布。');
+      }
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (error) {
+      setDraftStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
@@ -91,6 +160,31 @@ export function AgentsPanel(): ReactElement {
         <button data-agent-tab="teams" type="button" disabled>团队配置</button>
         <button data-agent-tab="runs" type="button" disabled>任务绑定</button>
       </nav>
+
+      <details className="agent-team-editor">
+        <summary>创建角色（草稿或直接发布）</summary>
+        <div className="form-grid">
+          <label>职责模板
+            <select id="agent-template" className="input" defaultValue="structured-llm.v1">
+              {Object.keys(templates).map((key) => <option key={key} value={key}>{key}</option>)}
+            </select>
+          </label>
+          <label>模型档位
+            <select id="agent-tier" className="input" defaultValue="flash">
+              <option value="flash">快速 · 适合批量处理</option>
+              <option value="pro">深入 · 适合复杂判断</option>
+            </select>
+          </label>
+          <label className="span-2">角色名称<input id="agent-name" className="input" placeholder="例如：支付项目检查员" maxLength={60} /></label>
+          <label className="span-2">工作指令<textarea id="agent-prompt" className="input" rows={5} placeholder="检查什么、依据是什么、遇到信息不足时如何处理…" /></label>
+        </div>
+        <div className="knowledge-actions">
+          <button className="btn" type="button" disabled={busy} onClick={() => { void saveAgent(false); }}>保存草稿</button>
+          <button className="btn primary" type="button" disabled={busy} onClick={() => { void saveAgent(true); }}>发布并启用</button>
+          <span className="settings-status" role="status">{draftStatus}</span>
+        </div>
+        <p className="muted">契约与能力来自所选模板；发布后需在团队配置里挂到槽位，新会话才会用到。</p>
+      </details>
 
       <section data-agent-section="roles">
         {agents.isLoading ? <div className="empty-note">正在读取角色…</div>
