@@ -1,7 +1,11 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+﻿import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
+import { readValue } from '../../lib/dom.ts';
+import { fmtDateTime } from '../../lib/format.ts';
+import { useUiStore } from '../../store/ui.ts';
+import { MemoryTab } from '../drawer/DrawerTabs.tsx';
 
 interface AgentVersion {
   version_key?: string;
@@ -32,19 +36,34 @@ interface AgentTeam {
   definition_json?: string;
 }
 
-interface MemoryVersion {
+interface JobFamily {
   id: string;
-  family?: string;
-  version?: string;
-  status?: string;
-  createdAt?: string;
+  name: string;
+  description?: string;
+  created_at?: string;
 }
 
-interface MemoryProposal {
+interface PolicyVersion {
   id: string;
-  status?: string;
-  rule?: string;
-  createdAt?: string;
+  family_id: string;
+  version: number;
+  profile_json: string;
+  status: 'approved' | 'retired' | 'needs_review';
+  valid_from?: string;
+  valid_to?: string | null;
+  created_at?: string;
+}
+
+interface PolicyProposal {
+  id: string;
+  family_id: string;
+  rule: string;
+  why: string;
+  how_to_apply: string;
+  content_hash: string;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  created_at?: string;
+  published_version_id?: string | null;
 }
 
 function parseDefinition(raw: string | undefined): AgentDefinition {
@@ -358,31 +377,55 @@ export function AgentsPanel(): ReactElement {
 }
 
 /**
- * 岗位与评分标准页：岗位族、版本历史与提案（只读）。
- * 创建岗位族、提交提案、审批仍待接。
+/**
+ * 岗位与评分标准页：版本历史 / 提案与审批 / 创建修订提案 / 当前任务记忆。
+ * 版本只读（可退役）；提案可提交、批准、驳回；当前任务记忆复用任务面板的展示。
  */
 export function MemoryPanel(): ReactElement {
   const queryClient = useQueryClient();
+  const activeJobId = useUiStore((state) => state.activeJobId);
+  const [tab, setTab] = useState<'versions' | 'proposals' | 'create' | 'job'>('versions');
   const [familyStatus, setFamilyStatus] = useState('');
+  const [proposalStatus, setProposalStatus] = useState('');
   const [busy, setBusy] = useState(false);
+
   const memory = useQuery({
     queryKey: ['memory'],
-    queryFn: async () => api<{ families?: { id: string; name?: string }[]; versions?: MemoryVersion[]; proposals?: MemoryProposal[] }>('/api/memory'),
+    queryFn: async () => api<{
+      families?: JobFamily[];
+      versions?: PolicyVersion[];
+      proposals?: PolicyProposal[];
+    }>('/api/memory'),
+    staleTime: 5_000,
+  });
+
+  const jobs = useQuery({
+    queryKey: ['jobs'],
+    queryFn: async () => (await api<{ jobs?: { id: string; title?: string; status?: string }[] }>('/api/jobs')).jobs ?? [],
     staleTime: 10_000,
   });
+
+  const families = memory.data?.families ?? [];
+  const versions = memory.data?.versions ?? [];
+  const proposals = memory.data?.proposals ?? [];
+  const approved = versions.filter((version) => version.status === 'approved');
+  const pending = proposals.filter((proposal) => proposal.status === 'pending');
+  const familyName = (id: string): string => families.find((family) => family.id === id)?.name ?? id;
+
+  const refresh = async (): Promise<void> => {
+    await queryClient.invalidateQueries({ queryKey: ['memory'] });
+  };
+
   const createFamily = async (): Promise<void> => {
     const input = document.getElementById('memory-family-name') as HTMLInputElement | null;
     const name = (input?.value ?? '').trim();
-    if (!name) {
-      setFamilyStatus('请先填写岗位族名称。');
-      return;
-    }
+    if (!name) { setFamilyStatus('请先填写岗位族名称。'); return; }
     setBusy(true);
     try {
       await api('/api/memory/families', { method: 'POST', body: JSON.stringify({ name, description: '' }) });
       if (input) input.value = '';
       setFamilyStatus('岗位族已创建。');
-      await queryClient.invalidateQueries({ queryKey: ['memory'] });
+      await refresh();
     } catch (error) {
       setFamilyStatus(`创建失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -390,54 +433,137 @@ export function MemoryPanel(): ReactElement {
     }
   };
 
-  const families = memory.data?.families ?? [];
-  const versions = memory.data?.versions ?? [];
-  const proposals = memory.data?.proposals ?? [];
+  const decide = async (proposal: PolicyProposal, decision: 'approve' | 'reject' | 'withdraw'): Promise<void> => {
+    const label = decision === 'approve' ? '批准' : decision === 'reject' ? '驳回' : '撤回';
+    if (!window.confirm(`确定${label}这条提案？`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/memory/proposals/${encodeURIComponent(proposal.id)}/decision`, {
+        method: 'POST',
+        body: JSON.stringify({ decision, contentHash: proposal.content_hash }),
+      });
+      setProposalStatus(`提案已${label}。`);
+      await refresh();
+    } catch (error) {
+      setProposalStatus(`${label}失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retireVersion = async (version: PolicyVersion): Promise<void> => {
+    if (!window.confirm(`退役 ${familyName(version.family_id)} v${version.version}？已有任务保持原快照。`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/memory/versions/${encodeURIComponent(version.id)}/retire`, { method: 'POST', body: JSON.stringify({}) });
+      setProposalStatus(`${familyName(version.family_id)} v${version.version} 已退役。`);
+      await refresh();
+    } catch (error) {
+      setProposalStatus(`退役失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitProposal = async (): Promise<void> => {
+    const familyId = readValue('memory-family');
+    const rule = readValue('memory-rule');
+    const why = readValue('memory-why');
+    const how = readValue('memory-how');
+    const rawProfile = readValue('memory-profile');
+    if (!familyId) { setProposalStatus('请先选择岗位族。'); return; }
+    if (!rule || !why) { setProposalStatus('规则与修改理由都要填。'); return; }
+    let profile: unknown;
+    try {
+      profile = rawProfile ? JSON.parse(rawProfile) : undefined;
+    } catch {
+      setProposalStatus('评分卡 JSON 解析失败，请检查格式。');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api('/api/memory/proposals', {
+        method: 'POST',
+        body: JSON.stringify({
+          familyId,
+          sourceJobId: readValue('memory-source-job') || undefined,
+          baseVersionId: readValue('memory-base-version') || undefined,
+          rule,
+          why,
+          howToApply: how,
+          profile,
+          validFrom: readValue('memory-valid-from') || undefined,
+          validTo: readValue('memory-valid-to') || undefined,
+        }),
+      });
+      setProposalStatus('提案已提交，等待审批。');
+      setTab('proposals');
+      await refresh();
+    } catch (error) {
+      setProposalStatus(`提交失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadSourceProfile = (): void => {
+    const versionId = readValue('memory-base-version');
+    const version = versions.find((item) => item.id === versionId);
+    const target = document.getElementById('memory-profile') as HTMLTextAreaElement | null;
+    if (!target) return;
+    if (version) {
+      target.value = JSON.stringify(JSON.parse(version.profile_json), null, 2);
+      setProposalStatus('已载入所选版本的评分卡，可编辑后提交。');
+      return;
+    }
+    setProposalStatus('先选择一个基准版本，或直接粘贴评分卡 JSON。');
+  };
 
   return (
     <>
-      <div className="screening-default-setting">
-        <label htmlFor="new-policy-version">新筛选默认评分标准</label>
-        <select id="new-policy-version" className="input">
-          <option value="">按本次需求生成</option>
-          {versions.filter((version) => version.status === 'approved').map((version) => (
-            <option key={version.id} value={version.id}>{version.family ?? ''} {version.version ?? ''}</option>
-          ))}
-        </select>
-        <p className="muted">选择后自动保存，用于之后新建的筛选；仅可选择已批准且有效的标准，已有任务保持原评分卡。</p>
-      </div>
       <p className="muted">跨任务复用经过人工批准的评价标准。新版本只供新任务选择，已有任务保持原快照。</p>
 
       <div className="memory-family-row">
         <select id="memory-family" className="input" aria-label="岗位族">
           {families.length === 0 ? <option value="">还没有岗位族</option> : null}
-          {families.map((family) => <option key={family.id} value={family.id}>{family.name ?? family.id}</option>)}
+          {families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}
         </select>
         <input id="memory-family-name" className="input" placeholder="新岗位族名称" maxLength={100} />
         <button className="btn" id="memory-family-create" type="button" disabled={busy} onClick={() => { void createFamily(); }}>创建岗位族</button>
       </div>
+      <p id="memory-family-status" className="settings-status" role="status">{familyStatus}</p>
 
       <nav className="help-nav" aria-label="记忆管理分类">
-        <button type="button" data-memory-tab="versions" className="active">版本历史</button>
-        <button type="button" data-memory-tab="proposals" disabled>提案与审批</button>
-        <button type="button" data-memory-tab="create" disabled>创建修订提案</button>
-        <button type="button" data-memory-tab="job" disabled>当前任务记忆</button>
+        <button type="button" data-memory-tab="versions" className={tab === 'versions' ? 'active' : ''} onClick={() => setTab('versions')}>版本历史</button>
+        <button type="button" data-memory-tab="proposals" className={tab === 'proposals' ? 'active' : ''} onClick={() => setTab('proposals')}>提案与审批{pending.length > 0 ? `（${pending.length}）` : ''}</button>
+        <button type="button" data-memory-tab="create" className={tab === 'create' ? 'active' : ''} onClick={() => setTab('create')}>创建修订提案</button>
+        <button type="button" data-memory-tab="job" className={tab === 'job' ? 'active' : ''} onClick={() => setTab('job')}>当前任务记忆</button>
       </nav>
 
-      <section data-memory-section="versions">
+      <section data-memory-section="versions" className={tab === 'versions' ? '' : 'hidden'}>
         <div id="memory-versions">
           {memory.isLoading ? <div className="empty-note">正在读取版本…</div>
             : versions.length === 0 ? <div className="empty-note">还没有跨任务复用的评分标准。完成一次筛选后可从结果提炼。</div>
               : (
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>岗位族</th><th>版本</th><th>状态</th></tr></thead>
+                    <thead><tr><th>岗位族</th><th>版本</th><th>状态</th><th>生效</th><th /></tr></thead>
                     <tbody>
                       {versions.map((version) => (
                         <tr key={version.id}>
-                          <td>{version.family ?? ''}</td>
-                          <td><span className="tag">{version.version ?? version.id}</span></td>
-                          <td>{version.status ?? ''}</td>
+                          <td>{familyName(version.family_id)}</td>
+                          <td><span className="tag">v{version.version}</span></td>
+                          <td>
+                            <span className={`tag${version.status === 'approved' ? ' ok' : version.status === 'retired' ? ' danger' : ''}`}>
+                              {version.status === 'approved' ? '已批准' : version.status === 'retired' ? '已退役' : '待复核'}
+                            </span>
+                          </td>
+                          <td className="muted">{fmtDateTime(version.valid_from)}</td>
+                          <td>
+                            {version.status === 'approved' ? (
+                              <button className="btn ghost danger-text" type="button" disabled={busy} onClick={() => { void retireVersion(version); }}>退役</button>
+                            ) : null}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -446,19 +572,75 @@ export function MemoryPanel(): ReactElement {
               )}
         </div>
       </section>
-      <section data-memory-section="proposals" className="hidden">
+
+      <section data-memory-section="proposals" className={tab === 'proposals' ? '' : 'hidden'}>
         <div id="memory-proposals">
-          {proposals.length === 0 ? <div className="empty-note">没有待审批的提案。</div>
+          {proposals.length === 0
+            ? <div className="empty-note">没有提案。切换到「创建修订提案」起草一条。</div>
             : proposals.map((proposal) => (
-              <div className="memory-item" key={proposal.id}>
-                <b>{proposal.rule ?? proposal.id}</b> <span className="muted">{proposal.status ?? ''}</span>
+              <div className="eval-card" key={proposal.id}>
+                <div className="eval-head">
+                  <b>{proposal.rule || '（无规则描述）'}</b>
+                  <span className={`tag${proposal.status === 'approved' ? ' ok' : proposal.status === 'rejected' ? ' danger' : ''}`}>
+                    {proposal.status === 'pending' ? '待审批' : proposal.status === 'approved' ? '已批准' : proposal.status === 'rejected' ? '已驳回' : '已撤回'}
+                  </span>
+                </div>
+                <p className="muted">{familyName(proposal.family_id)} · 提交于 {fmtDateTime(proposal.created_at)}</p>
+                {proposal.why ? <p>理由：{proposal.why}</p> : null}
+                {proposal.how_to_apply ? <p className="muted">应用：{proposal.how_to_apply}</p> : null}
+                {proposal.status === 'pending' ? (
+                  <div className="modal-actions">
+                    <button className="btn primary" type="button" disabled={busy} onClick={() => { void decide(proposal, 'approve'); }}>批准</button>
+                    <button className="btn ghost danger-text" type="button" disabled={busy} onClick={() => { void decide(proposal, 'reject'); }}>驳回</button>
+                    <span className="spacer" />
+                    <button className="btn ghost" type="button" disabled={busy} onClick={() => { void decide(proposal, 'withdraw'); }}>撤回</button>
+                  </div>
+                ) : null}
               </div>
             ))}
         </div>
       </section>
-      <p id="memory-family-status" className="settings-status" role="status">{familyStatus}</p>`n      <p id="memory-status" className="settings-status" role="status">
-        创建岗位族、提交提案与审批仍待接；当前为只读视图。
-      </p>
+
+      <section data-memory-section="create" className={tab === 'create' ? '' : 'hidden'}>
+        <p>从已完成画像的会话或已发布版本起草；提交前请去除个人信息并检查评分依据。</p>
+        <div className="memory-family-row">
+          <select id="memory-base-version" className="input" aria-label="基准版本">
+            <option value="">不基于已有版本</option>
+            {approved.map((version) => (
+              <option key={version.id} value={version.id}>{familyName(version.family_id)} v{version.version}</option>
+            ))}
+          </select>
+          <button className="btn" type="button" onClick={loadSourceProfile}>载入参考</button>
+        </div>
+        <div className="form-grid">
+          <label className="span-2">来源会话（可选）
+            <select id="memory-source-job" className="input" defaultValue="">
+              <option value="">不关联会话</option>
+              {(jobs.data ?? []).filter((job) => job.status === 'completed').map((job) => (
+                <option key={job.id} value={job.id}>{job.title ?? job.id}</option>
+              ))}
+            </select>
+          </label>
+          <label className="span-2">规则<input id="memory-rule" className="input" placeholder="例如：支付后端更重视项目实践" /></label>
+          <label className="span-2">为什么修改<textarea id="memory-why" className="input" rows={2} placeholder="业务理由，请勿填写候选人身份信息" /></label>
+          <label className="span-2">如何应用<textarea id="memory-how" className="input" rows={2} placeholder="说明适用岗位与评分方法" /></label>
+          <label>开始生效<input id="memory-valid-from" type="datetime-local" className="input" /></label>
+          <label>结束生效（可选）<input id="memory-valid-to" type="datetime-local" className="input" /></label>
+        </div>
+        <details>
+          <summary>编辑完整岗位与评分卡</summary>
+          <textarea id="memory-profile" className="input memory-json" rows={8} aria-label="岗位和评分卡 JSON" placeholder='{"jd":{...},"scorecard":{"dimensions":[...]}}' />
+          <p className="muted">权重合计必须为 100；此处不会修改来源任务。</p>
+        </details>
+        <button id="memory-submit" type="button" className="btn primary" disabled={busy} onClick={() => { void submitProposal(); }}>提交提案，等待审批</button>
+      </section>
+
+      <section data-memory-section="job" className={tab === 'job' ? '' : 'hidden'}>
+        <p className="muted">查看当前会话已确认的条件、冻结的评分卡与摘要来源。</p>
+        {activeJobId ? <MemoryTab jobId={activeJobId} /> : <div className="empty-note">先在左侧选择一个会话。</div>}
+      </section>
+
+      <p id="memory-status" className="settings-status" role="status">{proposalStatus}</p>
     </>
   );
 }
