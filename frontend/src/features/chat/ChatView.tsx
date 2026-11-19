@@ -6,6 +6,7 @@ import { api } from '../../api/client.ts';
 import { Markdown } from '../../components/Markdown.tsx';
 import { useRunStream } from '../../hooks/useRunStream.ts';
 import { useStreamingText } from '../../store/stream.ts';
+import { ApprovalHost, HitlHost, type PendingHitl, type RunApproval } from './Hosts.tsx';
 
 const MILESTONES = new Set([
   'jd.analyzed', 'fetch.completed', 'hitl.question', 'hitl.answered', 'escalate.human',
@@ -122,6 +123,47 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
+
+  const pendingHitl = (run as { pendingHitl?: PendingHitl | null }).pendingHitl ?? null;
+  const approvals = ((run as { approvals?: RunApproval[] }).approvals) ?? [];
+  const executionMode = (run as { executionMode?: string }).executionMode;
+
+  const refreshRun = async (): Promise<void> => {
+    await queryClient.invalidateQueries({ queryKey: ['run', jobId] });
+    await queryClient.invalidateQueries({ queryKey: ['events', jobId] });
+    await queryClient.invalidateQueries({ queryKey: ['chat', jobId] });
+  };
+
+  const answerHitl = async (answer: string): Promise<void> => {
+    if (sending || !answer) return;
+    setSending(true);
+    try {
+      await api(`/api/run/${encodeURIComponent(jobId)}/hitl`, {
+        method: 'POST',
+        body: JSON.stringify({ answer, actor: 'HR(web)' }),
+      });
+      await refreshRun();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const decideApproval = async (approvalId: string, decision: 'approve' | 'reject'): Promise<void> => {
+    if (sending) return;
+    setSending(true);
+    try {
+      const data = await api<{ resumeRequired?: boolean }>(
+        `/api/run/${encodeURIComponent(jobId)}/approvals/${encodeURIComponent(approvalId)}`,
+        { method: 'POST', body: JSON.stringify({ decision }) },
+      );
+      if (data.resumeRequired) {
+        await api(`/api/run/${encodeURIComponent(jobId)}/resume`, { method: 'POST' });
+      }
+      await refreshRun();
+    } finally {
+      setSending(false);
+    }
+  };
 
   const send = async (): Promise<void> => {
     const content = (inputRef.current?.innerText ?? '').replace(/\u00a0/g, ' ').trim();
@@ -269,8 +311,8 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
           </div>
         ) : null}
       </div>
-      <div id="hitl-host" className="hitl-host" />
-      <div id="approval-host" className="hitl-host" />
+      <HitlHost pending={pendingHitl} busy={sending} onAnswer={(answer) => { void answerHitl(answer); }} />
+      <ApprovalHost approvals={approvals} executionMode={executionMode} busy={sending} onDecide={(id, decision) => { void decideApproval(id, decision); }} />
       <div className="composer-wrap dsh-composer">
         <div className="dsh-composer-notice hidden" id="reply-hint" />
         <div className="dsh-composer-card">
