@@ -207,6 +207,8 @@ git commit -m "feat(paths): honor BOLE_ROOT override in projectRoot"
 
 ### Task 3: 前端静态目录支持 `BOLE_WEB_DIR`
 
+> **执行本计划时跳过本任务**：它已并入前端计划的前端收口任务（`plans/2026-11-19-frontend-react-migration.md` 的 F6），因为顺序改成前端先行。保留在此仅为记录设计意图。
+
 **Files:**
 - Modify: `src/web/server.ts:190`（`PUBLIC_DIR` 常量）与 `:521`（唯一使用处）
 - Test: `tests/integration/static-root.test.ts`（新建）
