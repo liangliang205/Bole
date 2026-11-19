@@ -13,6 +13,7 @@ import { FakeProvider } from '../fixtures/fake-provider.ts';
 import { setupTempEnv } from '../helpers/env.ts';
 import { startWebServer } from '../../src/web/server.ts';
 import type { LlmProvider } from '../../src/llm/provider.ts';
+import { assertFrontendEntry } from '../helpers/frontend.ts';
 
 const content = '---\nname: project-evidence\ndescription: >\n  复核项目证据\n---\nCUSTOM_SKILL_MARKER：核对项目责任、结果和原文证据。';
 test('Skill 导入、角色注入实际模型调用、版本冻结、停用和删除隔离', async () => {
@@ -80,7 +81,7 @@ test('插件页 Skill HTTP 生命周期：预览、安装、编辑、启停、�
     assert.equal((await api('/api/skills', 'POST', { id: 'bad', name: 'bad', content: 'x', roles: [] })).status, 400);
     assert.equal((await api('/api/skills/preview', 'POST', { path: path.join(env.dir, 'missing') })).status, 400);
     // 前端已迁到 React 产物：首页只保留挂载点，静态资源走 /assets/*
-    assert.match(await (await fetch(base + '/')).text(), /id="root"/);
+    assertFrontendEntry(await (await fetch(base + '/')).text());
     assert.equal((await fetch(base + '/app.js')).status, 404);
     assert.equal((await api('/api/mcp/plugins')).status, 200);
     assert.equal((await api('/api/skills/project-evidence', 'DELETE')).skills.length, 0);
