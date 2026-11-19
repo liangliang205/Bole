@@ -13,6 +13,7 @@ interface AgentVersion {
 
 interface AgentDefinition {
   name?: string;
+  templateId?: string;
   tier?: string;
   description?: string;
   roleTags?: string[];
@@ -55,6 +56,13 @@ function parseDefinition(raw: string | undefined): AgentDefinition {
   }
 }
 
+const TEAM_SLOTS = ['coordinator', 'profiler', 'fetcher', 'parser', 'assessor', 'auditor', 'specialist'] as const;
+
+const SLOT_LABEL: Record<string, string> = {
+  coordinator: '协调', profiler: '画像', fetcher: '接入', parser: '解析',
+  assessor: '评估', auditor: '核查', specialist: '专项检查',
+};
+
 const STATUS_LABEL: Record<string, string> = {
   registered: '已发布', draft: '草稿', retired: '已退役', active: '启用中',
 };
@@ -66,6 +74,8 @@ const STATUS_LABEL: Record<string, string> = {
 export function AgentsPanel(): ReactElement {
   const queryClient = useQueryClient();
   const [draftStatus, setDraftStatus] = useState('');
+  const [teamStatus, setTeamStatus] = useState('');
+  const [teamBusy, setTeamBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const agents = useQuery({
     queryKey: ['agents'],
@@ -86,6 +96,45 @@ export function AgentsPanel(): ReactElement {
   const versions = agents.data?.versions ?? [];
   const teamList = teams.data?.teams ?? [];
   const templates = catalog.data?.templates ?? {};
+
+  // 槽位 → 可绑定角色：模板的 slot 必须与团队槽位一致（服务端同样校验）
+  const slotCandidates: Record<string, string[]> = {};
+  for (const version of versions) {
+    if (version.status === 'retired') continue;
+    const definition = parseDefinition(version.definition_json);
+    const slot = definition.templateId ? templates[definition.templateId]?.slot : undefined;
+    if (!slot) continue;
+    const list = slotCandidates[slot] ?? [];
+    if (!list.includes(version.agent_id)) list.push(version.agent_id);
+    slotCandidates[slot] = list;
+  }
+
+  const saveTeam = async (): Promise<void> => {
+    const slots: Record<string, { activeAgentId: string }> = {};
+    for (const slot of TEAM_SLOTS) {
+      const select = document.getElementById(`team-slot-${slot}`) as HTMLSelectElement | null;
+      const value = select?.value ?? '';
+      if (value) slots[slot] = { activeAgentId: value };
+    }
+    if (!slots.coordinator) {
+      setTeamStatus('至少要为「协调」槽位选择角色。');
+      return;
+    }
+    setTeamBusy(true);
+    try {
+      const definition = { id: `team-${Date.now().toString(36)}`, version: '1.0.0', slots };
+      const created = await api<{ team: { team_key: string } }>('/api/agent-teams', {
+        method: 'POST',
+        body: JSON.stringify({ definition }),
+      });
+      setTeamStatus(`团队已保存：${created.team?.team_key ?? ''}`);
+      await queryClient.invalidateQueries({ queryKey: ['agent-teams'] });
+    } catch (error) {
+      setTeamStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setTeamBusy(false);
+    }
+  };
 
   /**
    * 组装一个可注册的角色定义：字段集与服务端 /api/agent-catalog 的 example 一致，
@@ -214,6 +263,30 @@ export function AgentsPanel(): ReactElement {
                 </div>
               )}
       </section>
+
+      <details className="agent-team-editor">
+        <summary>团队配置（把角色挂到槽位）</summary>
+        <p className="muted">每个槽位只能选与该槽位模板一致的角色；保存后可在新建会话时选用。</p>
+        <div className="form-grid">
+          {TEAM_SLOTS.map((slot) => {
+            const candidates = slotCandidates[slot] ?? [];
+            return (
+              <label key={slot}>
+                {SLOT_LABEL[slot] ?? slot}
+                <select id={`team-slot-${slot}`} className="input" defaultValue={candidates[0] ?? ''}>
+                  {slot === 'specialist' ? <option value="">（不启用）</option> : null}
+                  {candidates.length === 0 ? <option value="">无可用角色</option> : null}
+                  {candidates.map((agentId) => <option key={agentId} value={agentId}>{agentId}</option>)}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+        <div className="knowledge-actions">
+          <button className="btn primary" type="button" disabled={teamBusy} onClick={() => { void saveTeam(); }}>保存团队</button>
+          <span className="settings-status" role="status">{teamStatus}</span>
+        </div>
+      </details>
 
       <section className="agent-saved-teams">
         <h3>已保存的团队</h3>
