@@ -8,6 +8,8 @@ interface UiState {
   theme: Theme;
   drawerOpen: boolean;
   drawerTab: string;
+  mailboxOpen: boolean;
+  knowledgeOpen: boolean;
   settingsOpen: boolean;
   settingsTab: string;
   setActiveJob: (jobId: string) => void;
@@ -15,6 +17,10 @@ interface UiState {
   setSearch: (value: string) => void;
   setTheme: (theme: Theme) => void;
   openDrawer: (tab?: string) => void;
+  openMailbox: () => void;
+  closeMailbox: () => void;
+  openKnowledge: () => void;
+  closeKnowledge: () => void;
   openSettings: (tab?: string) => void;
   closeSettings: () => void;
   setSettingsTab: (tab: string) => void;
@@ -46,6 +52,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   search: '',
   theme: currentTheme(),
   drawerOpen: false,
+  mailboxOpen: false,
+  knowledgeOpen: false,
   settingsOpen: false,
   settingsTab: 'models',
   drawerTab: 'candidates',
@@ -62,6 +70,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   openDrawer: (tab) => set({ drawerOpen: true, drawerTab: tab ?? get().drawerTab }),
   closeDrawer: () => set({ drawerOpen: false }),
   setDrawerTab: (tab) => set({ drawerTab: tab, drawerOpen: true }),
+  openMailbox: () => set({ mailboxOpen: true }),
+  closeMailbox: () => set({ mailboxOpen: false }),
+  openKnowledge: () => set({ knowledgeOpen: true }),
+  closeKnowledge: () => set({ knowledgeOpen: false }),
   openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? get().settingsTab }),
   closeSettings: () => set({ settingsOpen: false }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),

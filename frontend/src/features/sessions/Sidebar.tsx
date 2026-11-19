@@ -47,6 +47,8 @@ export function Sidebar(): ReactElement {
   const setActiveJob = useUiStore((state) => state.setActiveJob);
   const toggleArchived = useUiStore((state) => state.toggleArchived);
   const openSettings = useUiStore((state) => state.openSettings);
+  const openMailbox = useUiStore((state) => state.openMailbox);
+  const openKnowledge = useUiStore((state) => state.openKnowledge);
 
   const resizer = useWidthResizer({
     storageKey: SIDEBAR_WIDTH_KEY,
@@ -114,8 +116,8 @@ export function Sidebar(): ReactElement {
             : <div className="empty-note">{emptyNote}</div>}
         </div>
         <div className="side-footer">
-          <button className="btn ghost block" id="open-mailbox">✉ 招聘邮箱</button>
-          <button className="btn ghost block" id="open-knowledge">▤ 知识库</button>
+          <button className="btn ghost block" id="open-mailbox" onClick={() => openMailbox()}>✉ 招聘邮箱</button>
+          <button className="btn ghost block" id="open-knowledge" onClick={() => openKnowledge()}>▤ 知识库</button>
           <button className="btn ghost block" id="open-settings" onClick={() => openSettings()}>⚙ 设置</button>
         </div>
       </aside>
