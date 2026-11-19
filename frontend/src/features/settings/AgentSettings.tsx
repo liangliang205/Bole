@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
 
@@ -150,6 +151,26 @@ export function MemoryPanel(): ReactElement {
     queryFn: async () => api<{ families?: { id: string; name?: string }[]; versions?: MemoryVersion[]; proposals?: MemoryProposal[] }>('/api/memory'),
     staleTime: 10_000,
   });
+  const createFamily = async (): Promise<void> => {
+    const input = document.getElementById('memory-family-name') as HTMLInputElement | null;
+    const name = (input?.value ?? '').trim();
+    if (!name) {
+      setFamilyStatus('请先填写岗位族名称。');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api('/api/memory/families', { method: 'POST', body: JSON.stringify({ name, description: '' }) });
+      if (input) input.value = '';
+      setFamilyStatus('岗位族已创建。');
+      await queryClient.invalidateQueries({ queryKey: ['memory'] });
+    } catch (error) {
+      setFamilyStatus(`创建失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const families = memory.data?.families ?? [];
   const versions = memory.data?.versions ?? [];
   const proposals = memory.data?.proposals ?? [];
@@ -174,7 +195,7 @@ export function MemoryPanel(): ReactElement {
           {families.map((family) => <option key={family.id} value={family.id}>{family.name ?? family.id}</option>)}
         </select>
         <input id="memory-family-name" className="input" placeholder="新岗位族名称" maxLength={100} />
-        <button className="btn" id="memory-family-create" type="button" disabled>创建岗位族（待接）</button>
+        <button className="btn" id="memory-family-create" type="button" disabled={busy} onClick={() => { void createFamily(); }}>创建岗位族</button>
       </div>
 
       <nav className="help-nav" aria-label="记忆管理分类">
@@ -216,7 +237,7 @@ export function MemoryPanel(): ReactElement {
             ))}
         </div>
       </section>
-      <p id="memory-status" className="settings-status" role="status">
+      <p id="memory-family-status" className="settings-status" role="status">{familyStatus}</p>`n      <p id="memory-status" className="settings-status" role="status">
         创建岗位族、提交提案与审批仍待接；当前为只读视图。
       </p>
     </>
