@@ -180,6 +180,8 @@ git commit -m "feat(frontend): scaffold react app and screenshot comparison harn
 
 ### Task F1: B0 —— 样式模块化、布局壳、会话列表、新建会话页
 
+> **执行时的裁决（2026-11-19，Step 0 已按此调整）**：一次拆成 12 个 `*.module.css` 试过，做跨模块分析后发现这张表不具备模块自洽性——39 个类跨模块出现，9 条 `@media` 是全站响应式规则；哈希化会造成"一处哈希、一处字面量"的失配。改为：先做零风险组织重构（`styles/tokens.css` + `base.css` + `legacy.css`，规则一字未改，`audit-styles.mjs` 逐条校验），再按组件**增量**提取 `*.module.css`（只搬该组件独占、且不被媒体查询或其它组件引用的规则，提取后仍要过审计）。详见 `frontend/src/styles/README.md`。下文 Step 0 的原始一刀切方案作废，保留仅作记录。
+
 **Files:**
 - Create: `frontend/src/styles/{tokens.css,base.css,global.css,README.md}`, `frontend/src/**/*.module.css`（按组件）, `frontend/scripts/audit-styles.mjs`, `frontend/src/api/client.ts`, `frontend/src/api/jobs.ts`, `frontend/src/store/ui.ts`, `frontend/src/components/{Resizer,Modal,Menu}.tsx`, `frontend/src/components/useModalLayer.ts`, `frontend/src/features/sessions/{Sidebar,JobList,JobRow}.tsx`, `frontend/src/features/new/{EmptyView,Composer}.tsx`, `frontend/src/App.tsx`, `frontend/src/theme.ts`
 - Modify: `frontend/src/main.tsx`
