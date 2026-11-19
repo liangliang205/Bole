@@ -19,7 +19,8 @@
     "check:drawer": "node scripts/check-drawer-tabs.mjs",
     "check:settings-deep": "node scripts/check-settings-deep.mjs",
     "check:new-session": "node scripts/check-new-session.mjs",
-    "check:providers": "node scripts/check-providers.mjs"
+    "check:providers": "node scripts/check-providers.mjs",
+    "check:panel": "node scripts/check-panel-toggle.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
