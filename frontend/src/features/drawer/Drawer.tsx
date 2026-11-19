@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+﻿import { useQuery } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
+import { ComplianceTab, CostTab, JsonTab } from './DrawerTabs.tsx';
 
 export type DrawerTab = 'candidates' | 'compliance' | 'cost' | 'memory' | 'agents' | 'workflow';
 
@@ -105,7 +106,12 @@ export function Drawer({ jobId }: { jobId: string }): ReactElement {
       <div id="drawer-body" className="drawer-body">
         {jobId === '' ? <div className="empty-note">选择会话后查看任务详情</div>
           : tab === 'candidates' ? <CandidatesTab jobId={jobId} />
-            : <div className="empty-note">读取中…</div>}
+            : tab === 'compliance' ? <ComplianceTab jobId={jobId} />
+              : tab === 'cost' ? <CostTab jobId={jobId} />
+                : tab === 'memory' ? <JsonTab jobId={jobId} kind="memory" />
+                  : tab === 'agents' ? <JsonTab jobId={jobId} kind="agents" />
+                    : tab === 'workflow' ? <JsonTab jobId={jobId} kind="workflow" />
+                      : <div className="empty-note">读取中…</div>}
       </div>
     </aside>
   );
