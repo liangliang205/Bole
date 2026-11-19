@@ -122,6 +122,7 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   const run = runData?.run ?? {};
   const job = snapshot.job ?? {};
   const queryClient = useQueryClient();
+  const focusCandidate = useUiStore((state) => state.focusCandidate);
   const { data: report } = useReport(jobId);
   useRunStream(jobId, queryClient);
   const streamingText = useStreamingText();
@@ -310,7 +311,7 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
           report={report}
           runStatus={run.status}
           unfinished={unfinished}
-          onOpenCandidate={(resumeId) => { window.location.hash = `#job=${encodeURIComponent(jobId)}`; void resumeId; }}
+          onOpenCandidate={focusCandidate}
         />,
       );
     }
