@@ -7,6 +7,7 @@ import { SettingsModal } from './features/settings/SettingsModal.tsx';
 import { MailboxModal } from './features/mailbox/MailboxModal.tsx';
 import { KnowledgeModal } from './features/knowledge/KnowledgeModal.tsx';
 import { PreviewPane } from './features/preview/PreviewPane.tsx';
+import { HelpDialog } from './features/help/HelpDialog.tsx';
 import { useUiStore } from './store/ui.ts';
 import { useWidthResizer } from './hooks/useWidthResizer.ts';
 
@@ -25,6 +26,7 @@ export function App(): ReactElement {
   const drawerOpen = useUiStore((state) => state.drawerOpen);
   const previewName = useUiStore((state) => state.previewName);
   const closePreview = useUiStore((state) => state.closePreview);
+  const openHelp = useUiStore((state) => state.openHelp);
   const isDark = theme === 'dark';
 
   const right = useWidthResizer({
@@ -64,7 +66,7 @@ export function App(): ReactElement {
             >
               {isDark ? '☀ 日间' : '☾ 暗夜'}
             </button>
-            <button className="btn ghost" id="help-open" type="button" aria-haspopup="dialog">ⓘ 帮助</button>
+            <button className="btn ghost" id="help-open" type="button" aria-haspopup="dialog" onClick={openHelp}>ⓘ 帮助</button>
           </div>
         </header>
         <div
@@ -95,6 +97,7 @@ export function App(): ReactElement {
       <SettingsModal />
       <MailboxModal />
       <KnowledgeModal />
+      <HelpDialog />
       {previewName && activeJobId ? <PreviewPane jobId={activeJobId} name={previewName} onClose={closePreview} /> : null}
 
       {drawerOpen && activeJobId ? <Drawer jobId={activeJobId} /> : (

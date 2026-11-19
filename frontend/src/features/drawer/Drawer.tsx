@@ -3,6 +3,8 @@ import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
 import { ComplianceTab, CostTab, JsonTab } from './DrawerTabs.tsx';
+import { CandidateDetail, type CandidateDetailData } from './CandidateDetail.tsx';
+import { useState } from 'react';
 
 export type DrawerTab = 'candidates' | 'compliance' | 'cost' | 'memory' | 'agents' | 'workflow';
 
@@ -44,12 +46,26 @@ function score(value: number | undefined): string {
 
 /** 候选人页：表格列与旧实现一致（候选人/状态/分数/档位/核查）。 */
 function CandidatesTab({ jobId }: { jobId: string }): ReactElement {
+  const [detail, setDetail] = useState<CandidateDetailData | null>(null);
+  const [requirements, setRequirements] = useState('');
+  const openCandidate = async (resumeId: string): Promise<void> => {
+    try {
+      const data = await api<{ candidate: CandidateDetailData; job?: { requirements?: string } }>(
+        `/api/run/${encodeURIComponent(jobId)}/candidates/${encodeURIComponent(resumeId)}`,
+      );
+      setRequirements(data.job?.requirements ?? '');
+      setDetail(data.candidate);
+    } catch {
+      // 读取失败时保持列表，不打断操作
+    }
+  };
   const { data, isLoading } = useQuery({
     queryKey: ['candidates', jobId],
     queryFn: async () => (await api<{ candidates?: Candidate[] }>(`/api/run/${encodeURIComponent(jobId)}/candidates`)).candidates ?? [],
     enabled: Boolean(jobId),
     staleTime: 3_000,
   });
+  if (detail) return <CandidateDetail detail={detail} requirements={requirements} onBack={() => setDetail(null)} />;
   if (isLoading) return <div className="empty-note">正在读取候选人…</div>;
   const candidates = data ?? [];
   if (candidates.length === 0) return <div className="empty-note">暂无候选人数据</div>;
@@ -61,7 +77,7 @@ function CandidatesTab({ jobId }: { jobId: string }): ReactElement {
         </thead>
         <tbody>
           {candidates.map((candidate) => (
-            <tr className="clickable" data-candidate={candidate.resumeId} key={candidate.resumeId}>
+            <tr className="clickable" data-candidate={candidate.resumeId} key={candidate.resumeId} onClick={() => { void openCandidate(candidate.resumeId); }}>
               <td><b>{candidate.label}</b><div className="muted">{candidate.format ?? ''}</div></td>
               <td><span className={`tag ${statusTone(candidate.status)}`}>{STATUS_LABEL[candidate.status ?? ''] ?? candidate.status ?? ''}</span></td>
               <td>{score(candidate.score)}</td>

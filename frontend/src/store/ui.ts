@@ -11,6 +11,7 @@ interface UiState {
   mailboxOpen: boolean;
   knowledgeOpen: boolean;
   previewName: string;
+  helpOpen: boolean;
   settingsOpen: boolean;
   settingsTab: string;
   setActiveJob: (jobId: string) => void;
@@ -20,6 +21,8 @@ interface UiState {
   openDrawer: (tab?: string) => void;
   openMailbox: () => void;
   closeMailbox: () => void;
+  openHelp: () => void;
+  closeHelp: () => void;
   openPreview: (name: string) => void;
   closePreview: () => void;
   openKnowledge: () => void;
@@ -58,6 +61,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   mailboxOpen: false,
   knowledgeOpen: false,
   previewName: '',
+  helpOpen: false,
   settingsOpen: false,
   settingsTab: 'models',
   drawerTab: 'candidates',
@@ -76,6 +80,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setDrawerTab: (tab) => set({ drawerTab: tab, drawerOpen: true }),
   openMailbox: () => set({ mailboxOpen: true }),
   closeMailbox: () => set({ mailboxOpen: false }),
+  openHelp: () => set({ helpOpen: true }),
+  closeHelp: () => set({ helpOpen: false }),
   openPreview: (name) => set({ previewName: name }),
   closePreview: () => set({ previewName: '' }),
   openKnowledge: () => set({ knowledgeOpen: true }),
