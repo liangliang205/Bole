@@ -122,7 +122,7 @@ export function App(): ReactElement {
         <aside id="drawer" className="drawer hidden">
           <div className="drawer-head">
             <div className="drawer-tabs" id="drawer-tabs" />
-            <button className="btn ghost" id="drawer-close">✕</button>
+            <button className="btn ghost" id="drawer-close" type="button" onClick={closeDrawer}>✕</button>
           </div>
           <div id="drawer-body" className="drawer-body" />
         </aside>

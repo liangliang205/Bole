@@ -259,6 +259,48 @@ export function KnowledgeModal(): ReactElement {
     }
   };
 
+  /** 拉取嵌入服务的模型列表，填进 datalist 供选择。 */
+  const refreshEmbeddingModels = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const data = await api<{ models?: string[] }>('/api/knowledge/embedding-models');
+      const models = data.models ?? [];
+      const list = document.getElementById('kb-embedding-models') as HTMLDataListElement | null;
+      if (list) {
+        list.innerHTML = '';
+        for (const id of models) {
+          const option = document.createElement('option');
+          option.value = id;
+          list.append(option);
+        }
+      }
+      setStatus(models.length > 0 ? `发现 ${models.length} 个嵌入模型` : '服务没有返回模型列表');
+    } catch (error) {
+      setStatus(`获取模型列表失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 用已保存的设置做一次真实嵌入调用。 */
+  const testEmbedding = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const data = await api<{ result?: { ok?: boolean; dimensions?: number; error?: string } }>('/api/knowledge/test-embedding', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      const result = data.result ?? {};
+      setStatus(result.ok
+        ? `嵌入连接正常${result.dimensions ? `，向量维度 ${result.dimensions}` : ''}`
+        : `嵌入连接失败：${result.error ?? '未知原因'}`);
+    } catch (error) {
+      setStatus(`测试失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveSettings = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -464,8 +506,8 @@ export function KnowledgeModal(): ReactElement {
           </div>
           <div className="knowledge-settings-actions">
             <button className="btn" id="kb-settings-save" type="button" disabled={busy} onClick={() => { void saveSettings(); }}>保存设置</button>
-            <button className="btn ghost" id="kb-model-refresh" type="button" disabled>获取模型列表</button>
-            <button className="btn ghost" id="kb-test-embedding" type="button" disabled>测试嵌入连接</button>
+            <button className="btn ghost" id="kb-model-refresh" type="button" disabled={busy} onClick={() => { void refreshEmbeddingModels(); }}>获取模型列表</button>
+            <button className="btn ghost" id="kb-test-embedding" type="button" disabled={busy} onClick={() => { void testEmbedding(); }}>测试嵌入连接</button>
             <span id="kb-settings-status" className="settings-status">{busy ? '处理中…' : ''}</span>
           </div>
         </details>

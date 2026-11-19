@@ -127,6 +127,8 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   useRunStream(jobId, queryClient);
   const streamingText = useStreamingText();
   const [draft, setDraft] = useState('');
+  const [chatUploads, setChatUploads] = useState<{ id: string; filename: string; status: 'uploading' | 'uploaded' | 'error'; uploadId: string }[]>([]);
+  const chatFileInput = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
 
@@ -168,6 +170,37 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
       await refreshRun();
     } finally {
       setSending(false);
+    }
+  };
+
+  /** 追加附件：先上传到 /api/uploads，成功后把 uploadId 随聊天一起提交。 */
+  const uploadChatFiles = async (files: FileList): Promise<void> => {
+    for (const file of Array.from(files).slice(0, 5)) {
+      if (file.size > 25 * 1024 * 1024) {
+        setDraft(`${file.name} 超过 25MB`);
+        continue;
+      }
+      const localId = `chat_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+      setChatUploads((list) => [...list, { id: localId, filename: file.name, status: 'uploading', uploadId: '' }]);
+      try {
+        const contentBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('读取文件失败'));
+          reader.onload = () => {
+            const result = String(reader.result ?? '');
+            resolve(result.slice(result.indexOf(',') + 1));
+          };
+          reader.readAsDataURL(file);
+        });
+        const data = await api<{ upload: { uploadId: string } }>('/api/uploads', {
+          method: 'POST',
+          body: JSON.stringify({ filename: file.name, contentBase64 }),
+        });
+        setChatUploads((list) => list.map((item) => (item.id === localId ? { ...item, status: 'uploaded', uploadId: data.upload.uploadId } : item)));
+      } catch (error) {
+        setChatUploads((list) => list.map((item) => (item.id === localId ? { ...item, status: 'error' } : item)));
+        setDraft(`${file.name} 上传失败：${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   };
 
@@ -337,7 +370,20 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
       <div className="composer-wrap dsh-composer">
         <div className="dsh-composer-notice hidden" id="reply-hint" />
         <div className="dsh-composer-card">
-          <div id="chat-attachments" className="dsh-composer-attachments" />
+          <div id="chat-attachments" className="dsh-composer-attachments">
+            {chatUploads.map((item) => (
+              <span className={`chat-attachment ${item.status}`} key={item.id}>
+                <span className="name">{item.filename}</span>
+                <button
+                  type="button"
+                  aria-label={`移除 ${item.filename}`}
+                  onClick={() => setChatUploads((list) => list.filter((entry) => entry.id !== item.id))}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
           <div className="dsh-composer-scroll">
             <div className="dsh-composer-grow">
               <div
@@ -355,15 +401,34 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
           </div>
           <div className="dsh-composer-row">
             <div className="dsh-composer-tools">
-              <button className="dsh-composer-add" id="chat-attach-btn" type="button" title="添加图片、PDF、Word、Markdown 文件" aria-label="添加附件">
+              <button
+                className="dsh-composer-add"
+                id="chat-attach-btn"
+                type="button"
+                title="添加图片、PDF、Word、Markdown 文件"
+                aria-label="添加附件"
+                onClick={() => chatFileInput.current?.click()}
+              >
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
                   <path d="M8 3.25v9.5M3.25 8h9.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
+              <input
+                ref={chatFileInput}
+                type="file"
+                multiple
+                hidden
+                id="chat-file-input"
+                onChange={(event) => {
+                  const files = event.target.files;
+                  if (files && files.length > 0) void uploadChatFiles(files);
+                  event.target.value = '';
+                }}
+              />
             </div>
             <div className="dsh-composer-trailing">
               <span className="dsh-composer-model" id="reply-model" />
-              <button className="dsh-composer-primary" id="reply-send" aria-label="发送" disabled={sending || draft.trim().length === 0} onClick={() => { void send(); }}>
+              <button className="dsh-composer-primary" id="reply-send" aria-label="发送" disabled={sending || (draft.trim().length === 0 && chatUploads.every((item) => item.status !== 'uploaded'))} onClick={() => { void send(); }}>
                 <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
                   <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
                 </svg>

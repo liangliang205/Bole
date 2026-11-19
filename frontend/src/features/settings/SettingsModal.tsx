@@ -263,6 +263,23 @@ function PluginsSection({ open }: { open: boolean }): ReactElement {
     }
   };
 
+  /** 启停插件（服务端只提供 /enabled 这一个写接口）。 */
+  const togglePlugin = async (id: string, enabled: boolean): Promise<void> => {
+    setBusy(true);
+    try {
+      await api(`/api/mcp/plugins/${encodeURIComponent(id)}/enabled`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      });
+      setStatus(`${id} 已${enabled ? '启用' : '停用'}。`);
+      await queryClient.invalidateQueries({ queryKey: ['mcp-plugins'] });
+    } catch (error) {
+      setStatus(`切换失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['mcp-plugins'] });
     setStatus('已刷新。');
@@ -292,7 +309,12 @@ function PluginsSection({ open }: { open: boolean }): ReactElement {
               return (
                 <article className={`plugin-row${plugin.enabled ? '' : ' disabled'}`} data-plugin-row={plugin.id} key={plugin.id}>
                   <label className="switch" title={plugin.enabled ? '停用插件' : '启用插件'}>
-                    <input type="checkbox" data-plugin-toggle={plugin.id} defaultChecked={plugin.enabled} />
+                    <input
+                      type="checkbox"
+                      data-plugin-toggle={plugin.id}
+                      defaultChecked={plugin.enabled}
+                      onChange={(event) => { void togglePlugin(plugin.id, event.target.checked); }}
+                    />
                     <span />
                   </label>
                   <div className="plugin-row-main">
@@ -309,11 +331,6 @@ function PluginsSection({ open }: { open: boolean }): ReactElement {
                       {plugin.transport ?? 'stdio'} · {target || '—'} · 白名单 {(plugin.allowTools ?? []).join(', ') || '*'}
                     </div>
                     {runtime.error ? <div className="plugin-row-error">{runtime.error}</div> : null}
-                  </div>
-                  <div className="plugin-row-actions">
-                    <button className="btn ghost" data-plugin-action="test" data-plugin-id={plugin.id} disabled={!plugin.enabled}>测试</button>
-                    <button className="btn ghost" data-plugin-action="edit" data-plugin-id={plugin.id}>编辑</button>
-                    <button className="btn ghost danger-text" data-plugin-action="delete" data-plugin-id={plugin.id}>删除</button>
                   </div>
                 </article>
               );
