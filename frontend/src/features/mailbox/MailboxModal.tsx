@@ -1,13 +1,72 @@
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
+import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
+
+interface MailAdapter {
+  id: string;
+  name?: string;
+  builtin?: boolean;
+  skillId?: string;
+}
+
+interface MailStatus {
+  ok: boolean;
+  error?: string;
+  email?: string;
+  aliases?: { email?: string }[];
+  [key: string]: unknown;
+}
 
 /**
  * 招聘邮箱弹窗：结构与 index.html 的 #mailbox-modal 一致。
- * 授权轮询、适配器编辑器与偏好保存尚未接入（后续批次）。
+ * 已接：适配器列表、连接状态检查、邮箱选择。
+ * 未接：授权轮询、适配器编辑器、收取范围偏好（这些依赖 CLI 交互或额外接口）。
  */
 export function MailboxModal(): ReactElement {
   const open = useUiStore((state) => state.mailboxOpen);
   const close = useUiStore((state) => state.closeMailbox);
+  const [providerId, setProviderId] = useState('agently-mail');
+  const [statusText, setStatusText] = useState('尚未检查连接');
+  const [statusTone, setStatusTone] = useState('');
+
+  const adapters = useQuery({
+    queryKey: ['mail-adapters'],
+    queryFn: async () => (await api<{ adapters?: MailAdapter[] }>('/api/mail/adapters')).adapters ?? [],
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const check = useMutation({
+    mutationFn: async (id: string) => {
+      try {
+        const data = await api<MailStatus>(`/api/mail/status?providerId=${encodeURIComponent(id)}`);
+        return data;
+      } catch (error) {
+        // 未授权时服务端返回 ok:false，api() 会抛错，这里把它当作可展示的状态
+        return { ok: false, error: error instanceof Error ? error.message : String(error) } as MailStatus;
+      }
+    },
+    onSuccess: (data) => {
+      if (data.ok) {
+        const email = data.email ?? data.aliases?.[0]?.email ?? '';
+        setStatusText(email ? `已连接：${email}` : '连接正常');
+        setStatusTone('mailbox-connected');
+      } else {
+        setStatusText(data.error ?? '未连接');
+        setStatusTone('');
+      }
+    },
+  });
+
+  // 打开弹窗时检查一次连接状态；切换 provider 由下拉单独触发
+  useEffect(() => {
+    if (!open) return;
+    void check.mutateAsync(providerId).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   return (
     <div
       id="mailbox-modal"
@@ -29,11 +88,31 @@ export function MailboxModal(): ReactElement {
           <div className="mailbox-account-icon" aria-hidden="true">✉</div>
           <div>
             <span className="muted">当前邮箱</span>
-            <div id="mail-status" role="status" aria-live="polite">尚未检查连接</div>
+            <div id="mail-status" role="status" aria-live="polite" className={statusTone || undefined}>
+              {check.isPending ? '正在检查…' : statusText}
+            </div>
           </div>
           <div className="mailbox-account-actions">
-            <button type="button" className="btn" id="mail-auth">认证邮箱</button>
-            <button type="button" className="btn ghost" id="mail-test">检查邮箱连接</button>
+            <button
+              type="button"
+              className="btn"
+              id="mail-auth"
+              onClick={() => {
+                setStatusText('邮箱授权需要在主页与伯乐对话完成：说明邮箱与授权方式，伯乐会引导你执行 agently-cli 登录。');
+                setStatusTone('');
+              }}
+            >
+              认证邮箱
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              id="mail-test"
+              disabled={check.isPending}
+              onClick={() => { void check.mutateAsync(providerId).catch(() => undefined); }}
+            >
+              检查邮箱连接
+            </button>
           </div>
         </div>
         <div id="mail-auth-panel" className="mail-auth-panel hidden" role="status" aria-live="polite">
@@ -42,7 +121,19 @@ export function MailboxModal(): ReactElement {
         </div>
         <label className="mailbox-provider-label">
           已接入的邮箱
-          <select id="mail-provider" className="input"><option value="">请选择邮箱连接</option></select>
+          <select
+            id="mail-provider"
+            className="input"
+            value={providerId}
+            onChange={(event) => { setProviderId(event.target.value); void check.mutateAsync(event.target.value).catch(() => undefined); }}
+          >
+            {(adapters.data ?? []).length === 0 ? <option value="">请选择邮箱连接</option> : null}
+            {(adapters.data ?? []).map((adapter) => (
+              <option key={adapter.id} value={adapter.id}>
+                {adapter.name ?? adapter.id}{adapter.builtin ? '（内置）' : ''}
+              </option>
+            ))}
+          </select>
         </label>
         <p className="muted" id="mail-selection-note" role="status">选择后自动保存。接入邮箱和收取简历，请直接在主页与伯乐对话。</p>
         <button id="mail-plugin-add" type="button" className="btn ghost hidden">添加邮箱插件</button>
@@ -50,7 +141,7 @@ export function MailboxModal(): ReactElement {
           <summary>高级连接配置</summary>
           <p className="muted">由伯乐根据已安装插件的接口说明维护。</p>
           <label>关联 Skill<select id="mail-adapter-skill" className="input"><option value="">独立 CLI（不关联 Skill）</option></select></label>
-          <label>适配器配置<textarea id="mail-adapter-config" className="input" rows={12} spellCheck={false} aria-label="邮箱适配器 JSON 配置" /></label>
+          <label>适配器配置<textarea id="mail-adapter-config" className="input" rows={12} spellCheck={false} aria-label="邮箱适配器 JSON 配置" defaultValue={(adapters.data?.[0] as unknown as Record<string, unknown> | undefined) ? JSON.stringify(adapters.data?.[0] ?? {}, null, 2) : ''} /></label>
           <button id="mail-adapter-template" type="button" className="btn ghost">填入通用示例</button>
           <button id="mail-adapter-save" type="button" className="btn">保存适配器</button>
           <p id="mail-adapter-status" className="settings-status" role="status" />
