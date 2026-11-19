@@ -1,0 +1,28 @@
+appId: com.bole.desktop
+productName: BoLe
+directories:
+  output: out
+  buildResources: build
+files:
+  - out/main.cjs
+  - out/preload.cjs
+  - out/splash.html
+  - package.json
+extraResources:
+  - from: staging/server
+    to: server
+asar: true
+afterPack: ./after-pack.mjs
+win:
+  target:
+    - nsis
+    - dir
+  artifactName: BoLe-Setup-${version}.exe
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: 伯乐 BoLe
+  artifactName: BoLe-Setup-${version}.exe
+  language: '2052'

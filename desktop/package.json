@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.ts",
     "verify:env": "node scripts/verify-env.mjs",
-    "dev": "node build.mjs --dev"
+    "dev": "node build.mjs --dev",
+    "prepare:server": "node prepare-server.mjs",
+    "dist": "node build.mjs --dist"
   },
   "devDependencies": {
     "electron": "44.7.0",

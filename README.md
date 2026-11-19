@@ -361,6 +361,8 @@ pnpm --dir frontend dev   # 前端开发模式，:5173，/api 代理到 :8787
 pnpm --dir desktop install         # 首次：装 Electron 44 等
 pnpm --dir desktop run verify:env   # 环境门禁：Node≥24 / node:sqlite / 直跑 TS / node-pty
 pnpm --dir desktop run dev          # 开发态起窗口：自己拉起后端、等 /readyz、再载入界面
+pnpm --dir desktop run prepare:server   # staging 服务端（源码 + 生产依赖 + 前端产物 + OCR 数据）并冒烟
+pnpm --dir desktop run dist         # 出安装包：out/BoLe-Setup-0.1.0.exe
 ```
 
 - 后端以子进程方式运行（`ELECTRON_RUN_AS_NODE=1`），用户数据落在 `%APPDATA%\bole\{data,runs,logs}`
