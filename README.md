@@ -354,3 +354,16 @@ pnpm --dir frontend dev   # 前端开发模式，:5173，/api 代理到 :8787
 - 产物目录可用 `BOLE_WEB_DIR` 覆盖（Docker 镜像里构建后拷到 `/app/frontend/dist`）。
 - `src/web/public/styles.css` 仅作为样式审计的对照原件保留，不再被服务端引用。
 - 样式审计：`node frontend/scripts/audit-styles.mjs`，要求与原件 563 条规则逐条一致。
+
+## 桌面应用（Electron）
+
+```bash
+pnpm --dir desktop install         # 首次：装 Electron 44 等
+pnpm --dir desktop run verify:env   # 环境门禁：Node≥24 / node:sqlite / 直跑 TS / node-pty
+pnpm --dir desktop run dev          # 开发态起窗口：自己拉起后端、等 /readyz、再载入界面
+```
+
+- 后端以子进程方式运行（`ELECTRON_RUN_AS_NODE=1`），用户数据落在 `%APPDATA%\bole\{data,runs,logs}`
+- 退出走 `POST /api/shutdown`（token 校验 + drain 完成后回调），不直接杀进程
+- 冒烟：`BOLE_DESKTOP_SMOKE=<png 路径> pnpm --dir desktop run dev`，截图后自动退出
+- 打包（electron-builder）尚未接入，步骤见 `docs/superpowers/plans/2026-11-19-desktop-packaging.md` 的 Task 8–9

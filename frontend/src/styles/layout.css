@@ -127,3 +127,4 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .new-defaults{ display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .new-defaults label{ display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .new-defaults select{ min-width: 180px; }
+.new-defaults label{ white-space: nowrap; }
