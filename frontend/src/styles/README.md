@@ -1,17 +1,20 @@
 # 样式组织
 
-源：`src/web/public/styles.css`（897 行 / 563 条规则，旧版仍在用，F6 才删）。
+源：`src/web/public/styles.css`（897 行 / 563 条规则基线）。
 
-## 现在的三份文件
+## 模块化样式表结构
 
-| 文件 | 内容 | 行数 |
+| 文件 | 职责与内容 | 行数 |
 |---|---|---|
-| `tokens.css` | 主题变量（`:root` / `html[data-theme]`） | 48 |
-| `base.css` | reset、`html/body`、布局骨架与工具类 | 69 |
-| `legacy.css` | 其余全部，原样、原顺序 | 777 |
+| `tokens.css` | 主题变量（`:root` / `html[data-theme="light"]`） | 48 |
+| `base.css` | 暗夜变量、reset、`html/body`、`.app` 布局骨架与工具类 | 69 |
+| `layout.css` | 侧栏、会话列表与右键菜单、顶栏、空状态页（`.sidebar` / `.topbar` / `.empty-view` / `.session-menu`） | 121 |
+| `chat.css` | 对话消息流、Markdown、导出文件卡片、流式预览、HITL/审批、DSH 输入框与选择器 | 204 |
+| `panels.css` | 右侧分栏 PDF/DOCX 文件预览、任务抽屉（候选人/合规/成本/证据/工作流） | 127 |
+| `settings.css` | 弹窗骨架、设置中心导航、模型提供商、MCP/Skill 插件、Agent 团队与岗位记忆 | 158 |
+| `modals.css` | 本地知识库弹窗、招聘邮箱弹窗、帮助中心弹窗与全局响应式断点 | 146 |
 
-生成方式：`node scripts/split-styles.mjs`（一次性；只搬位置，不改声明）。
-校验方式：`node scripts/audit-styles.mjs`，要求 `0 missing / 0 orphan`——逐条比对源与三份文件的规则多重集。
+校验方式：`pnpm --dir frontend run audit:styles`（`node scripts/audit-styles.mjs`），要求 `0 missing / 0 orphan`——逐条比对基线与全部模块化文件的规则多重集。
 
 ## 为什么不是一上来就 CSS Modules
 

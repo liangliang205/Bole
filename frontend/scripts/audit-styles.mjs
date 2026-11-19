@@ -4,7 +4,7 @@
  *   node scripts/audit-styles.mjs
  *   node scripts/audit-styles.mjs --verbose
  *
- * 判定：三份文件（tokens/base/legacy）的规则多重集必须与
+ * 判定：七份文件（tokens/base/layout/chat/panels/settings/modals）的规则多重集必须与
  * src/web/public/styles.css 完全一致，差一条即失败。
  */
 import { readFile } from 'node:fs/promises';
@@ -15,7 +15,15 @@ const here = import.meta.dirname;
 const repoRoot = path.resolve(here, '..', '..');
 const sourceFile = path.join(repoRoot, 'src', 'web', 'public', 'styles.css');
 const stylesDir = path.join(repoRoot, 'frontend', 'src', 'styles');
-const parts = ['tokens.css', 'base.css', 'legacy.css'];
+const parts = [
+  'tokens.css',
+  'base.css',
+  'layout.css',
+  'chat.css',
+  'panels.css',
+  'settings.css',
+  'modals.css',
+];
 const verbose = process.argv.includes('--verbose');
 
 const sourceRules = splitRules(await readFile(sourceFile, 'utf8'));

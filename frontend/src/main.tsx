@@ -5,7 +5,11 @@ import { App } from './App.tsx';
 import { applyTheme, storedTheme } from './theme.ts';
 import './styles/tokens.css';
 import './styles/base.css';
-import './styles/legacy.css';
+import './styles/layout.css';
+import './styles/chat.css';
+import './styles/panels.css';
+import './styles/settings.css';
+import './styles/modals.css';
 
 applyTheme(storedTheme(), false);
 

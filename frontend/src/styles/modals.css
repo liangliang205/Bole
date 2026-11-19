@@ -1,0 +1,166 @@
+/* knowledge base modal */
+.knowledge-card { width: min(1180px, 100%); max-height: 92vh; overflow: auto; }
+.knowledge-sub { margin: 4px 0 0; font-size: 12px; }
+.knowledge-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; margin-top: 14px; }
+.knowledge-bases { border-right: 0; padding: 10px; background: var(--surface-2); border-radius: 12px; }
+.knowledge-create { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 0; border-radius: 9px; background: var(--surface-3); }
+.knowledge-create-actions { display: flex; gap: 6px; }
+.knowledge-create-actions .btn { flex: 1; }
+.knowledge-notice { margin: 7px 0 0; padding: 7px 9px; border: 0; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 11px; }
+.knowledge-base-list { display: grid; gap: 5px; margin-top: 10px; }
+.knowledge-base-item {
+  border: 0; border-radius: 9px; padding: 8px 9px; cursor: pointer; background: transparent;
+}
+.knowledge-base-item:hover { background: var(--surface-3); }
+.knowledge-base-item.active { background: var(--surface); }
+.knowledge-base-item .kb-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.knowledge-base-item .kb-meta { font-size: 10px; color: var(--dim); margin-top: 2px; }
+.knowledge-base-item .dot.enabled { background: var(--ok); }
+.knowledge-main { min-width: 0; }
+.knowledge-hero { display: flex; align-items: center; gap: 12px; }
+.knowledge-hero-icon {
+  width: 38px; height: 38px; flex: none; display: grid; place-items: center;
+  border-radius: 11px; background: var(--warn-bg); color: var(--warn); font-size: 19px;
+}
+.knowledge-hero-copy { min-width: 0; flex: 1; }
+.knowledge-hero-copy h2 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+.knowledge-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.knowledge-tag {
+  display: inline-flex; align-items: center; min-height: 20px; padding: 1px 8px;
+  border: 0; border-radius: 6px; background: var(--surface-2);
+  color: var(--muted); font-size: 11px;
+}
+.knowledge-hero .btn { flex: none; }
+.knowledge-stats {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 16px;
+}
+.knowledge-stat {
+  min-width: 0; padding: 12px 11px; border: 0; border-radius: 11px;
+  background: var(--surface-2);
+}
+.knowledge-stat b { display: block; color: var(--text); font-size: 17px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.knowledge-stat span { display: block; margin-top: 5px; color: var(--dim); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.knowledge-panel {
+  margin-top: 14px; border: 0; border-radius: 12px; background: var(--surface);
+  overflow: hidden;
+}
+.knowledge-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--surface-2); }
+.knowledge-panel-head h3 { margin: 0; font-size: 14px; }
+.knowledge-panel-sub { display: block; margin-top: 3px; color: var(--dim); font-size: 11px; }
+.knowledge-table-wrap { overflow: auto; }
+.knowledge-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.knowledge-table th { padding: 9px 14px; color: var(--dim); font-size: 10px; font-weight: 500; text-align: left; background: var(--surface-3); }
+.knowledge-table th:first-child { width: 46%; }
+.knowledge-table th:nth-child(2) { width: 11%; }
+.knowledge-table th:nth-child(3) { width: 14%; }
+.knowledge-table th:nth-child(4) { width: 19%; }
+.knowledge-table th:last-child { width: 42px; }
+.knowledge-table td { padding: 12px 14px; vertical-align: middle; }
+.knowledge-table tbody tr:nth-child(even) { background: var(--surface-2); }
+.knowledge-table tbody tr:hover { background: var(--surface-3); }
+.knowledge-doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+.knowledge-doc-sub { margin-top: 3px; color: var(--dim); font-size: 10px; }
+.knowledge-type { color: var(--muted); font-size: 10px; }
+.knowledge-status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.knowledge-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--dim); }
+.knowledge-status.ok { color: var(--ok); }
+.knowledge-status.ok i { background: var(--ok); }
+.knowledge-status.warn { color: var(--warn); }
+.knowledge-status.warn i { background: var(--warn); }
+.knowledge-time { color: var(--dim); font-size: 11px; white-space: nowrap; }
+.knowledge-row-action { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 17px; line-height: 1; padding: 2px 5px; border-radius: 6px; }
+.knowledge-row-action:hover { background: var(--surface-3); color: var(--text); }
+.knowledge-table-empty { padding: 36px 14px !important; color: var(--dim); text-align: center; }
+.knowledge-switch-line { align-items: center; grid-template-columns: 1fr auto; }
+.knowledge-switch-line input { width: auto; }
+.knowledge-actions, .knowledge-settings-actions, .knowledge-doc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.knowledge-docs-head { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 12px; }
+.knowledge-docs-head h3 { margin: 0; }
+.knowledge-doc-list { display: grid; gap: 6px; margin-top: 8px; }
+.knowledge-doc-item { display: flex; align-items: center; gap: 8px; border: 0; border-radius: 8px; padding: 7px 9px; font-size: 12px; background: var(--surface-2); }
+.knowledge-doc-item .doc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-doc-item .doc-meta { color: var(--dim); font-size: 10px; white-space: nowrap; }
+.knowledge-config { margin-top: 14px; }
+.knowledge-settings { padding-top: 12px; }
+.knowledge-settings summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.knowledge-check { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.knowledge-check input { width: auto; }
+@media (max-width: 760px) {
+  .knowledge-layout { grid-template-columns: 1fr; }
+  .knowledge-bases { border-right: 0; border-bottom: 0; padding-right: 0; padding-bottom: 10px; }
+  .knowledge-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .knowledge-hero { align-items: flex-start; flex-wrap: wrap; }
+  .knowledge-hero .btn { width: 100%; }
+  .knowledge-table { min-width: 560px; }
+}
+@media (min-width: 761px) and (max-width: 1080px) {
+  .knowledge-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.kb-agent-roles { border: 0; padding: 0; margin: 8px 0; min-width: 0; }
+.kb-agent-roles legend { margin-bottom: 10px; font-size: 13px; }
+#kb-agent-roles { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+#kb-agent-roles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+/* mailbox modal */
+.mailbox-card { width:min(760px, 100%); }
+.mailbox-card h2 { margin:0 0 8px; }
+.mailbox-card h3 { font-size:15px; margin:0 0 18px; }
+.mailbox-account { display:flex; align-items:center; gap:16px; padding:22px; margin:24px 0; background:var(--surface-2); border-radius:14px; }
+.mailbox-account-icon { font-size:28px; width:52px; height:52px; display:grid; place-items:center; background:var(--surface); border-radius:12px; flex-shrink:0; }
+.mailbox-account > div:nth-child(2) { flex:1; min-width:0; }
+.mailbox-account-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+#mail-status { overflow-wrap:anywhere; margin-top:5px; font-size:14px; }
+#mail-status.mailbox-connected { color:var(--ok); font-weight:600; }
+.mail-auth-panel { margin:-12px 0 20px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); }
+.mail-auth-panel p { margin:0 0 8px; }
+.mail-auth-panel a { display:block; overflow-wrap:anywhere; color:var(--accent); margin-top:6px; }
+.mailbox-enabled { display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; }
+.mailbox-preferences .form-grid { gap:18px; }
+.mailbox-preferences small { font-size:12px; }
+.mailbox-flow { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin:24px 0; padding:18px; background:var(--surface-2); border-radius:12px; font-size:12px; color:var(--muted); }
+.mailbox-actions { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; }
+.mailbox-actions p { font-size:12px; margin:0; max-width:380px; }
+@media(max-width:600px) { .mailbox-account { flex-wrap:wrap; padding:16px; gap:12px; } .mailbox-account #mail-test { margin-left:auto; } .mailbox-actions .btn { width:100%; } }
+.mailbox-provider-label { display:grid; gap:8px; font-size:13px; margin-bottom:20px; }
+.mailbox-adapter-editor { margin:0 0 24px; padding:14px; background:var(--surface-2); border-radius:10px; font-size:13px; }
+.mailbox-adapter-editor summary { cursor:pointer; }
+.mailbox-adapter-editor label { display:grid; gap:6px; margin:12px 0; }
+#mail-adapter-config { width:100%; box-sizing:border-box; font-family:ui-monospace,monospace; }
+
+/* help dialog */
+.help-dialog { width: min(740px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 24px; border: 0; border-radius: 20px; color: var(--text); background: var(--modal); box-shadow: var(--shadow); }
+.help-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.help-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 24px; }
+.help-nav button { padding: 8px 12px; border: 0; border-radius: 20px; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
+.help-nav button.active, .help-nav button:hover { color: var(--text); background: var(--surface-2); }
+.help-dialog section { font-size: 14px; line-height: 1.85; }
+.help-dialog h3 { font-size: 17px; margin: 20px 0 12px; }
+.help-dialog li { margin: 8px 0; }
+.help-roles dt { margin-top: 16px; font-weight: 600; }
+.help-roles dd { margin: 4px 0 0; color: var(--muted); }
+.help-dialog blockquote { margin: 8px 0; padding: 10px 14px; background: var(--surface-2); border-radius: 10px; }
+
+/* global responsive breakpoints */
+@media (max-width: 1080px) {
+  .app { --sidebar-width: 250px; }
+  .topbar { padding: 12px 16px; }
+  .hero { padding: 0; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .sidebar-resizer, .content-resizer, .main.chat-active .content-resizer { display: none; }
+  .sidebar { position: relative; height: auto; max-height: 38vh; }
+  .main { height: auto; min-height: 70vh; }
+  .topbar-actions .btn:not(#panel-btn):not(#theme-toggle), .topbar-actions a { display: none; }
+  .chat-scroll, .stream-host, .hitl-host, .composer-wrap { padding-left: 14px; padding-right: 14px; }
+  .drawer { width: 100vw; }
+  .settings-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .settings-nav { display: flex; align-items: center; gap: 6px; border-right: 0; border-bottom: 0; padding: 8px 12px; }
+  .settings-nav-title { padding: 0 6px 0 0; }
+  .settings-nav-item { width: auto; }
+  .provider-card { flex-direction: column; }
+  .provider-actions { justify-content: flex-start; }
+  .directory-head { align-items: flex-start; flex-direction: column; }
+  .model-row { grid-template-columns: 1fr auto; }
+  .model-row input:nth-child(2) { grid-column: 1 / -1; }
+}
