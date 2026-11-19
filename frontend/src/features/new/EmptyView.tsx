@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
 
@@ -44,6 +44,27 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
   const fileInput = useRef<HTMLInputElement>(null);
   const setActiveJob = useUiStore((state) => state.setActiveJob);
   const queryClient = useQueryClient();
+  const [teamKey, setTeamKey] = useState('');
+  const [policyVersionId, setPolicyVersionId] = useState('');
+
+  // 团队与已批准的评分标准：老实现同样在新建处提供，随 POST /api/run 传给流水线
+  const teams = useQuery({
+    queryKey: ['agent-teams'],
+    queryFn: async () => (await api<{ teams?: { team_key: string }[] }>('/api/agent-teams')).teams ?? [],
+    staleTime: 30_000,
+  });
+  const policies = useQuery({
+    queryKey: ['memory'],
+    queryFn: async () => api<{
+      families?: { id: string; name: string }[];
+      versions?: { id: string; family_id: string; version: number; status: string }[];
+    }>('/api/memory'),
+    staleTime: 30_000,
+  });
+  const teamList = teams.data ?? [];
+  const families = policies.data?.families ?? [];
+  const approvedPolicies = (policies.data?.versions ?? []).filter((version) => version.status === 'approved');
+  const familyName = (id: string): string => families.find((family) => family.id === id)?.name ?? id;
 
   const showHint = (message: string, isError = false): void => {
     setHint(message);
@@ -109,6 +130,8 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
           requirements: text,
           uploadIds: uploaded.map((item) => item.uploadId),
           executionMode: mode,
+          agentTeamKey: teamKey || undefined,
+          policyVersionId: policyVersionId || undefined,
         }),
       });
       setRequirements('');
@@ -246,6 +269,36 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
           </div>
         </div>
         <div id="new-hint" className={`hint ${hintError ? 'error' : ''}`}>{hint}</div>
+        <div className="new-defaults">
+          <label className="muted" htmlFor="new-agent-team">默认团队
+            <select
+              id="new-agent-team"
+              className="input"
+              value={teamKey}
+              onChange={(event) => setTeamKey(event.target.value)}
+            >
+              <option value="">内置团队</option>
+              {teamList.map((team) => (
+                <option key={team.team_key} value={team.team_key}>{team.team_key}</option>
+              ))}
+            </select>
+          </label>
+          <label className="muted" htmlFor="new-policy-version">默认评分标准
+            <select
+              id="new-policy-version"
+              className="input"
+              value={policyVersionId}
+              onChange={(event) => setPolicyVersionId(event.target.value)}
+            >
+              <option value="">按本次需求生成</option>
+              {approvedPolicies.map((policy) => (
+                <option key={policy.id} value={policy.id}>
+                  {familyName(policy.family_id)} v{policy.version}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
     </section>
   );

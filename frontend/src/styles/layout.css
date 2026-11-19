@@ -123,3 +123,7 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .session-menu-item.danger:hover { background: var(--danger-bg); }
 .menu-hint { color: var(--dim); font-size: 10px; white-space: nowrap; }
 .session-menu-sep { height: 6px; background: transparent; margin: 0 6px; }
+
+.new-defaults{ display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.new-defaults label{ display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.new-defaults select{ min-width: 180px; }

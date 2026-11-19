@@ -17,7 +17,8 @@
     "check:layout": "node scripts/check-layout.mjs",
     "audit:dead-css": "node scripts/dead-css.mjs",
     "check:drawer": "node scripts/check-drawer-tabs.mjs",
-    "check:settings-deep": "node scripts/check-settings-deep.mjs"
+    "check:settings-deep": "node scripts/check-settings-deep.mjs",
+    "check:new-session": "node scripts/check-new-session.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
