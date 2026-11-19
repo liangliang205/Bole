@@ -799,3 +799,9 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .new-defaults{ display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .new-defaults label{ display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .new-defaults select{ min-width: 180px; }
+
+.provider-actions{ display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
+.provider-editor{ margin: 0 0 14px; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.provider-editor-head{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.provider-editor-head h3{ font-size: 14px; margin: 0; }
+.provider-editor-actions{ display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }

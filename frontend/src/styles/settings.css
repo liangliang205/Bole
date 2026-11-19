@@ -87,3 +87,9 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .screening-default-setting { padding:16px; margin-bottom:20px; border-radius:12px; background:var(--surface-2); display:grid; gap:8px; }
 .screening-default-setting > label { font-size:13px; font-weight:600; }
 .screening-default-setting p { margin:0; font-size:12px; }
+
+.provider-actions{ display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
+.provider-editor{ margin: 0 0 14px; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.provider-editor-head{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.provider-editor-head h3{ font-size: 14px; margin: 0; }
+.provider-editor-actions{ display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }

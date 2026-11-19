@@ -1,4 +1,4 @@
-﻿import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
@@ -40,7 +40,7 @@ interface McpPlugin {
 
 const readValue = (id: string): string => (document.getElementById(id) as HTMLInputElement | null)?.value?.trim() ?? '';
 
-/** 模型页：提供商列表 + 新增/编辑/测试/删除 + 模型发现。 */
+/** 模型页：提供商列表 + 新增/编辑/测试/删除 + 模型发现。编辑时用独立面板替换列表，避免看不出在改哪一条。 */
 function ModelsSection({ open }: { open: boolean }): ReactElement {
   const close = useUiStore((state) => state.closeSettings);
   const queryClient = useQueryClient();
@@ -51,7 +51,7 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
 
   const { data, isLoading } = useQuery({
     queryKey: ['providers'],
-    queryFn: async () => (await api<{ providers?: Provider[]; active?: string }>('/api/providers')).providers ?? [],
+    queryFn: async () => (await api<{ providers?: Provider[] }>('/api/providers')).providers ?? [],
     staleTime: 5_000,
   });
   const providers = data ?? [];
@@ -60,21 +60,24 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
     await queryClient.invalidateQueries({ queryKey: ['providers'] });
   };
 
-  const testConnection = async (providerId?: string): Promise<void> => {
+  /** 已保存的提供商：只带 id + 自身地址，密钥由服务端按 id 取；编辑器里则读表单。 */
+  const testConnection = async (provider?: Provider): Promise<void> => {
     setBusy(true);
     try {
       const result = await api<{ models?: { id: string }[]; endpoint?: string }>('/api/providers/discover-models', {
         method: 'POST',
         body: JSON.stringify({
-          baseUrl: readValue('provider-base'),
-          api: readValue('provider-api') || 'openai-chat',
-          apiKey: readValue('provider-key') || undefined,
-          providerId,
+          providerId: provider?.id,
+          // 编辑中优先用表单里刚填的值，没填才回落到已保存值
+          baseUrl: readValue('provider-base') || provider?.baseUrl,
+          api: readValue('provider-api') || provider?.api || 'openai-chat',
+          apiKey: provider ? undefined : (readValue('provider-key') || undefined),
         }),
       });
       const models = (result.models ?? []).map((item) => item.id);
       setDiscovered(models);
-      setStatus(`连接正常，发现 ${models.length} 个模型${result.endpoint ? `（${result.endpoint}）` : ''}`);
+      const who = provider ? (provider.name || provider.id) : '当前填写';
+      setStatus(`${who} 连接正常，发现 ${models.length} 个模型${result.endpoint ? `（${result.endpoint}）` : ''}`);
     } catch (error) {
       setDiscovered([]);
       setStatus(`连接失败：${error instanceof Error ? error.message : String(error)}`);
@@ -92,10 +95,7 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
   const saveProvider = async (): Promise<void> => {
     const name = readValue('provider-name');
     const baseUrl = readValue('provider-base');
-    if (!name || !baseUrl) {
-      setStatus('显示名称与 API 地址都要填。');
-      return;
-    }
+    if (!name || !baseUrl) { setStatus('显示名称与 API 地址都要填。'); return; }
     setBusy(true);
     try {
       const payload = {
@@ -110,10 +110,7 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
         await api(`/api/providers/${encodeURIComponent(editor.provider.id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
         setStatus('提供商已更新。');
       } else {
-        await api('/api/providers', {
-          method: 'POST',
-          body: JSON.stringify({ ...payload, id: readValue('provider-id') || undefined }),
-        });
+        await api('/api/providers', { method: 'POST', body: JSON.stringify({ ...payload, id: readValue('provider-id') || undefined }) });
         setStatus('提供商已创建。');
       }
       setEditor(null);
@@ -143,20 +140,13 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
   return (
     <section className={`settings-content${open ? '' : ' hidden'}`} id="settings-models">
       <div className="modal-head"><h2>模型</h2><button className="btn ghost" id="settings-close" onClick={close}>✕</button></div>
-      <div className="settings-toolbar">
-        <span className="muted" id="provider-count">{providers.length > 0 ? `${providers.length} 个提供商` : ''}</span>
-        <button
-          className="btn primary"
-          id="provider-add"
-          onClick={() => { setEditor({ mode: 'create' }); setDiscovered([]); setStatus(''); }}
-        >
-          ＋ 添加模型提供商
-        </button>
-      </div>
 
       {editor ? (
         <div id="provider-editor" className="provider-editor">
-          <h3>{editor.mode === 'edit' ? `编辑 ${editor.provider?.name || editor.provider?.id}` : '添加模型提供商'}</h3>
+          <div className="provider-editor-head">
+            <h3>{editor.mode === 'edit' ? `编辑：${editor.provider?.name || editor.provider?.id}` : '新增模型提供商'}</h3>
+            <button className="btn ghost" type="button" onClick={() => { setEditor(null); setDiscovered([]); }}>✕</button>
+          </div>
           <div className="form-grid">
             {editor.mode === 'create' ? (
               <label>Provider ID<input id="provider-id" className="input" placeholder="acme-gateway" /></label>
@@ -188,44 +178,55 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
               </div>
             </div>
           ) : null}
-          <div className="settings-status" role="status">{status}</div>
-          <div className="modal-actions">
-            <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testConnection(editor.provider?.id); }}>测试连接</button>
+          <div className="provider-editor-actions">
+            <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testConnection(editor.provider); }}>测试连接</button>
+            <span className="settings-status" role="status">{status}</span>
             <span className="spacer" />
-            <button className="btn ghost" type="button" onClick={() => { setEditor(null); setDiscovered([]); }}>取消</button>
+            <button className="btn ghost" type="button" onClick={() => { setEditor(null); setDiscovered([]); setStatus(''); }}>取消</button>
             <button className="btn primary" type="button" disabled={busy} onClick={() => { void saveProvider(); }}>
               {editor.mode === 'edit' ? '保存修改' : '创建提供商'}
             </button>
           </div>
         </div>
-      ) : null}
-
-      <div id="provider-list" className="provider-list">
-        {isLoading ? <div className="provider-empty">读取中…</div>
-          : providers.length === 0 ? <div className="provider-empty">还没有配置模型提供商。点上方「添加模型提供商」开始。</div>
-            : providers.map((provider) => (
-              <div className={`provider-card${provider.builtin ? ' active' : ''}`} key={provider.id} data-provider={provider.id}>
-                <div className="provider-main">
-                  <span className="provider-name">{provider.name || provider.id}</span>
-                  <span className="provider-meta">
-                    {provider.api || ''}{provider.builtin ? ' · 内置' : ''}{provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
-                  </span>
-                </div>
-                <div className="provider-models">
-                  <span>快速 {provider.flashModel || '—'}</span>
-                  <span>深入 {provider.proModel || '—'}</span>
-                </div>
-                <div className="provider-actions">
-                  <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testConnection(provider.id); }}>测试</button>
-                  <button className="btn ghost" type="button" onClick={() => { setEditor({ mode: 'edit', provider }); setDiscovered([]); setStatus(''); }}>编辑</button>
-                  {provider.builtin ? null : (
-                    <button className="btn ghost danger-text" type="button" disabled={busy} onClick={() => { void removeProvider(provider); }}>删除</button>
-                  )}
-                </div>
-              </div>
-            ))}
-      </div>
-      {editor ? null : <div className="settings-status" role="status">{status}</div>}
+      ) : (
+        <>
+          <div className="settings-toolbar">
+            <span className="muted" id="provider-count">{providers.length > 0 ? `${providers.length} 个提供商` : ''}</span>
+            <button className="btn primary" id="provider-add" onClick={() => { setEditor({ mode: 'create' }); setDiscovered([]); setStatus(''); }}>
+              ＋ 添加模型提供商
+            </button>
+          </div>
+          <div id="provider-list" className="provider-list">
+            {isLoading ? <div className="provider-empty">读取中…</div>
+              : providers.length === 0 ? <div className="provider-empty">还没有配置模型提供商。点上方「添加模型提供商」开始。</div>
+                : providers.map((provider) => (
+                  <div className="provider-card" key={provider.id} data-provider={provider.id}>
+                    <div className="provider-main">
+                      <span className="provider-name">
+                        {provider.name || provider.id}
+                        {provider.builtin ? <span className="tag">内置</span> : null}
+                      </span>
+                      <span className="provider-meta" title={provider.baseUrl ?? ''}>
+                        {provider.api || ''}{provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
+                      </span>
+                    </div>
+                    <div className="provider-models">
+                      <span>快速</span><b>{provider.flashModel || '—'}</b>
+                      <span>深入</span><b>{provider.proModel || '—'}</b>
+                    </div>
+                    <div className="provider-actions">
+                      <button className="btn ghost" type="button" disabled={busy} onClick={() => { void testConnection(provider); }}>测试</button>
+                      <button className="btn ghost" type="button" onClick={() => { setEditor({ mode: 'edit', provider }); setDiscovered([]); setStatus(''); }}>编辑</button>
+                      {provider.builtin ? null : (
+                        <button className="btn ghost danger-text" type="button" disabled={busy} onClick={() => { void removeProvider(provider); }}>删除</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+          </div>
+          <div className="settings-status" role="status">{status}</div>
+        </>
+      )}
     </section>
   );
 }
