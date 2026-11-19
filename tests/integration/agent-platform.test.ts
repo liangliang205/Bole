@@ -109,6 +109,9 @@ test('HTTP 动态注册无需重启：草稿、发现、激活、退役及管理
     assert.equal((await api('/api/agents?capabilitiesAll=resume.specialist-check%401')).discovery.filter((d) => d.eligible).length, 1);
     await api('/api/agents/qualification-checker/versions/1.0.0/retire', {});
     assert.equal((await api('/api/agents?capabilitiesAll=resume.specialist-check%401')).discovery.filter((d) => d.eligible).length, 0);
+    // 退役可撤销：恢复后重新进入可用集合，活动版本指针也回位
+    await api('/api/agents/qualification-checker/versions/1.0.0/restore', {});
+    assert.equal((await api('/api/agents?capabilitiesAll=resume.specialist-check%401')).discovery.filter((d) => d.eligible).length, 1);
     // 旧的前端脚本已随前端迁移移除，只保留 SPA 挂载点
     assert.equal((await fetch(base + '/agent-ui.js')).status, 404);
     const doctor = await api('/api/doctor');
@@ -118,8 +121,15 @@ test('HTTP 动态注册无需重启：草稿、发现、激活、退役及管理
     assertFrontendEntry(html);
     assert.equal((await fetch(base + '/api/agent-invocations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
     const ledger = new Ledger(process.env.BOLE_DB!);
-    assert.equal(new AgentStore(ledger).get('qualification-checker@1.0.0').status, 'retired');
-    const job = ledger.createJob({ title: 'workflow inspection', requirements: 'test' }); ledger.close();
+    try {
+      // 恢复之后应重新是 registered；用 try/finally 保证断言失败也不会漏掉连接
+      assert.equal(new AgentStore(ledger).get('qualification-checker@1.0.0').status, 'registered');
+    } finally {
+      ledger.close();
+    }
+    const jobLedger = new Ledger(process.env.BOLE_DB!);
+    const job = jobLedger.createJob({ title: 'workflow inspection', requirements: 'test' });
+    jobLedger.close();
     const view = await api(`/api/run/${job.id}/workflow`) as unknown as { runs: unknown[]; nodes: unknown[] };
     assert.deepEqual(view.runs, []); assert.deepEqual(view.nodes, []);
     assert.equal((await fetch(`${base}/api/run/missing/workflow`)).status, 400);
