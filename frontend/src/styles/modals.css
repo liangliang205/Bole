@@ -67,7 +67,7 @@
 .knowledge-status.warn i { background: var(--warn); }.knowledge-row-action { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 17px; line-height: 1; padding: 2px 5px; border-radius: 6px; }
 .knowledge-row-action:hover { background: var(--surface-3); color: var(--text); }.knowledge-switch-line { align-items: center; grid-template-columns: 1fr auto; }
 .knowledge-switch-line input { width: auto; }
-.knowledge-actions, .knowledge-settings-actions, .knowledge-doc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }.knowledge-config { margin-top: 14px; }
+.knowledge-actions, .knowledge-settings-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }.knowledge-config { margin-top: 14px; }
 .knowledge-settings { padding-top: 12px; }
 .knowledge-settings summary { cursor: pointer; font-weight: 600; font-size: 13px; }
 .knowledge-check { display: flex; align-items: center; gap: 7px; font-size: 12px; }
@@ -103,7 +103,7 @@
 .mail-auth-panel a { display:block; overflow-wrap:anywhere; color:var(--accent); margin-top:6px; }
 .mailbox-enabled { display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; }
 .mailbox-preferences .form-grid { gap:18px; }
-.mailbox-preferences small { font-size:12px; }@media(max-width:600px) { .mailbox-account { flex-wrap:wrap; padding:16px; gap:12px; } .mailbox-account #mail-test { margin-left:auto; } .mailbox-actions .btn { width:100%; } }
+.mailbox-preferences small { font-size:12px; }@media(max-width:600px) { .mailbox-account { flex-wrap:wrap; padding:16px; gap:12px; } .mailbox-account #mail-test { margin-left:auto; }  }
 .mailbox-provider-label { display:grid; gap:8px; font-size:13px; margin-bottom:20px; }
 .mailbox-adapter-editor { margin:0 0 24px; padding:14px; background:var(--surface-2); border-radius:10px; font-size:13px; }
 .mailbox-adapter-editor summary { cursor:pointer; }
@@ -139,8 +139,4 @@
   .settings-nav-title { padding: 0 6px 0 0; }
   .settings-nav-item { width: auto; }
   .provider-card { flex-direction: column; }
-  .provider-actions { justify-content: flex-start; }
-  .directory-head { align-items: flex-start; flex-direction: column; }
-  .model-row { grid-template-columns: 1fr auto; }
-  .model-row input:nth-child(2) { grid-column: 1 / -1; }
-}
+        }

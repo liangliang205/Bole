@@ -99,14 +99,7 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
   position: relative; z-index: 5;
   justify-content: flex-end;
 }
-.topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }.pill.running { color: var(--warn); background: var(--warn-bg); }
-.pill.pausing { color: var(--warn); background: var(--warn-bg); }
-.pill.paused { color: var(--muted); background: var(--surface-2); }
-.pill.completed { color: var(--ok); background: var(--ok-bg); }
-.pill.failed { color: var(--danger); background: var(--danger-bg); }
-.pill.idle { color: var(--muted); }
-
-/* empty view */
+.topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }/* empty view */
 .empty-view { flex: 1; overflow: auto; padding: clamp(72px, 18vh, 180px) 24px 60px; }
 .hero {
   max-width: var(--content-width); margin: 0 auto; padding: 0;

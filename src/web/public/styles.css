@@ -218,14 +218,7 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
   position: relative; z-index: 5;
   justify-content: flex-end;
 }
-.topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }.pill.running { color: var(--warn); background: var(--warn-bg); }
-.pill.pausing { color: var(--warn); background: var(--warn-bg); }
-.pill.paused { color: var(--muted); background: var(--surface-2); }
-.pill.completed { color: var(--ok); background: var(--ok-bg); }
-.pill.failed { color: var(--danger); background: var(--danger-bg); }
-.pill.idle { color: var(--muted); }
-
-/* empty view */
+.topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }/* empty view */
 .empty-view { flex: 1; overflow: auto; padding: clamp(72px, 18vh, 180px) 24px 60px; }
 .hero {
   max-width: var(--content-width); margin: 0 auto; padding: 0;
@@ -446,8 +439,6 @@ html[data-theme="dark"] .dsh-composer {
 .mode-trigger:focus-visible, .mode-menu button:focus-visible, #attach-btn:focus-visible, #new-start:focus-visible { outline: 2px solid var(--dsh-secondary); outline-offset: 3px; }.new-composer .dsh-composer-tools { flex-wrap: wrap; gap: 4px; }
 .new-composer .dsh-composer-row { align-items: flex-end; }
 .mail-source-state { color:var(--muted); font-size:11px; }
-.mail-enabled .mail-source-state { color:var(--ok); }
-
 /* 文件预览：DSH 式右侧分栏，不遮挡对话 */
 .app.preview-open { grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr) var(--preview-width, 48vw); }
 .app.drawer-open { grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr) var(--drawer-width, 520px); }
@@ -652,14 +643,12 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .settings-embedded h3 { font-size: 17px; margin: 20px 0 12px; }
 .agent-onboarding { padding: 16px; background: var(--surface-2); border-radius: 14px; margin-bottom: 16px; }
 .agent-onboarding p { font-size: 13px; color: var(--muted); line-height: 1.7; }
-.agent-onboarding .btn { margin: 4px 8px 0 0; }.agent-history .memory-item { margin-left: 8px; }
-#agent-knowledge-roles, #agent-tool-checkboxes { display: flex; flex-wrap: wrap; gap: 10px 16px; }
-#agent-knowledge-roles label, #agent-tool-options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }.settings-embedded .agent-card-heading h3 { margin: 0 0 4px; }@media (max-width: 640px) { .agent-card-actions { width: 100%; } }
-.agent-team-editor { padding: 20px; border: 1px solid var(--border); border-radius: 14px; margin: 20px 0 28px; }.agent-team-editor .memory-weight { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0; min-width: 0; font-size: 13px; }
-.agent-team-editor .memory-weight .input { width: 100%; min-width: 0; }#agent-base-role-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
+.agent-onboarding .btn { margin: 4px 8px 0 0; }#agent-knowledge-roles, #agent-tool-checkboxes { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+#agent-knowledge-roles label, #agent-tool-options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }@media (max-width: 640px) {  }
+.agent-team-editor { padding: 20px; border: 1px solid var(--border); border-radius: 14px; margin: 20px 0 28px; }#agent-base-role-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
 .settings-embedded .agent-saved-teams h3 { margin: 0 0 8px; }
 .agent-saved-teams .memory-item { padding: 12px 0; }
-@media (max-width: 640px) { .agent-team-form, #agent-base-role-fields { grid-template-columns: 1fr; } .agent-team-editor { padding: 16px; } }
+@media (max-width: 640px) { #agent-base-role-fields { grid-template-columns: 1fr; } .agent-team-editor { padding: 16px; } }
 .screening-default-setting { padding:16px; margin-bottom:20px; border-radius:12px; background:var(--surface-2); display:grid; gap:8px; }
 .screening-default-setting > label { font-size:13px; font-weight:600; }
 .screening-default-setting p { margin:0; font-size:12px; }
@@ -733,7 +722,7 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .knowledge-status.warn i { background: var(--warn); }.knowledge-row-action { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 17px; line-height: 1; padding: 2px 5px; border-radius: 6px; }
 .knowledge-row-action:hover { background: var(--surface-3); color: var(--text); }.knowledge-switch-line { align-items: center; grid-template-columns: 1fr auto; }
 .knowledge-switch-line input { width: auto; }
-.knowledge-actions, .knowledge-settings-actions, .knowledge-doc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }.knowledge-config { margin-top: 14px; }
+.knowledge-actions, .knowledge-settings-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }.knowledge-config { margin-top: 14px; }
 .knowledge-settings { padding-top: 12px; }
 .knowledge-settings summary { cursor: pointer; font-weight: 600; font-size: 13px; }
 .knowledge-check { display: flex; align-items: center; gap: 7px; font-size: 12px; }
@@ -769,7 +758,7 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .mail-auth-panel a { display:block; overflow-wrap:anywhere; color:var(--accent); margin-top:6px; }
 .mailbox-enabled { display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; }
 .mailbox-preferences .form-grid { gap:18px; }
-.mailbox-preferences small { font-size:12px; }@media(max-width:600px) { .mailbox-account { flex-wrap:wrap; padding:16px; gap:12px; } .mailbox-account #mail-test { margin-left:auto; } .mailbox-actions .btn { width:100%; } }
+.mailbox-preferences small { font-size:12px; }@media(max-width:600px) { .mailbox-account { flex-wrap:wrap; padding:16px; gap:12px; } .mailbox-account #mail-test { margin-left:auto; }  }
 .mailbox-provider-label { display:grid; gap:8px; font-size:13px; margin-bottom:20px; }
 .mailbox-adapter-editor { margin:0 0 24px; padding:14px; background:var(--surface-2); border-radius:10px; font-size:13px; }
 .mailbox-adapter-editor summary { cursor:pointer; }
@@ -805,8 +794,4 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
   .settings-nav-title { padding: 0 6px 0 0; }
   .settings-nav-item { width: auto; }
   .provider-card { flex-direction: column; }
-  .provider-actions { justify-content: flex-start; }
-  .directory-head { align-items: flex-start; flex-direction: column; }
-  .model-row { grid-template-columns: 1fr auto; }
-  .model-row input:nth-child(2) { grid-column: 1 / -1; }
-}
+        }

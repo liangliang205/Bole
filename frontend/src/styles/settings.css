@@ -78,14 +78,12 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .settings-embedded h3 { font-size: 17px; margin: 20px 0 12px; }
 .agent-onboarding { padding: 16px; background: var(--surface-2); border-radius: 14px; margin-bottom: 16px; }
 .agent-onboarding p { font-size: 13px; color: var(--muted); line-height: 1.7; }
-.agent-onboarding .btn { margin: 4px 8px 0 0; }.agent-history .memory-item { margin-left: 8px; }
-#agent-knowledge-roles, #agent-tool-checkboxes { display: flex; flex-wrap: wrap; gap: 10px 16px; }
-#agent-knowledge-roles label, #agent-tool-options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }.settings-embedded .agent-card-heading h3 { margin: 0 0 4px; }@media (max-width: 640px) { .agent-card-actions { width: 100%; } }
-.agent-team-editor { padding: 20px; border: 1px solid var(--border); border-radius: 14px; margin: 20px 0 28px; }.agent-team-editor .memory-weight { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0; min-width: 0; font-size: 13px; }
-.agent-team-editor .memory-weight .input { width: 100%; min-width: 0; }#agent-base-role-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
+.agent-onboarding .btn { margin: 4px 8px 0 0; }#agent-knowledge-roles, #agent-tool-checkboxes { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+#agent-knowledge-roles label, #agent-tool-options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }@media (max-width: 640px) {  }
+.agent-team-editor { padding: 20px; border: 1px solid var(--border); border-radius: 14px; margin: 20px 0 28px; }#agent-base-role-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
 .settings-embedded .agent-saved-teams h3 { margin: 0 0 8px; }
 .agent-saved-teams .memory-item { padding: 12px 0; }
-@media (max-width: 640px) { .agent-team-form, #agent-base-role-fields { grid-template-columns: 1fr; } .agent-team-editor { padding: 16px; } }
+@media (max-width: 640px) { #agent-base-role-fields { grid-template-columns: 1fr; } .agent-team-editor { padding: 16px; } }
 .screening-default-setting { padding:16px; margin-bottom:20px; border-radius:12px; background:var(--surface-2); display:grid; gap:8px; }
 .screening-default-setting > label { font-size:13px; font-weight:600; }
 .screening-default-setting p { margin:0; font-size:12px; }

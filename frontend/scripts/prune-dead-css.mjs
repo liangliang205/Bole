@@ -2,80 +2,95 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 /**
- * 删除 A 类死样式：只处理"整条规则的所有选择器都只涉及 A 类"的顶层规则。
- * @media 内的规则暂不处理（两侧文件保持一致即可通过等价审计）。
+ * 保守清理死样式：按选择器逐个裁剪，只做"删除"，不改动其余格式。
+ * 判定：选择器里只要出现一个"源码中从不出现的类"，该选择器永远匹配不到元素，可删。
+ * 逗号列表只删死的那段，其余保留；规则删空才整条删除。
+ * 顶层规则与 @media 内规则同样处理，并同步作用于基准表，保证等价审计通过。
  */
-const A_CLASSES = [
-  // 旧 Agent 编辑器
+const A_CLASSES = new Set([
   'agent-card-actions', 'agent-card-description', 'agent-card-details', 'agent-card-footer', 'agent-card-heading',
   'agent-history', 'agent-role-card', 'agent-team-disclosures', 'agent-team-footer', 'agent-team-form',
-  // 旧模型目录
   'model-directory', 'model-empty', 'model-list', 'model-row', 'directory-actions', 'directory-head',
   'provider-builtin-head', 'provider-actions',
-  // 旧知识库文档列表
   'knowledge-doc-actions', 'knowledge-doc-item', 'knowledge-doc-list', 'knowledge-docs-head',
   'knowledge-table-empty', 'knowledge-time', 'knowledge-type', 'doc-name', 'doc-meta',
-  // 旧邮箱
   'mailbox-actions', 'mailbox-flow', 'mail-enabled',
-  // 旧插件编辑器
   'plugin-editor', 'plugin-install-dialog',
-  // 旧工具 / 工作流
   'tool-card', 'tool-output', 'tools-grid', 'section-row',
-  // 旧 composer 选择器
   'composer-picker', 'composer-picker-menu', 'picker-group', 'picker-label',
-  // 其它
   'help-roles', 'memory-json', 'memory-weight', 'policy-binding', 'pill', 'report-actions', 'bar',
-];
+]);
 
-const hasClass = (selector, name) => new RegExp(`\\.${name}(?![\\w-])`).test(selector);
-const onlyDead = (selector) => {
-  const classes = [...selector.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)].map((m) => m[1]);
-  const deadHits = classes.filter((name) => A_CLASSES.includes(name));
-  if (deadHits.length === 0) return false;
-  // 规则里只要出现"非 A 类"的类，就保留整条（可能被别的组件用到）
-  const otherClasses = classes.filter((name) => !A_CLASSES.includes(name));
-  // .btn/.tag 这类全局工具类不算"使用方"，允许连带删除
-  const allowlist = new Set(['btn', 'ghost', 'primary', 'block', 'danger-text', 'tag', 'muted', 'input', 'hidden', 'active', 'ok', 'danger', 'warn']);
-  return otherClasses.every((name) => allowlist.has(name));
-};
+const isDeadSelector = (selector) => [...selector.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)].some((m) => A_CLASSES.has(m[1]));
 
-/** 删除顶层规则（不进入 @media 等块内部）。 */
-function prune(text) {
-  let out = '';
+/**
+ * 扫描文本并按原始偏移记录编辑动作，最后从后往前落盘，保证未触碰的部分逐字节不变。
+ * actions: {start, end, replacement}
+ */
+function collect(text) {
+  const actions = [];
   let index = 0;
-  let removed = 0;
-  let kept = 0;
+  let removedRules = 0;
+  let removedParts = 0;
+
   while (index < text.length) {
-    const braceOpen = text.indexOf('{', index);
-    if (braceOpen < 0) { out += text.slice(index); break; }
-    // 选择器文本（可能前面带注释与空白）
-    const selectorRaw = text.slice(index, braceOpen);
-    // 跳过 @ 规则与注释块：整体保留到配对的 }
-    const trimmed = selectorRaw.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+    const braceAt = text.indexOf('{', index);
+    if (braceAt < 0) break;
+
+    const rawPrelude = text.slice(index, braceAt);
+    const commentMatch = /^(\s*(?:\/\*[\s\S]*?\*\/\s*)*)/.exec(rawPrelude);
+    const leadingLength = commentMatch ? commentMatch[1].length : 0;
+
     let depth = 0;
-    let cursor = braceOpen;
+    let cursor = braceAt;
     for (; cursor < text.length; cursor += 1) {
       if (text[cursor] === '{') depth += 1;
       else if (text[cursor] === '}') { depth -= 1; if (depth === 0) { cursor += 1; break; } }
     }
-    const block = text.slice(index, cursor);
-    if (trimmed.startsWith('@') || trimmed === '' || /^\s*:root/.test(trimmed)) {
-      out += block;
-      kept += 1;
-    } else {
-      const selectors = trimmed.split(',').map((part) => part.trim()).filter(Boolean);
-      if (selectors.length > 0 && selectors.every(onlyDead)) {
-        removed += 1;
-        // 同时吞掉紧随其后的空行，避免留下空洞
-        while (text[cursor] === '\n' || text[cursor] === '\r') cursor += 1;
-      } else {
-        out += block;
-        kept += 1;
+
+    const preludeRaw = rawPrelude.slice(leadingLength);
+    const prelude = preludeRaw.trim();
+    const body = text.slice(braceAt + 1, cursor - 1);
+
+    if (prelude.startsWith('@')) {
+      const inner = collect(body);
+      // 把块内的相对偏移映射回全文
+      for (const action of inner.actions) {
+        actions.push({ start: braceAt + 1 + action.start, end: braceAt + 1 + action.end, replacement: action.replacement });
+      }
+      removedRules += inner.removedRules;
+      removedParts += inner.removedParts;
+    } else if (prelude !== '' && !prelude.startsWith(':root')) {
+      const parts = prelude.split(',').map((part) => part.trim()).filter(Boolean);
+      const kept = parts.filter((part) => !isDeadSelector(part));
+      const dropped = parts.length - kept.length;
+      if (dropped > 0) {
+        removedParts += dropped;
+        if (kept.length === 0) {
+          removedRules += 1;
+          // 保留前导注释与缩进，删掉「选择器 + 块 + 其后换行」
+          const start = index + leadingLength;
+          let end = cursor;
+          while (end < text.length && (text[end] === '\r' || text[end] === '\n')) end += 1;
+          actions.push({ start, end, replacement: '' });
+        } else {
+          // 只重写选择器列表，保留缩进前缀与块的其余部分
+          const indent = preludeRaw.slice(0, preludeRaw.length - preludeRaw.trimStart().length);
+          actions.push({ start: index + leadingLength, end: braceAt, replacement: `${indent}${kept.join(', ')} ` });
+        }
       }
     }
     index = cursor;
   }
-  return { text: out, removed, kept };
+  return { actions, removedRules, removedParts };
+}
+
+function apply(text, actions) {
+  let out = text;
+  for (const action of [...actions].sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, action.start) + action.replacement + out.slice(action.end);
+  }
+  return out;
 }
 
 const targets = [
@@ -83,14 +98,14 @@ const targets = [
   'src/web/public/styles.css',
 ];
 
-let totalRemoved = 0;
+let rules = 0;
+let parts = 0;
 for (const file of targets) {
   const source = readFileSync(file, 'utf8');
-  const result = prune(source);
-  if (result.removed > 0) {
-    writeFileSync(file, result.text);
-    totalRemoved += result.removed;
-  }
-  process.stdout.write(`${file.padEnd(34)} 删除 ${result.removed} 条，保留 ${result.kept} 条\n`);
+  const { actions, removedRules, removedParts } = collect(source);
+  if (actions.length > 0) writeFileSync(file, apply(source, actions));
+  rules += removedRules;
+  parts += removedParts;
+  process.stdout.write(`${file.padEnd(34)} 规则 ${String(removedRules).padStart(2)} / 选择器段 ${removedParts}\n`);
 }
-process.stdout.write(`\n共删除 ${totalRemoved} 条顶层规则\n`);
+process.stdout.write(`\n合计：整条规则 ${rules}，选择器段 ${parts}\n`);
