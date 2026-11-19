@@ -1,0 +1,224 @@
+import { useQuery } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { api } from '../../api/client.ts';
+
+interface AgentVersion {
+  version_key?: string;
+  agent_id: string;
+  version: string;
+  status?: string;
+  definition_json?: string;
+}
+
+interface AgentDefinition {
+  name?: string;
+  tier?: string;
+  description?: string;
+  roleTags?: string[];
+}
+
+interface AgentTeam {
+  team_key: string;
+  definition_json?: string;
+}
+
+interface MemoryVersion {
+  id: string;
+  family?: string;
+  version?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+interface MemoryProposal {
+  id: string;
+  status?: string;
+  rule?: string;
+  createdAt?: string;
+}
+
+function parseDefinition(raw: string | undefined): AgentDefinition {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as AgentDefinition;
+  } catch {
+    return {};
+  }
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  registered: '已发布', draft: '草稿', retired: '已退役', active: '启用中',
+};
+
+/**
+ * Agent 团队页：已发布角色与已保存团队（只读）。
+ * 创建/编辑/发布、团队编辑器、任务绑定仍待接。
+ */
+export function AgentsPanel(): ReactElement {
+  const agents = useQuery({
+    queryKey: ['agents'],
+    queryFn: async () => api<{ versions?: AgentVersion[] }>('/api/agents'),
+    staleTime: 10_000,
+  });
+  const teams = useQuery({
+    queryKey: ['agent-teams'],
+    queryFn: async () => api<{ teams?: AgentTeam[] }>('/api/agent-teams'),
+    staleTime: 10_000,
+  });
+
+  const versions = agents.data?.versions ?? [];
+  const teamList = teams.data?.teams ?? [];
+
+  return (
+    <>
+      <div className="screening-default-setting">
+        <label htmlFor="new-agent-team">新筛选默认团队</label>
+        <select id="new-agent-team" className="input" defaultValue={teamList[0]?.team_key ?? ''}>
+          {teamList.length === 0 ? <option value="">内置团队</option> : null}
+          {teamList.map((team) => <option key={team.team_key} value={team.team_key}>{team.team_key}</option>)}
+        </select>
+        <p className="muted">选择后自动保存，用于之后新建的筛选；已有任务保持原团队。</p>
+      </div>
+      <div className="agent-onboarding">
+        <b>自定义 Agent：三步完成</b>
+        <p>① 创建角色，写清职责　② 发布并启用　③ 配置到团队，在新会话中使用</p>
+        <button id="agent-open-guide" className="btn ghost" type="button" disabled>操作指南（待接）</button>
+      </div>
+      <nav className="help-nav" aria-label="Agent 管理分类">
+        <button className="active" data-agent-tab="roles" type="button">我的角色</button>
+        <button data-agent-tab="editor" type="button" disabled>创建与编辑</button>
+        <button data-agent-tab="teams" type="button" disabled>团队配置</button>
+        <button data-agent-tab="runs" type="button" disabled>任务绑定</button>
+      </nav>
+
+      <section data-agent-section="roles">
+        {agents.isLoading ? <div className="empty-note">正在读取角色…</div>
+          : agents.error ? <div className="empty-note">读取失败：{agents.error instanceof Error ? agents.error.message : String(agents.error)}</div>
+            : versions.length === 0 ? <div className="empty-note">还没有已发布的角色。</div>
+              : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>角色</th><th>版本</th><th>状态</th><th>档位</th></tr></thead>
+                    <tbody>
+                      {versions.map((version) => {
+                        const definition = parseDefinition(version.definition_json);
+                        return (
+                          <tr key={version.version_key ?? `${version.agent_id}@${version.version}`}>
+                            <td>
+                              <b>{definition.name ?? version.agent_id}</b>
+                              <div className="muted">{definition.description ?? version.agent_id}</div>
+                            </td>
+                            <td><span className="tag">{version.agent_id}@{version.version}</span></td>
+                            <td><span className={`tag ${version.status === 'registered' ? 'ok' : version.status === 'retired' ? 'danger' : ''}`}>{STATUS_LABEL[version.status ?? ''] ?? version.status ?? ''}</span></td>
+                            <td>{definition.tier ?? ''}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+      </section>
+
+      <section className="agent-saved-teams">
+        <h3>已保存的团队</h3>
+        <p className="muted">保存的组合可以在新建会话时重复使用。</p>
+        <div id="agent-team-list">
+          {teamList.length === 0 ? <div className="empty-note">还没有自定义团队。</div>
+            : teamList.map((team) => (
+              <div className="memory-item" key={team.team_key}>
+                <b>{team.team_key}</b>
+                <span className="muted"> · 团队定义已保存</span>
+              </div>
+            ))}
+        </div>
+      </section>
+      <p id="agent-status" className="settings-status" role="status">
+        创建、编辑、发布与团队配置仍待接；当前为只读视图。
+      </p>
+    </>
+  );
+}
+
+/**
+ * 岗位与评分标准页：岗位族、版本历史与提案（只读）。
+ * 创建岗位族、提交提案、审批仍待接。
+ */
+export function MemoryPanel(): ReactElement {
+  const memory = useQuery({
+    queryKey: ['memory'],
+    queryFn: async () => api<{ families?: { id: string; name?: string }[]; versions?: MemoryVersion[]; proposals?: MemoryProposal[] }>('/api/memory'),
+    staleTime: 10_000,
+  });
+  const families = memory.data?.families ?? [];
+  const versions = memory.data?.versions ?? [];
+  const proposals = memory.data?.proposals ?? [];
+
+  return (
+    <>
+      <div className="screening-default-setting">
+        <label htmlFor="new-policy-version">新筛选默认评分标准</label>
+        <select id="new-policy-version" className="input">
+          <option value="">按本次需求生成</option>
+          {versions.filter((version) => version.status === 'approved').map((version) => (
+            <option key={version.id} value={version.id}>{version.family ?? ''} {version.version ?? ''}</option>
+          ))}
+        </select>
+        <p className="muted">选择后自动保存，用于之后新建的筛选；仅可选择已批准且有效的标准，已有任务保持原评分卡。</p>
+      </div>
+      <p className="muted">跨任务复用经过人工批准的评价标准。新版本只供新任务选择，已有任务保持原快照。</p>
+
+      <div className="memory-family-row">
+        <select id="memory-family" className="input" aria-label="岗位族">
+          {families.length === 0 ? <option value="">还没有岗位族</option> : null}
+          {families.map((family) => <option key={family.id} value={family.id}>{family.name ?? family.id}</option>)}
+        </select>
+        <input id="memory-family-name" className="input" placeholder="新岗位族名称" maxLength={100} />
+        <button className="btn" id="memory-family-create" type="button" disabled>创建岗位族（待接）</button>
+      </div>
+
+      <nav className="help-nav" aria-label="记忆管理分类">
+        <button type="button" data-memory-tab="versions" className="active">版本历史</button>
+        <button type="button" data-memory-tab="proposals" disabled>提案与审批</button>
+        <button type="button" data-memory-tab="create" disabled>创建修订提案</button>
+        <button type="button" data-memory-tab="job" disabled>当前任务记忆</button>
+      </nav>
+
+      <section data-memory-section="versions">
+        <div id="memory-versions">
+          {memory.isLoading ? <div className="empty-note">正在读取版本…</div>
+            : versions.length === 0 ? <div className="empty-note">还没有跨任务复用的评分标准。完成一次筛选后可从结果提炼。</div>
+              : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>岗位族</th><th>版本</th><th>状态</th></tr></thead>
+                    <tbody>
+                      {versions.map((version) => (
+                        <tr key={version.id}>
+                          <td>{version.family ?? ''}</td>
+                          <td><span className="tag">{version.version ?? version.id}</span></td>
+                          <td>{version.status ?? ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+        </div>
+      </section>
+      <section data-memory-section="proposals" className="hidden">
+        <div id="memory-proposals">
+          {proposals.length === 0 ? <div className="empty-note">没有待审批的提案。</div>
+            : proposals.map((proposal) => (
+              <div className="memory-item" key={proposal.id}>
+                <b>{proposal.rule ?? proposal.id}</b> <span className="muted">{proposal.status ?? ''}</span>
+              </div>
+            ))}
+        </div>
+      </section>
+      <p id="memory-status" className="settings-status" role="status">
+        创建岗位族、提交提案与审批仍待接；当前为只读视图。
+      </p>
+    </>
+  );
+}
