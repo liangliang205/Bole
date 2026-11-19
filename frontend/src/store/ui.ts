@@ -6,10 +6,15 @@ interface UiState {
   showArchived: boolean;
   search: string;
   theme: Theme;
+  drawerOpen: boolean;
+  drawerTab: string;
   setActiveJob: (jobId: string) => void;
   toggleArchived: () => void;
   setSearch: (value: string) => void;
   setTheme: (theme: Theme) => void;
+  openDrawer: (tab?: string) => void;
+  closeDrawer: () => void;
+  setDrawerTab: (tab: string) => void;
 }
 
 /**
@@ -20,11 +25,16 @@ export const useUiStore = create<UiState>((set, get) => ({
   showArchived: false,
   search: '',
   theme: currentTheme(),
-  setActiveJob: (jobId) => set({ activeJobId: jobId }),
+  drawerOpen: false,
+  drawerTab: 'candidates',
+  setActiveJob: (jobId) => set({ activeJobId: jobId, drawerOpen: true, drawerTab: 'candidates' }),
   toggleArchived: () => set({ showArchived: !get().showArchived }),
   setSearch: (value) => set({ search: value }),
   setTheme: (theme) => {
     applyTheme(theme);
     set({ theme });
   },
+  openDrawer: (tab) => set({ drawerOpen: true, drawerTab: tab ?? get().drawerTab }),
+  closeDrawer: () => set({ drawerOpen: false }),
+  setDrawerTab: (tab) => set({ drawerTab: tab, drawerOpen: true }),
 }));

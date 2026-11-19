@@ -1,7 +1,8 @@
-import type { ReactElement } from 'react';
+﻿import type { ReactElement } from 'react';
 import { Sidebar } from './features/sessions/Sidebar.tsx';
 import { EmptyView } from './features/new/EmptyView.tsx';
 import { ChatView } from './features/chat/ChatView.tsx';
+import { Drawer } from './features/drawer/Drawer.tsx';
 import { useUiStore } from './store/ui.ts';
 import { useWidthResizer } from './hooks/useWidthResizer.ts';
 
@@ -17,6 +18,7 @@ export function App(): ReactElement {
   const theme = useUiStore((state) => state.theme);
   const setTheme = useUiStore((state) => state.setTheme);
   const activeJobId = useUiStore((state) => state.activeJobId);
+  const drawerOpen = useUiStore((state) => state.drawerOpen);
   const isDark = theme === 'dark';
 
   const right = useWidthResizer({
@@ -83,6 +85,16 @@ export function App(): ReactElement {
           ? <ChatView jobId={activeJobId} hidden={false} />
           : <section id="chat-view" className="chat-view hidden" />}
       </main>
+
+      {drawerOpen && activeJobId ? <Drawer jobId={activeJobId} /> : (
+        <aside id="drawer" className="drawer hidden">
+          <div className="drawer-head">
+            <div className="drawer-tabs" id="drawer-tabs" />
+            <button className="btn ghost" id="drawer-close">✕</button>
+          </div>
+          <div id="drawer-body" className="drawer-body" />
+        </aside>
+      )}
     </div>
   );
 }
