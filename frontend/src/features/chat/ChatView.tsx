@@ -1,4 +1,4 @@
-﻿import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChatMessages, useRun, useRunEvents, formatClock, type ChatMessage, type RunEvent } from '../../api/run.ts';
@@ -7,6 +7,9 @@ import { Markdown } from '../../components/Markdown.tsx';
 import { useRunStream } from '../../hooks/useRunStream.ts';
 import { useStreamingText } from '../../store/stream.ts';
 import { ApprovalHost, HitlHost, type PendingHitl, type RunApproval } from './Hosts.tsx';
+import { useReport } from '../../api/report.ts';
+import { FinalReport } from '../report/FinalReport.tsx';
+import { useUiStore } from '../../store/ui.ts';
 
 const MILESTONES = new Set([
   'jd.analyzed', 'fetch.completed', 'hitl.question', 'hitl.answered', 'escalate.human',
@@ -86,13 +89,14 @@ function ChatMessageRow({ message, jobId }: { message: ChatMessage; jobId: strin
 }
 
 function FileCards({ files, jobId }: { files: string[]; jobId: string }): ReactElement {
+  const openPreview = useUiStore((state) => state.openPreview);
   return (
     <div className="file-grid">
       {files.map((file) => {
         const name = file.split(/[\\/]/).pop() ?? file;
         const isPdf = /\.pdf$/i.test(name);
         return (
-          <div className="file-card" data-preview-file={name} role="button" tabIndex={0} title={`预览 ${name}`} key={name}>
+          <div className="file-card" data-preview-file={name} role="button" tabIndex={0} title={`预览 ${name}`} key={name} onClick={() => openPreview(name)}>
             <span className={`file-icon ${isPdf ? 'pdf' : 'word'}`}>{isPdf ? 'PDF' : 'W'}</span>
             <span className="file-meta">
               <span className="file-name">{name}</span>
@@ -118,6 +122,7 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   const run = runData?.run ?? {};
   const job = snapshot.job ?? {};
   const queryClient = useQueryClient();
+  const { data: report } = useReport(jobId);
   useRunStream(jobId, queryClient);
   const streamingText = useStreamingText();
   const [draft, setDraft] = useState('');
@@ -294,8 +299,23 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
     for (const message of messages) {
       parts.push(<ChatMessageRow key={`chat-${message.created_ts}-${parts.length}`} message={message} jobId={jobId} />);
     }
+
+    if (report) {
+      const counts = (snapshot as { resumeCounts?: Record<string, number> }).resumeCounts ?? {};
+      const unfinished = ['queued', 'parsing', 'parsed', 'evaluating', 'evaluated', 'verifying']
+        .reduce((total, key) => total + (counts[key] ?? 0), 0);
+      parts.push(
+        <FinalReport
+          key="final-report"
+          report={report}
+          runStatus={run.status}
+          unfinished={unfinished}
+          onOpenCandidate={(resumeId) => { window.location.hash = `#job=${encodeURIComponent(jobId)}`; void resumeId; }}
+        />,
+      );
+    }
     return parts;
-  }, [events, job, jobId, messages, run.status]);
+  }, [events, job, jobId, messages, report, run.status, snapshot]);
 
   return (
     <section id="chat-view" className={`chat-view${hidden ? ' hidden' : ''}`}>

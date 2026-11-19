@@ -6,6 +6,7 @@ import { Drawer } from './features/drawer/Drawer.tsx';
 import { SettingsModal } from './features/settings/SettingsModal.tsx';
 import { MailboxModal } from './features/mailbox/MailboxModal.tsx';
 import { KnowledgeModal } from './features/knowledge/KnowledgeModal.tsx';
+import { PreviewPane } from './features/preview/PreviewPane.tsx';
 import { useUiStore } from './store/ui.ts';
 import { useWidthResizer } from './hooks/useWidthResizer.ts';
 
@@ -22,6 +23,8 @@ export function App(): ReactElement {
   const setTheme = useUiStore((state) => state.setTheme);
   const activeJobId = useUiStore((state) => state.activeJobId);
   const drawerOpen = useUiStore((state) => state.drawerOpen);
+  const previewName = useUiStore((state) => state.previewName);
+  const closePreview = useUiStore((state) => state.closePreview);
   const isDark = theme === 'dark';
 
   const right = useWidthResizer({
@@ -92,6 +95,7 @@ export function App(): ReactElement {
       <SettingsModal />
       <MailboxModal />
       <KnowledgeModal />
+      {previewName && activeJobId ? <PreviewPane jobId={activeJobId} name={previewName} onClose={closePreview} /> : null}
 
       {drawerOpen && activeJobId ? <Drawer jobId={activeJobId} /> : (
         <aside id="drawer" className="drawer hidden">
