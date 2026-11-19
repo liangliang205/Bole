@@ -99,16 +99,7 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
   position: relative; z-index: 5;
   justify-content: flex-end;
 }
-.topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
-.pill.running { color: var(--warn); background: var(--warn-bg); }
-.pill.pausing { color: var(--warn); background: var(--warn-bg); }
-.pill.paused { color: var(--muted); background: var(--surface-2); }
-.pill.completed { color: var(--ok); background: var(--ok-bg); }
-.pill.failed { color: var(--danger); background: var(--danger-bg); }
-.pill.idle { color: var(--muted); }
-
-/* empty view */
+.topbar-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: auto; }/* empty view */
 .empty-view { flex: 1; overflow: auto; padding: clamp(72px, 18vh, 180px) 24px 60px; }
 .hero {
   max-width: var(--content-width); margin: 0 auto; padding: 0;
@@ -116,11 +107,7 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .hero h1 { font-size: clamp(23px, 2.5vw, 30px); font-weight: 550; line-height: 1.4; margin: 0 0 10px; text-align: center; color: var(--text); }
 .hero-copy { color: var(--muted); text-align: center; margin: 0 0 28px; font-size: 14px; }
 .hint { margin-top: 10px; font-size: 12px; color: var(--dim); min-height: 18px; }
-.hint.error { color: var(--danger); }
-.section-row { display: flex; align-items: baseline; justify-content: space-between; }
-.section-row h2 { font-size: 15px; margin: 0 0 10px; color: var(--text); }
-
-/* session context menu */
+.hint.error { color: var(--danger); }/* session context menu */
 .session-menu {
   position: fixed; z-index: 2000; min-width: 208px; padding: 5px;
   background: var(--surface); border: 0; border-radius: 10px;

@@ -14,7 +14,8 @@
     "check:settings": "node scripts/check-settings.mjs",
     "audit:styles": "node scripts/audit-styles.mjs",
     "audit:css": "node scripts/audit-css.mjs",
-    "check:layout": "node scripts/check-layout.mjs"
+    "check:layout": "node scripts/check-layout.mjs",
+    "audit:dead-css": "node scripts/dead-css.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

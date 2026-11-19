@@ -36,9 +36,7 @@
 .msg-card .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .msg-card .summary-grid > div { border: 0; border-radius: 9px; padding: 8px 10px; background: var(--surface-2); }
 .msg-card .summary-grid b { display: block; font-size: 18px; color: var(--text); }
-.msg-card .summary-grid span { font-size: 11px; color: var(--muted); }
-.report-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.attach-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.msg-card .summary-grid span { font-size: 11px; color: var(--muted); }.attach-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
 .chip { display: inline-flex; align-items: center; gap: 6px; border: 0; background: var(--surface-2); border-radius: 999px; padding: 4px 10px; font-size: 11px; max-width: 260px; }
 .chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip button { border: 0; background: transparent; color: var(--dim); cursor: pointer; padding: 0; }
@@ -193,13 +191,6 @@ html[data-theme="dark"] .dsh-composer {
 .mode-menu small { display: block; margin-top: 3px; color: var(--dsh-secondary); font-size: 11px; }
 .mode-check { visibility: hidden; }
 .mode-menu [aria-checked="true"] .mode-check { visibility: visible; }
-.mode-trigger:focus-visible, .mode-menu button:focus-visible, #attach-btn:focus-visible, #new-start:focus-visible { outline: 2px solid var(--dsh-secondary); outline-offset: 3px; }
-.composer-picker { position: relative; min-width: 0; }
-.composer-picker .picker-label { max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.composer-picker-menu { width: 260px; max-width: calc(100vw - 48px); max-height: min(280px, 38vh); overflow: auto; }
-.picker-group { padding: 8px 12px 3px; font-size: 11px; color: var(--dsh-caption); }
-.composer-picker-menu button > span:first-child { overflow-wrap: anywhere; }
-.new-composer .dsh-composer-tools { flex-wrap: wrap; gap: 4px; }
+.mode-trigger:focus-visible, .mode-menu button:focus-visible, #attach-btn:focus-visible, #new-start:focus-visible { outline: 2px solid var(--dsh-secondary); outline-offset: 3px; }.new-composer .dsh-composer-tools { flex-wrap: wrap; gap: 4px; }
 .new-composer .dsh-composer-row { align-items: flex-end; }
 .mail-source-state { color:var(--muted); font-size:11px; }
-.mail-enabled .mail-source-state { color:var(--ok); }
