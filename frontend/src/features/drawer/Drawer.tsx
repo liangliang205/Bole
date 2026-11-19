@@ -2,7 +2,7 @@
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
-import { ComplianceTab, CostTab, JsonTab } from './DrawerTabs.tsx';
+import { AgentsTab, ComplianceTab, CostTab, MemoryTab, WorkflowTab } from './DrawerTabs.tsx';
 import { CandidateDetail, type CandidateDetailData } from './CandidateDetail.tsx';
 import { useEffect, useState } from 'react';
 
@@ -134,9 +134,9 @@ export function Drawer({ jobId }: { jobId: string }): ReactElement {
           : tab === 'candidates' ? <CandidatesTab jobId={jobId} />
             : tab === 'compliance' ? <ComplianceTab jobId={jobId} />
               : tab === 'cost' ? <CostTab jobId={jobId} />
-                : tab === 'memory' ? <JsonTab jobId={jobId} kind="memory" />
-                  : tab === 'agents' ? <JsonTab jobId={jobId} kind="agents" />
-                    : tab === 'workflow' ? <JsonTab jobId={jobId} kind="workflow" />
+                : tab === 'memory' ? <MemoryTab jobId={jobId} />
+                  : tab === 'agents' ? <AgentsTab jobId={jobId} />
+                    : tab === 'workflow' ? <WorkflowTab jobId={jobId} />
                       : <div className="empty-note">读取中…</div>}
       </div>
     </aside>
