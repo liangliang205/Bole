@@ -15,6 +15,18 @@ app.commandLine.appendSwitch('disable-features', 'DawnGraphiteCache,DawnWireVali
 app.commandLine.appendSwitch('use-gl', 'swiftshader');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
 app.commandLine.appendSwitch('no-sandbox');
+process.on('uncaughtException', (error) => {
+  // 无窗口时也要留下痕迹
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'crash.log'), new Date().toISOString() + ' ' + (error?.stack ?? String(error)) + '\n');
+  } catch {
+    // ignore
+  }
+  app.exit(1);
+});
+
 app.setName('bole');
 
 const gotLock = app.requestSingleInstanceLock();
@@ -29,8 +41,18 @@ let splash: BrowserWindow | null = null;
 let running: RunningServer | null = null;
 let quitting = false;
 
-function isPortFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
+/** 启动硬超时：超时抛错，交给上层弹窗并退出，避免进程无窗口挂着拖慢整机。 */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} 超时（${ms}ms）`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+function isPortFree(port: number): Promise<boolean> {  return new Promise((resolve) => {
     const server = net.createServer();
     server.once('error', () => resolve(false));
     server.once('listening', () => server.close(() => resolve(true)));
@@ -76,7 +98,7 @@ async function main(): Promise<void> {
     writeFileSync(portFile, JSON.stringify({ lastPort: choice.port }), 'utf8');
 
     const layout = resolveServerLayout(app.isPackaged, __dirname);
-    running = await startServer({
+    const started = await withTimeout(startServer({
       serverDir: layout.serverDir,
       entry: layout.entry,
       dataDir,
@@ -84,10 +106,11 @@ async function main(): Promise<void> {
       logDir,
       port: choice.port,
       shutdownToken: randomBytes(24).toString('hex'),
-    });
+    }), 120_000, '启动后端服务');
+    running = started;
 
-    await waitForReady(running.url);
-    createWindow(running.url);
+    await waitForReady(started.url);
+    createWindow(started.url);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[bole] 启动失败', message);

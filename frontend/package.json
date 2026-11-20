@@ -22,7 +22,8 @@
     "check:providers": "node scripts/check-providers.mjs",
     "check:panel": "node scripts/check-panel-toggle.mjs",
     "check:dead-buttons": "node scripts/check-dead-buttons.mjs",
-    "check:drafts-mail": "node scripts/check-drafts-mail.mjs"
+    "check:drafts-mail": "node scripts/check-drafts-mail.mjs",
+    "check:defaults": "node scripts/check-defaults.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
