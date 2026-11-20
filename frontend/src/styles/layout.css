@@ -124,3 +124,6 @@ body.is-resizing-content, body.is-resizing-content * { cursor: col-resize !impor
 .menu-hint { color: var(--dim); font-size: 10px; white-space: nowrap; }
 .session-menu-sep { height: 6px; background: transparent; margin: 0 6px; }
 
+
+.desktop-chrome .topbar{ -webkit-app-region: drag; padding-right: 150px; }
+.desktop-chrome .topbar-actions button{ -webkit-app-region: no-drag; }

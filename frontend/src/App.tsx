@@ -30,6 +30,8 @@ export function App(): ReactElement {
   const closePreview = useUiStore((state) => state.closePreview);
   const openHelp = useUiStore((state) => state.openHelp);
   const isDark = theme === 'dark';
+  // 桌面壳里窗口没有系统标题栏，顶栏要自己承担拖拽，并给右上角窗口控件留出位置
+  const isDesktop = Boolean((window as unknown as { boleDesktop?: unknown }).boleDesktop);
 
   const right = useWidthResizer({
     storageKey: CONTENT_WIDTH_KEY,
@@ -52,7 +54,7 @@ export function App(): ReactElement {
 
   return (
     <div
-      className={`app${drawerOpen ? ' drawer-open' : ''}${previewName ? ' preview-open' : ''}`}
+      className={`app${isDesktop ? ' desktop-chrome' : ''}${drawerOpen ? ' drawer-open' : ''}${previewName ? ' preview-open' : ''}`}
       id="app"
     >
       <Sidebar />
