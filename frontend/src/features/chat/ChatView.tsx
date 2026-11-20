@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+﻿import { useMemo, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChatMessages, useRun, useRunEvents, formatClock, type ChatMessage, type RunEvent } from '../../api/run.ts';
 import { api } from '../../api/client.ts';
 import { Markdown } from '../../components/Markdown.tsx';
 import { useRunStream } from '../../hooks/useRunStream.ts';
-import { useStreamingText } from '../../store/stream.ts';
+import { useStreamingPreview, useStreamingText } from '../../store/stream.ts';
 import { ApprovalHost, HitlHost, type PendingHitl, type RunApproval } from './Hosts.tsx';
 import { useReport } from '../../api/report.ts';
 import { FinalReport } from '../report/FinalReport.tsx';
@@ -126,6 +126,7 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
   const { data: report } = useReport(jobId);
   useRunStream(jobId, queryClient);
   const streamingText = useStreamingText();
+  const streamingPreview = useStreamingPreview();
   const [draft, setDraft] = useState('');
   const [chatUploads, setChatUploads] = useState<{ id: string; filename: string; status: 'uploading' | 'uploaded' | 'error'; uploadId: string }[]>([]);
   const chatFileInput = useRef<HTMLInputElement>(null);
@@ -355,13 +356,28 @@ export function ChatView({ jobId, hidden }: { jobId: string; hidden: boolean }):
     <section id="chat-view" className={`chat-view${hidden ? ' hidden' : ''}`}>
       <div id="chat-scroll" className="chat-scroll">{body}</div>
       <div id="stream-host" className="stream-host">
-        {streamingText ? (
+        {streamingPreview || streamingText ? (
           <div className="stream-card">
             <div className="stream-head">
-              <span className="stream-agent">伯乐</span>
-              <span className="stream-phase">生成中</span>
+              <span className="stream-agent">{streamingPreview?.title || '伯乐'}</span>
+              <span className="spacer" />
+              <span className="muted">生成中</span>
             </div>
-            <div className="stream-preview">{streamingText}</div>
+            <div className="stream-preview">
+              {streamingPreview?.lines?.length ? (
+                streamingPreview.lines.map((line, index) => (
+                  <div className="stream-line" key={`${line.label}-${index}`}>
+                    <span className="sl-label">{line.label}</span>
+                    <span className={`sl-value ${line.tone ?? ''}`}>{line.value}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="stream-line">
+                  <span className="sl-label">状态</span>
+                  <span className="sl-value muted">正在生成…</span>
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
       </div>
