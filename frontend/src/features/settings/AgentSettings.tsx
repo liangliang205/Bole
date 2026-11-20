@@ -124,6 +124,8 @@ export function AgentsPanel(): ReactElement {
   const versions = agents.data?.versions ?? [];
   const drafts = agents.data?.drafts ?? [];
   const teamList = teams.data?.teams ?? [];
+  const defaultTeamKey = useUiStore((state) => state.defaultTeamKey);
+  const setDefaultTeamKey = useUiStore((state) => state.setDefaultTeamKey);
 
   /** 打开草稿：把定义填进创建表单，保存时用 PATCH 带 revision。 */
   const editDraft = (draft: AgentDraft): void => {
@@ -301,8 +303,13 @@ export function AgentsPanel(): ReactElement {
     <>
       <div className="screening-default-setting">
         <label htmlFor="new-agent-team">新筛选默认团队</label>
-        <select id="new-agent-team" className="input" defaultValue={teamList[0]?.team_key ?? ''}>
-          {teamList.length === 0 ? <option value="">内置团队</option> : null}
+        <select
+          id="new-agent-team"
+          className="input"
+          value={defaultTeamKey}
+          onChange={(event) => setDefaultTeamKey(event.target.value)}
+        >
+          <option value="">内置团队</option>
           {teamList.map((team) => <option key={team.team_key} value={team.team_key}>{team.team_key}</option>)}
         </select>
         <p className="muted">选择后自动保存，用于之后新建的筛选；已有任务保持原团队。</p>
@@ -488,6 +495,8 @@ export function AgentsPanel(): ReactElement {
 export function MemoryPanel(): ReactElement {
   const queryClient = useQueryClient();
   const activeJobId = useUiStore((state) => state.activeJobId);
+  const defaultPolicyVersionId = useUiStore((state) => state.defaultPolicyVersionId);
+  const setDefaultPolicyVersionId = useUiStore((state) => state.setDefaultPolicyVersionId);
   const [tab, setTab] = useState<'versions' | 'proposals' | 'create' | 'job'>('versions');
   const [familyStatus, setFamilyStatus] = useState('');
   const [proposalStatus, setProposalStatus] = useState('');
@@ -625,6 +634,21 @@ export function MemoryPanel(): ReactElement {
 
   return (
     <>
+      <div className="screening-default-setting">
+        <label htmlFor="new-policy-version">新筛选默认评分标准</label>
+        <select
+          id="new-policy-version"
+          className="input"
+          value={defaultPolicyVersionId}
+          onChange={(event) => setDefaultPolicyVersionId(event.target.value)}
+        >
+          <option value="">按本次需求生成</option>
+          {approved.map((version) => (
+            <option key={version.id} value={version.id}>{familyName(version.family_id)} v{version.version}</option>
+          ))}
+        </select>
+        <p className="muted">仅可选择已批准且有效的标准；已有任务保持原评分卡。</p>
+      </div>
       <p className="muted">跨任务复用经过人工批准的评价标准。新版本只供新任务选择，已有任务保持原快照。</p>
 
       <div className="memory-family-row">

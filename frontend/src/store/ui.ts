@@ -12,6 +12,11 @@ interface UiState {
   knowledgeOpen: boolean;
   previewName: string;
   candidateFocus: string;
+  /** 新筛选默认团队 / 默认评分标准（与旧版一致，存在本地） */
+  defaultTeamKey: string;
+  defaultPolicyVersionId: string;
+  setDefaultTeamKey: (key: string) => void;
+  setDefaultPolicyVersionId: (id: string) => void;
   helpOpen: boolean;
   settingsOpen: boolean;
   settingsTab: string;
@@ -57,6 +62,26 @@ function writeHashJob(jobId: string): void {
 /**
  * 只放跨屏 UI 状态。服务端数据一律走 TanStack Query，不进这里。
  */
+const DEFAULTS_KEY = 'bole.newRunDefaults';
+
+function readDefaults(): { defaultTeamKey: string; defaultPolicyVersionId: string } {
+  try {
+    const raw = localStorage.getItem(DEFAULTS_KEY);
+    const parsed = raw ? JSON.parse(raw) as { defaultTeamKey?: string; defaultPolicyVersionId?: string } : {};
+    return { defaultTeamKey: parsed.defaultTeamKey ?? '', defaultPolicyVersionId: parsed.defaultPolicyVersionId ?? '' };
+  } catch {
+    return { defaultTeamKey: '', defaultPolicyVersionId: '' };
+  }
+}
+
+function writeDefaults(patch: { defaultTeamKey?: string; defaultPolicyVersionId?: string }): void {
+  try {
+    localStorage.setItem(DEFAULTS_KEY, JSON.stringify({ ...readDefaults(), ...patch }));
+  } catch {
+    // 私密模式等场景忽略
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   activeJobId: hashJobId(),
   showArchived: false,
@@ -67,6 +92,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   knowledgeOpen: false,
   previewName: '',
   candidateFocus: '',
+  ...readDefaults(),
   helpOpen: false,
   settingsOpen: false,
   settingsTab: 'models',
@@ -94,6 +120,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   closeHelp: () => set({ helpOpen: false }),
   focusCandidate: (resumeId) => set({ candidateFocus: resumeId, drawerOpen: true, drawerTab: 'candidates' }),
   clearCandidateFocus: () => set({ candidateFocus: '' }),
+  setDefaultTeamKey: (key) => {
+    set({ defaultTeamKey: key });
+    writeDefaults({ defaultTeamKey: key });
+  },
+  setDefaultPolicyVersionId: (id) => {
+    set({ defaultPolicyVersionId: id });
+    writeDefaults({ defaultPolicyVersionId: id });
+  },
   openPreview: (name) => set({ previewName: name }),
   closePreview: () => set({ previewName: '' }),
   openKnowledge: () => set({ knowledgeOpen: true }),
