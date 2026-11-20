@@ -158,6 +158,10 @@ function createWindow(url: string): void {
     minHeight: 700,
     show: false,
     backgroundColor: '#0f1115',
+    // 参考 dsh desktop：去掉系统标题栏与菜单栏，只保留右上角三个窗口控件
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#0f1115', symbolColor: '#e6e8ee', height: 36 },
+    autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

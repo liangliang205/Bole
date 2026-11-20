@@ -804,3 +804,6 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .stream-line{ min-width: 0; }
 .sl-value{ min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
 .chat-scroll{ overflow-x: hidden; }
+
+.desktop-chrome .topbar{ -webkit-app-region: drag; padding-right: 150px; }
+.desktop-chrome .topbar-actions button{ -webkit-app-region: no-drag; }

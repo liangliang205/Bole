@@ -31,6 +31,58 @@ function payloadOf(event: RunEvent): Record<string, unknown> {
 }
 
 /** 事件行文案：只覆盖对话里真正会显示的节点；完整 44 条映射留给抽屉（F3）。 */
+/** 事件摘要：只取对读者有意义的字段，绝不把整段 JSON 丢到界面上。 */
+const SUMMARY_KEYS = ['label', 'agentSlot', 'agentVersion', 'tier', 'phase', 'totalScore', 'conclusion', 'verdict', 'loopCount', 'supported', 'failed', 'fixes', 'errors', 'error', 'reason', 'provider', 'model'];
+
+function firstOf(payload: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = payload[key];
+    if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) return `${key}=${value.length} 项`;
+    if (typeof value === 'object') continue;
+    return `${key}=${String(value).slice(0, 60)}`;
+  }
+  return '';
+}
+
+function describeSlot(payload: Record<string, unknown>): string {
+  const parts = [payload.label, payload.agentSlot, payload.agentVersion].filter(Boolean).map((item) => String(item));
+  return parts.join(' · ');
+}
+
+function describeScore(payload: Record<string, unknown>): string {
+  const score = payload.totalScore ?? payload.score;
+  const conclusion = payload.conclusion ?? payload.verdict;
+  const parts: string[] = [];
+  if (score !== undefined) parts.push(`${String(score)} 分`);
+  if (conclusion !== undefined) parts.push(String(conclusion));
+  return parts.join(' · ');
+}
+
+function describeVerdict(payload: Record<string, unknown>): string {
+  const verdict = payload.verdict ?? payload.conclusion;
+  const supported = payload.supported;
+  const failed = payload.failed;
+  const parts: string[] = [];
+  if (verdict !== undefined) parts.push(String(verdict));
+  if (supported !== undefined) parts.push(`证据 ${String(supported)}`);
+  if (failed !== undefined) parts.push(`缺失 ${String(failed)}`);
+  return parts.join(' · ');
+}
+
+/** 兜底：最多三个标量字段，拼成 k=v，读不出来就不显示细节。 */
+function describePayload(payload: Record<string, unknown>): string {
+  const picks = SUMMARY_KEYS
+    .filter((key) => {
+      const value = payload[key];
+      return value !== undefined && value !== null && value !== '' && typeof value !== 'object';
+    })
+    .slice(0, 3)
+    .map((key) => `${key}=${String(payload[key]).slice(0, 40)}`);
+  if (picks.length > 0) return picks.join(' · ');
+  return firstOf(payload, ['count', 'total', 'items', 'files']);
+}
+
 function eventLine(event: RunEvent): { title: string; detail: string; agent: string } {
   const payload = payloadOf(event);
   const label = payload.label ? `${String(payload.label)} ` : '';
@@ -48,7 +100,21 @@ function eventLine(event: RunEvent): { title: string; detail: string; agent: str
     case 'report.exported': return { title: '终稿文件已导出', detail: (Array.isArray(payload.formats) ? payload.formats : []).join(' · '), agent };
     case 'run.completed': return { title: '运行完成', detail: '', agent };
     case 'run.failed': return { title: '运行失败', detail: String(payload.error ?? ''), agent };
-    default: return { title: event.type, detail: JSON.stringify(payload).slice(0, 160), agent };
+      // 常见 Agent 事件：把 payload 里最有信息量的字段挑出来
+      case 'agent.team.bound': return { title: '团队已绑定', detail: `${String(payload.teamKey ?? '')}${payload.bindings ? ` · ${Object.keys(payload.bindings as Record<string, unknown>).length} 个槽位` : ''}`, agent };
+      case 'profiler.started':
+      case 'parser.started':
+      case 'assessor.started':
+      case 'auditor.started':
+      case 'worker.started':
+      case 'eval.started': return { title: `${label}开始执行`, detail: describeSlot(payload), agent };
+      case 'eval.committed': return { title: `${label}评分完成`, detail: describeScore(payload), agent };
+      case 'eval.failed': return { title: `${label}评分失败`, detail: String(payload.errors ?? payload.error ?? ''), agent };
+      case 'review.verdict': return { title: '核查结论', detail: describeVerdict(payload), agent };
+      case 'review.started': return { title: '开始核查', detail: String(payload.label ?? ''), agent };
+      case 'selfloop.revise': return { title: '发起重新评分', detail: String(payload.label ?? ''), agent };
+      case 'worker.reused': return { title: '复用已有结果', detail: describeSlot(payload), agent };
+      default: return { title: event.type, detail: describePayload(payload), agent };
   }
 }
 
