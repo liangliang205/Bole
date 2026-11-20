@@ -25,7 +25,8 @@
     "check:drafts-mail": "node scripts/check-drafts-mail.mjs",
     "check:defaults": "node scripts/check-defaults.mjs",
     "check:esc": "node scripts/check-esc-close.mjs",
-    "check:packaged": "node scripts/check-packaged-app.mjs"
+    "check:packaged": "node scripts/check-packaged-app.mjs",
+    "check:drawer-nojob": "node scripts/check-drawer-nojob.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
