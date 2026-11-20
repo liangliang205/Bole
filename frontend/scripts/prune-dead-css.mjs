@@ -8,6 +8,9 @@ import path from 'node:path';
  * 顶层规则与 @media 内规则同样处理，并同步作用于基准表，保证等价审计通过。
  */
 const A_CLASSES = new Set([
+  'stream-phase',
+  'plugin-row-actions',
+  'new-defaults',
   'agent-card-actions', 'agent-card-description', 'agent-card-details', 'agent-card-footer', 'agent-card-heading',
   'agent-history', 'agent-role-card', 'agent-team-disclosures', 'agent-team-footer', 'agent-team-form',
   'model-directory', 'model-empty', 'model-list', 'model-row', 'directory-actions', 'directory-head',
