@@ -17,7 +17,6 @@ win:
   target:
     - nsis
     - dir
-  artifactName: BoLe-Setup-${version}.exe
 nsis:
   oneClick: false
   perMachine: false

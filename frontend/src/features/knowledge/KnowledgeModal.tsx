@@ -1,5 +1,5 @@
 ﻿import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
@@ -123,6 +123,15 @@ function StatsCards({ stats }: { stats: KnowledgeStats | undefined }): ReactElem
  */
 export function KnowledgeModal(): ReactElement {
   const open = useUiStore((state) => state.knowledgeOpen);
+  // 与设置弹窗一致：Esc 关闭
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') useUiStore.getState().closeKnowledge();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
   const close = useUiStore((state) => state.closeKnowledge);
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState('');

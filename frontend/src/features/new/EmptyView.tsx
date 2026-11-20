@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+﻿import { useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client.ts';
@@ -30,7 +30,7 @@ function fileToBase64(file: File): Promise<string> {
 /**
  * 新建会话页（hero + composer）。
  * 结构、id、类名与 index.html 的 #empty-view 一致；提交走旧实现的两条路径：
- * 无附件 → POST /api/conversations 起对话；有附件 → 先 /api/uploads 再 POST /api/run 起流水线。
+ * 与旧版一致：先 /api/uploads 上传简历，再 POST /api/run 起流水线；没有纯文本对话路径。
  */
 export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElement {
   const [modeOpen, setModeOpen] = useState(false);
@@ -78,9 +78,13 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
   const start = async (): Promise<void> => {
     const text = requirements.trim();
     const uploaded = attachments.filter((item) => item.status === 'uploaded');
-    const conversation = uploaded.length === 0;
-    if (text.length < (conversation ? 1 : 5)) {
-      showHint(conversation ? '请输入消息或邮箱安装文档地址' : '请填写至少 5 个字符的招聘需求', true);
+    // 与旧版一致：必须至少上传一份简历，没有纯文本对话这条路径
+    if (text.length < 5) {
+      showHint('请填写至少 5 个字符的招聘需求', true);
+      return;
+    }
+    if (uploaded.length === 0) {
+      showHint('请上传简历或选择从招聘邮箱收取', true);
       return;
     }
     if (attachments.some((item) => item.status !== 'uploaded')) {
@@ -88,24 +92,8 @@ export function EmptyView({ hidden = false }: { hidden?: boolean }): ReactElemen
       return;
     }
     setBusy(true);
-    showHint(conversation ? '正在创建对话…' : '正在创建会话并启动真实模型流水线…');
+    showHint('正在创建会话并启动真实模型流水线…');
     try {
-      if (conversation) {
-        const data = await api<{ jobId: string }>('/api/conversations', {
-          method: 'POST',
-          body: JSON.stringify({ message: text, executionMode: mode }),
-        });
-        await api(`/api/run/${encodeURIComponent(data.jobId)}/chat`, {
-          method: 'POST',
-          body: JSON.stringify({ message: text }),
-        });
-        setRequirements('');
-        showHint('');
-        await queryClient.invalidateQueries({ queryKey: ['jobs'] });
-        setActiveJob(data.jobId);
-        await queryClient.invalidateQueries({ queryKey: ['chat', data.jobId] });
-        return;
-      }
       const data = await api<{ jobId: string }>('/api/run', {
         method: 'POST',
         body: JSON.stringify({

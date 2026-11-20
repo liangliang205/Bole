@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 import { useUiStore } from '../../store/ui.ts';
 
@@ -36,11 +36,14 @@ export function HelpDialog(): ReactElement {
   const open = useUiStore((state) => state.helpOpen);
   const close = useUiStore((state) => state.closeHelp);
   const ref = useRef<HTMLDialogElement>(null);
-  const current = ref.current;
-  if (current) {
-    if (open && !current.open) current.showModal();
-    if (!open && current.open) current.close();
-  }
+
+  // 必须在 effect 里操作 <dialog>：render 阶段 ref 还没挂上，showModal 会被静默跳过
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
 
   return (
     <dialog id="help-dialog" className="help-dialog" aria-labelledby="help-title" ref={ref} onClose={close}>

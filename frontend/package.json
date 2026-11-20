@@ -23,7 +23,9 @@
     "check:panel": "node scripts/check-panel-toggle.mjs",
     "check:dead-buttons": "node scripts/check-dead-buttons.mjs",
     "check:drafts-mail": "node scripts/check-drafts-mail.mjs",
-    "check:defaults": "node scripts/check-defaults.mjs"
+    "check:defaults": "node scripts/check-defaults.mjs",
+    "check:esc": "node scripts/check-esc-close.mjs",
+    "check:packaged": "node scripts/check-packaged-app.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
