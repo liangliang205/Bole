@@ -86,12 +86,12 @@ async function main(): Promise<void> {
     height: 120,
     frame: false,
     resizable: false,
-    show: false,
+    // 立即显示：GPU 异常时 ready-to-show 可能永不触发，用户会以为"双击没反应"
+    show: true,
     backgroundColor: '#0f1115',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   void splash.loadFile(path.join(__dirname, 'splash.html'));
-  splash.once('ready-to-show', () => splash?.show());
 
   try {
     const choice = await choosePort({ preferred, isFree: isPortFree });
