@@ -26,6 +26,15 @@ interface MailStatus {
  */
 export function MailboxModal(): ReactElement {
   const open = useUiStore((state) => state.mailboxOpen);
+  // 与设置弹窗一致：Esc 关闭
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') useUiStore.getState().closeMailbox();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
   const close = useUiStore((state) => state.closeMailbox);
   const [providerId, setProviderId] = useState('agently-mail');
   const [statusText, setStatusText] = useState('尚未检查连接');

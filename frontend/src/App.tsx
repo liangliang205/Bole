@@ -52,7 +52,7 @@ export function App(): ReactElement {
 
   return (
     <div
-      className={`app${drawerOpen && activeJobId ? ' drawer-open' : ''}${previewName ? ' preview-open' : ''}`}
+      className={`app${drawerOpen ? ' drawer-open' : ''}${previewName ? ' preview-open' : ''}`}
       id="app"
     >
       <Sidebar />
@@ -64,11 +64,11 @@ export function App(): ReactElement {
               className="btn ghost"
               id="panel-btn"
               type="button"
-              title={drawerOpen && activeJobId ? '收起任务面板' : '打开任务面板'}
+              title={drawerOpen ? '收起任务面板' : '打开任务面板'}
               aria-controls="drawer"
-              aria-expanded={Boolean(drawerOpen && activeJobId)}
+              aria-expanded={drawerOpen}
               onClick={() => {
-                if (drawerOpen && activeJobId) closeDrawer();
+                if (drawerOpen) closeDrawer();
                 else openDrawer();
               }}
             >
@@ -118,15 +118,7 @@ export function App(): ReactElement {
       <HelpDialog />
       {previewName && activeJobId ? <PreviewPane jobId={activeJobId} name={previewName} onClose={closePreview} /> : null}
 
-      {drawerOpen && activeJobId ? <Drawer jobId={activeJobId} /> : (
-        <aside id="drawer" className="drawer hidden">
-          <div className="drawer-head">
-            <div className="drawer-tabs" id="drawer-tabs" />
-            <button className="btn ghost" id="drawer-close" type="button" onClick={closeDrawer}>✕</button>
-          </div>
-          <div id="drawer-body" className="drawer-body" />
-        </aside>
-      )}
+      <Drawer jobId={activeJobId} />
     </div>
   );
 }
