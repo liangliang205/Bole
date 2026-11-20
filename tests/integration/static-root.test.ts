@@ -91,3 +91,24 @@ test('assets 目录不允许路径穿越', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('brand 目录的 logo 可以按图片类型提供，并同样禁止穿越', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bole-web-brand-'));
+  await mkdir(path.join(dir, 'brand'), { recursive: true });
+  await writeFile(path.join(dir, 'index.html'), '<div id="root"></div>', 'utf8');
+  await writeFile(path.join(dir, 'brand', 'bole-mark.png'), 'PNGDATA', 'utf8');
+  const saved = process.env.BOLE_WEB_DIR;
+  process.env.BOLE_WEB_DIR = dir;
+  try {
+    await withServer(async (base) => {
+      const logo = await fetch(`${base}/brand/bole-mark.png`);
+      assert.equal(logo.status, 200);
+      assert.match(logo.headers.get('content-type') ?? '', /image\/png/);
+      const escape = await fetch(`${base}/brand/..%2Fpackage.json`);
+      assert.ok(escape.status === 404 || escape.status === 400, `期望拒绝，实际 ${escape.status}`);
+    });
+  } finally {
+    if (saved === undefined) delete process.env.BOLE_WEB_DIR; else process.env.BOLE_WEB_DIR = saved;
+    await rm(dir, { recursive: true, force: true });
+  }
+});

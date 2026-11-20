@@ -807,3 +807,7 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 
 .desktop-chrome .topbar{ -webkit-app-region: drag; padding-right: 150px; }
 .desktop-chrome .topbar-actions button{ -webkit-app-region: no-drag; }
+
+.brand-mark{ display: flex; align-items: center; gap: 9px; }
+.brand-logo{ width: 26px; height: 26px; border-radius: 7px; object-fit: contain; background: #fff; }
+.brand-text em{ font-style: normal; }

@@ -213,10 +213,10 @@ const ASSET_TYPES: Record<string, string> = {
 
 /** 只允许 /assets/<文件名> 这一层，杜绝路径穿越。 */
 function resolveAsset(pathname: string): string | null {
-  const match = /^\/assets\/([A-Za-z0-9._-]+)$/.exec(pathname);
+  const match = /^\/(assets|brand)\/([A-Za-z0-9._-]+)$/.exec(pathname);
   if (!match) return null;
-  const dir = path.join(staticDir(), 'assets');
-  const full = path.join(dir, match[1]);
+  const dir = path.join(staticDir(), match[1]);
+  const full = path.join(dir, match[2]);
   if (!full.startsWith(dir + path.sep)) return null;
   return existsSync(full) ? full : null;
 }
@@ -546,7 +546,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<Se
         text(res, 200, readFileSync(indexFile, 'utf8'), 'text/html; charset=utf-8');
         return;
       }
-      if (method === 'GET' && pathname.startsWith('/assets/')) {
+      if (method === 'GET' && (pathname.startsWith('/assets/') || pathname.startsWith('/brand/'))) {
         const assetFile = resolveAsset(pathname);
         if (!assetFile) { text(res, 404, 'not found'); return; }
         const type = ASSET_TYPES[path.extname(assetFile).toLowerCase()] ?? 'application/octet-stream';
