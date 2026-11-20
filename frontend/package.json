@@ -28,7 +28,8 @@
     "check:packaged": "node scripts/check-packaged-app.mjs",
     "check:drawer-nojob": "node scripts/check-drawer-nojob.mjs",
     "check:packaged-drawer": "node scripts/check-packaged-drawer.mjs",
-    "check:stream": "node scripts/check-stream-card.mjs"
+    "check:stream": "node scripts/check-stream-card.mjs",
+    "check:overflow": "node scripts/check-overflow.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

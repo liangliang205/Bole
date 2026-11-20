@@ -193,3 +193,9 @@ html[data-theme="dark"] .dsh-composer {
 .mode-trigger:focus-visible, .mode-menu button:focus-visible, #attach-btn:focus-visible, #new-start:focus-visible { outline: 2px solid var(--dsh-secondary); outline-offset: 3px; }.new-composer .dsh-composer-tools { flex-wrap: wrap; gap: 4px; }
 .new-composer .dsh-composer-row { align-items: flex-end; }
 .mail-source-state { color:var(--muted); font-size:11px; }
+
+.tool-row{ min-width: 0; }
+.tool-title{ min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.stream-line{ min-width: 0; }
+.sl-value{ min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.chat-scroll{ overflow-x: hidden; }
