@@ -106,7 +106,10 @@ export function Sidebar(): ReactElement {
     <>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">伯乐<span>BoLe</span></div>
+          <div className="brand-mark">
+            <img className="brand-logo" src="/brand/bole-mark.png" alt="" aria-hidden="true" />
+            <span className="brand-text">伯乐<em>BoLe</em></span>
+          </div>
           <div className="brand-sub">可验证的多 Agent 招聘筛选</div>
         </div>
         <button className="btn primary block" id="new-run-btn" type="button" onClick={startNewSession}>＋ 新建筛选会话</button>
