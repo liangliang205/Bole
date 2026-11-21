@@ -1,8 +1,9 @@
-"""把书法「伯」字生成 Windows 图标与前端用图。
+"""把书法「伯」字生成应用 logo（透明背景）与 Windows 图标。
 
-- desktop/build/icon.ico：多尺寸 ico（electron-builder 会用它做 exe 与安装包图标）
-- frontend/public/brand/bole-mark.png：应用内 logo（透明/白底裁切后 512）
-- frontend/public/brand/bole-mark-192.png：小尺寸
+关键：alpha 只由「墨量」决定——
+- 原图完全透明的地方保持透明
+- 接近纯白的地方透明
+- 笔画按亮度压成纯黑，alpha = 255 - 亮度（保留笔锋的浓淡）
 """
 from pathlib import Path
 from PIL import Image
@@ -13,51 +14,55 @@ source = root / "assets" / "brand" / "bole-mark-calligraphy.png"
 img = Image.open(source).convert("RGBA")
 print("原图尺寸:", img.size)
 
-# 1) 裁掉四周白边，让字形居中（按非白像素包围盒）
+# 1) 按非白像素找包围盒（只考虑 alpha>0 且不是纯白）
 gray = img.convert("L")
 mask = gray.point(lambda v: 255 if v < 245 else 0)
 bbox = mask.getbbox()
 print("包围盒:", bbox)
 if bbox:
-    # 稍微外扩，避免笔画贴边
-    pad = int(min(img.size) * 0.04)
-    left = max(0, bbox[0] - pad)
-    top = max(0, bbox[1] - pad)
-    right = min(img.width, bbox[2] + pad)
-    bottom = min(img.height, bbox[3] + pad)
-    img = img.crop((left, top, right, bottom))
+    pad = int(min(img.size) * 0.05)
+    img = img.crop((
+        max(0, bbox[0] - pad), max(0, bbox[1] - pad),
+        min(img.width, bbox[2] + pad), min(img.height, bbox[3] + pad),
+    ))
 
-# 2) 方形补白（保持字形比例）
+# 2) 方形画布（透明）
 side = max(img.size)
 canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
 canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2), img)
 
-# 3) 应用内使用：白底转透明，黑字保留
-pixels = canvas.load()
+# 3) 重算 alpha：透明保持透明，白底透明，笔画纯黑
+src = canvas.load()
+out = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+dst = out.load()
 for y in range(canvas.height):
     for x in range(canvas.width):
-        r, g, b, a = pixels[x, y]
-        if r > 245 and g > 245 and b > 245:
-            pixels[x, y] = (0, 0, 0, 0)
-        else:
-            # 笔画压暗，避免灰边
-            lum = int(0.299 * r + 0.587 * g + 0.114 * b)
-            pixels[x, y] = (0, 0, 0, 255 - min(255, max(0, lum)))
+        r, g, b, a = src[x, y]
+        if a == 0:
+            continue  # 原本就透明
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        if lum >= 245:
+            continue  # 白底 → 透明
+        ink = int(round(255 - lum))
+        dst[x, y] = (0, 0, 0, min(255, max(0, ink)))
 
 frontend_dir = root / "frontend" / "public" / "brand"
 frontend_dir.mkdir(parents=True, exist_ok=True)
-for size in (512, 192, 64):
-    canvas.resize((size, size), Image.LANCZOS).save(frontend_dir / f"bole-mark{f'' if size == 512 else f'-{size}'}.png")
-print("前端 logo 已输出")
-
-# 4) Windows 图标：白底方形（ico 不要透明白底，否则任务栏图标发飘）
-white_bg = Image.new("RGBA", canvas.size, (255, 255, 255, 255))
-white_bg.paste(canvas, (0, 0), canvas)
+for size, name in ((512, "bole-mark.png"), (192, "bole-mark-192.png"), (64, "bole-mark-64.png")):
+    out.resize((size, size), Image.LANCZOS).save(frontend_dir / name)
 
 build_dir = root / "desktop" / "build"
 build_dir.mkdir(parents=True, exist_ok=True)
-sizes = [16, 24, 32, 48, 64, 128, 256]
-icons = [white_bg.resize((s, s), Image.LANCZOS) for s in sizes]
-icons[0].save(build_dir / "icon.ico", format="ICO", sizes=[(s, s) for s in sizes])
-white_bg.resize((512, 512), Image.LANCZOS).save(build_dir / "icon.png")
-print("icon.ico / icon.png 已输出:", (build_dir / 'icon.ico').stat().st_size, "bytes")
+base = out.resize((256, 256), Image.LANCZOS)
+base.save(
+    build_dir / "icon.ico",
+    format="ICO",
+    sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+)
+base.save(build_dir / "icon.png")
+
+# 自检：四角必须透明
+corners = [out.getpixel(p) for p in ((0, 0), (out.width - 1, 0), (0, out.height - 1), (out.width - 1, out.height - 1))]
+print("四角像素:", corners)
+assert all(px[3] == 0 for px in corners), "四角应当透明"
+print("logo 与 ico 已生成（透明背景）")
