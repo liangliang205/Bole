@@ -813,3 +813,7 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .brand-text em{ font-style: normal; }
 
 .icon{ flex: none; display: inline-block; vertical-align: -0.15em; }
+
+.brand-logo-dark{ display: none; }
+html[data-theme="dark"] .brand-logo-light{ display: none; }
+html[data-theme="dark"] .brand-logo-dark{ display: inline-block; }
