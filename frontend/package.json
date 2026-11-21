@@ -30,7 +30,9 @@
     "check:packaged-drawer": "node scripts/check-packaged-drawer.mjs",
     "check:stream": "node scripts/check-stream-card.mjs",
     "check:overflow": "node scripts/check-overflow.mjs",
-    "check:chrome": "node scripts/check-chrome.mjs"
+    "check:chrome": "node scripts/check-chrome.mjs",
+    "check:logo-theme": "node scripts/check-logo-theme.mjs",
+    "check:icons": "node scripts/check-icons.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

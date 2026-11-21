@@ -108,7 +108,8 @@ export function Sidebar(): ReactElement {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
-            <img className="brand-logo" src="/brand/bole-mark.png" alt="" aria-hidden="true" />
+            <img className="brand-logo brand-logo-light" src="/brand/bole-mark.png" alt="" aria-hidden="true" />
+            <img className="brand-logo brand-logo-dark" src="/brand/bole-mark-invert.png" alt="" aria-hidden="true" />
             <span className="brand-text">伯乐<em>BoLe</em></span>
           </div>
           <div className="brand-sub">可验证的多 Agent 招聘筛选</div>
