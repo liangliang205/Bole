@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { IconX } from '../../components/icons.tsx';
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
@@ -139,7 +140,7 @@ function ModelsSection({ open }: { open: boolean }): ReactElement {
 
   return (
     <section className={`settings-content${open ? '' : ' hidden'}`} id="settings-models">
-      <div className="modal-head"><h2>模型</h2><button className="btn ghost" id="settings-close" onClick={close}>✕</button></div>
+      <div className="modal-head"><h2>模型</h2><button className="btn ghost" id="settings-close" onClick={close}><IconX size={14} /></button></div>
 
       {editor ? (
         <div id="provider-editor" className="provider-editor">
@@ -287,7 +288,7 @@ function PluginsSection({ open }: { open: boolean }): ReactElement {
 
   return (
     <section className={`settings-content${open ? '' : ' hidden'}`} id="settings-plugins">
-      <div className="modal-head"><h2>插件</h2><button className="btn ghost" id="plugins-close" onClick={close}>✕</button></div>
+      <div className="modal-head"><h2>插件</h2><button className="btn ghost" id="plugins-close" onClick={close}><IconX size={14} /></button></div>
       <p className="muted settings-sub">添加工具和技能，扩展伯乐的能力。粘贴安装命令，Agent 会识别并处理安装。</p>
       <div className="settings-toolbar">
         <span className="muted" id="plugin-summary">{`${enabled}/${plugins.length} 启用 · ${tools} 个工具可用`}</span>
@@ -349,7 +350,7 @@ function AgentsSection({ open }: { open: boolean }): ReactElement {
     <section className={`settings-content settings-embedded${open ? '' : ' hidden'}`} id="agent-dialog" aria-labelledby="agent-title">
       <div className="modal-head">
         <h2 id="agent-title">Agent 团队</h2>
-        <button className="btn ghost" id="agent-close" type="button" aria-label="关闭 Agent 团队" onClick={close}>✕</button>
+        <button className="btn ghost" id="agent-close" type="button" aria-label="关闭 Agent 团队" onClick={close}><IconX size={14} /></button>
       </div>
       <AgentsPanel />
     </section>
@@ -363,7 +364,7 @@ function MemorySection({ open }: { open: boolean }): ReactElement {
     <section className={`settings-content settings-embedded${open ? '' : ' hidden'}`} id="memory-dialog" aria-labelledby="memory-title">
       <div className="modal-head">
         <h2 id="memory-title">岗位与评分标准</h2>
-        <button className="btn ghost" id="memory-close" type="button" aria-label="关闭岗位与评分标准" onClick={close}>✕</button>
+        <button className="btn ghost" id="memory-close" type="button" aria-label="关闭岗位与评分标准" onClick={close}><IconX size={14} /></button>
       </div>
       <MemoryPanel />
     </section>

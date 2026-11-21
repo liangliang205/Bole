@@ -811,3 +811,5 @@ html[data-theme="dark"] .modal { background: rgba(0, 0, 0, .72); }
 .brand-mark{ display: flex; align-items: center; gap: 9px; }
 .brand-logo{ width: 26px; height: 26px; object-fit: contain; }
 .brand-text em{ font-style: normal; }
+
+.icon{ flex: none; display: inline-block; vertical-align: -0.15em; }

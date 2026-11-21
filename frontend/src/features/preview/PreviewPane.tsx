@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { IconX } from '../../components/icons.tsx';
 
 interface PdfModule {
   GlobalWorkerOptions: { workerSrc: string };
@@ -88,7 +89,7 @@ export function PreviewPane({ jobId, name, onClose }: { jobId: string; name: str
         </div>
         <div className="file-preview-actions">
           <a className="btn ghost" id="file-preview-download" href={href} download>下载原文件</a>
-          <button className="btn ghost" id="file-preview-close" type="button" onClick={onClose}>✕</button>
+          <button className="btn ghost" id="file-preview-close" type="button" onClick={onClose}><IconX size={14} /></button>
         </div>
       </div>
       <div className="file-preview-body">

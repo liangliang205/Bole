@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { Sidebar } from './features/sessions/Sidebar.tsx';
 import { EmptyView } from './features/new/EmptyView.tsx';
 import { ChatView } from './features/chat/ChatView.tsx';
+import { IconHelp, IconMoon, IconPanelRight, IconSun } from './components/icons.tsx';
 import { Drawer } from './features/drawer/Drawer.tsx';
 import { SettingsModal } from './features/settings/SettingsModal.tsx';
 import { MailboxModal } from './features/mailbox/MailboxModal.tsx';
@@ -74,7 +75,8 @@ export function App(): ReactElement {
                 else openDrawer();
               }}
             >
-              ▤ 任务面板
+              <IconPanelRight size={15} />
+              <span>任务面板</span>
             </button>
             <button
               className="btn ghost"
@@ -84,9 +86,10 @@ export function App(): ReactElement {
               aria-pressed={isDark}
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
             >
-              {isDark ? '☀ 日间' : '☾ 暗夜'}
+              {isDark ? <IconSun size={15} /> : <IconMoon size={15} />}
+              <span>{isDark ? '日间' : '暗夜'}</span>
             </button>
-            <button className="btn ghost" id="help-open" type="button" aria-haspopup="dialog" onClick={openHelp}>ⓘ 帮助</button>
+            <button className="btn ghost" id="help-open" type="button" aria-haspopup="dialog" onClick={openHelp}><IconHelp size={15} /><span>帮助</span></button>
           </div>
         </header>
         <div
