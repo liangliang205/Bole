@@ -5,6 +5,7 @@ import { useUiStore } from '../../store/ui.ts';
 import { AgentsTab, ComplianceTab, CostTab, MemoryTab, WorkflowTab } from './DrawerTabs.tsx';
 import { CandidateDetail, type CandidateDetailData } from './CandidateDetail.tsx';
 import { useEffect, useState } from 'react';
+import { IconX } from '../../components/icons.tsx';
 
 export type DrawerTab = 'candidates' | 'compliance' | 'cost' | 'memory' | 'agents' | 'workflow';
 
@@ -127,7 +128,7 @@ export function Drawer({ jobId }: { jobId: string }): ReactElement {
             </button>
           ))}
         </div>
-        <button className="btn ghost" id="drawer-close" onClick={close}>✕</button>
+        <button className="btn ghost" id="drawer-close" onClick={close}><IconX size={14} /></button>
       </div>
       <div id="drawer-body" className="drawer-body">
         {jobId === '' ? <div className="empty-note">选择会话后查看任务详情</div>

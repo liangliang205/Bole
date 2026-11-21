@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { IconX } from '../../components/icons.tsx';
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { api } from '../../api/client.ts';
@@ -146,7 +147,7 @@ export function MailboxModal(): ReactElement {
             <h2 id="mailbox-title">招聘邮箱</h2>
             <p className="muted">管理已接入的邮箱，选择伯乐默认使用的邮箱。</p>
           </div>
-          <button className="btn ghost" id="mailbox-close" type="button" aria-label="关闭招聘邮箱" onClick={close}>✕</button>
+          <button className="btn ghost" id="mailbox-close" type="button" aria-label="关闭招聘邮箱" onClick={close}><IconX size={14} /></button>
         </div>
         <div className="mailbox-account">
           <div className="mailbox-account-icon" aria-hidden="true">✉</div>

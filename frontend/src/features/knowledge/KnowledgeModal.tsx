@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { api } from '../../api/client.ts';
 import { useUiStore } from '../../store/ui.ts';
+import { IconX } from '../../components/icons.tsx';
 
 interface KnowledgeBase {
   id: string;
@@ -356,7 +357,7 @@ export function KnowledgeModal(): ReactElement {
               未配置嵌入模型：知识库仍可创建和使用，当前仅关键词检索。
             </p>
           </div>
-          <button className="btn ghost" id="knowledge-close" onClick={close}>✕</button>
+          <button className="btn ghost" id="knowledge-close" onClick={close}><IconX size={14} /></button>
         </div>
         <div className="knowledge-layout">
           <aside className="knowledge-bases">

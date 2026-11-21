@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 import { useUiStore } from '../../store/ui.ts';
+import { IconX } from '../../components/icons.tsx';
 
 const SECTIONS: { title: string; items: string[] }[] = [
   {
@@ -49,7 +50,7 @@ export function HelpDialog(): ReactElement {
     <dialog id="help-dialog" className="help-dialog" aria-labelledby="help-title" ref={ref} onClose={close}>
       <div className="modal-head">
         <h2 id="help-title">使用帮助</h2>
-        <button className="btn ghost" id="help-close" type="button" aria-label="关闭帮助" onClick={close}>✕</button>
+        <button className="btn ghost" id="help-close" type="button" aria-label="关闭帮助" onClick={close}><IconX size={14} /></button>
       </div>
       {SECTIONS.map((section) => (
         <section key={section.title}>

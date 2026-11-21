@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { useJobs, jobTitle, formatJobTime, type JobSummary } from '../../api/jobs.ts';
+import { IconBook, IconMail, IconMore, IconPlus, IconSearch, IconSettings } from '../../components/icons.tsx';
 import { useUiStore } from '../../store/ui.ts';
 import { useWidthResizer } from '../../hooks/useWidthResizer.ts';
 import { JobMenu, applyJobAction, type JobAction } from './JobMenu.tsx';
@@ -28,7 +29,7 @@ function JobRow({ job, active, onSelect, onMenu }: { job: JobSummary; active: bo
         <span className={`dot ${status}`} />
         <span className="job-name">{jobTitle(job)}</span>
         <span className="job-time">{formatJobTime(job.createdTs)}</span>
-        <button className="job-more" type="button" data-job-menu={job.id} title="会话操作" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onMenu(job, rect.right - 8, rect.bottom + 6); }}>⋯</button>
+        <button className="job-more" type="button" data-job-menu={job.id} title="会话操作" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onMenu(job, rect.right - 8, rect.bottom + 6); }}><IconMore size={15} /></button>
       </div>
       <div className="job-meta">
         <span>{job.verified ?? 0} 通过</span>
@@ -112,9 +113,9 @@ export function Sidebar(): ReactElement {
           </div>
           <div className="brand-sub">可验证的多 Agent 招聘筛选</div>
         </div>
-        <button className="btn primary block" id="new-run-btn" type="button" onClick={startNewSession}>＋ 新建筛选会话</button>
+        <button className="btn primary block" id="new-run-btn" type="button" onClick={startNewSession}><IconPlus size={15} /><span>新建筛选会话</span></button>
         <div className="search">
-          <span className="search-icon">⌕</span>
+          <span className="search-icon"><IconSearch size={14} /></span>
           <input
             id="job-search"
             placeholder="搜索会话（/）"
@@ -143,9 +144,9 @@ export function Sidebar(): ReactElement {
             : <div className="empty-note">{emptyNote}</div>}
         </div>
         <div className="side-footer">
-          <button className="btn ghost block" id="open-mailbox" onClick={() => openMailbox()}>✉ 招聘邮箱</button>
-          <button className="btn ghost block" id="open-knowledge" onClick={() => openKnowledge()}>▤ 知识库</button>
-          <button className="btn ghost block" id="open-settings" onClick={() => openSettings()}>⚙ 设置</button>
+          <button className="btn ghost block" id="open-mailbox" onClick={() => openMailbox()}><IconMail size={15} /><span>招聘邮箱</span></button>
+          <button className="btn ghost block" id="open-knowledge" onClick={() => openKnowledge()}><IconBook size={15} /><span>知识库</span></button>
+          <button className="btn ghost block" id="open-settings" onClick={() => openSettings()}><IconSettings size={15} /><span>设置</span></button>
         </div>
       </aside>
       {menu ? (
