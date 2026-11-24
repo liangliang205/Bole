@@ -31,3 +31,7 @@ data/skill-packages/
 
 .superpowers/
 data/mail-clis/
+data/local-services/
+
+# 品牌候选稿：探索过程的导出，不进仓库；正式 logo 是 bole-mark-*.png / bole-mark-invert-*.png
+assets/brand/bole-logo-*
